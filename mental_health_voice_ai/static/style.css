@@ -883,20 +883,29 @@ html, body {
     transform: scale(1.04);
 }
 
-/* Speaking Animation: Dual expanding monochrome ripple rings */
+/* Spectacular Mic Button Speaking Animation: Radiant Sonic Shockwave */
 .btn-mic.recording {
-    background: var(--btn-primary-bg);
-    animation: micWavePulse 1.4s ease-in-out infinite;
+    background: #38bdf8 !important;
+    color: #030712 !important;
+    border-color: #38bdf8 !important;
+    box-shadow: 0 0 25px rgba(56, 189, 248, 0.8), 0 0 45px rgba(56, 189, 248, 0.45) !important;
+    animation: micHeroPulse 1.2s cubic-bezier(0.2, 0.9, 0.3, 1) infinite !important;
+    position: relative;
+}
+
+.btn-mic.recording svg {
+    filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.8));
+    animation: micIconWiggle 0.6s ease-in-out infinite alternate;
 }
 
 .btn-mic.recording::before,
 .btn-mic.recording::after {
     content: '';
     position: absolute;
-    inset: -3px;
+    inset: -4px;
     border-radius: 50%;
-    border: 1.5px solid var(--border-focus);
-    animation: ringExpand 1.6s ease-out infinite;
+    border: 2px solid rgba(56, 189, 248, 0.9);
+    animation: micAcousticRipple 1.6s cubic-bezier(0, 0.2, 0.8, 1) infinite;
     pointer-events: none;
 }
 
@@ -904,15 +913,21 @@ html, body {
     animation-delay: 0.8s;
 }
 
-@keyframes micWavePulse {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.06); }
-    100% { transform: scale(1); }
+@keyframes micHeroPulse {
+    0% { transform: scale(1); box-shadow: 0 0 16px rgba(56, 189, 248, 0.6); }
+    50% { transform: scale(1.1); box-shadow: 0 0 32px rgba(56, 189, 248, 0.95), 0 0 55px rgba(56, 189, 248, 0.55); }
+    100% { transform: scale(1); box-shadow: 0 0 16px rgba(56, 189, 248, 0.6); }
 }
 
-@keyframes ringExpand {
-    0% { transform: scale(1); opacity: 0.8; }
-    100% { transform: scale(1.45); opacity: 0; }
+@keyframes micAcousticRipple {
+    0% { transform: scale(1); opacity: 0.95; border-color: rgba(56, 189, 248, 0.95); }
+    60% { opacity: 0.4; }
+    100% { transform: scale(2.4); opacity: 0; border-color: rgba(56, 189, 248, 0); }
+}
+
+@keyframes micIconWiggle {
+    0% { transform: translateY(0); }
+    100% { transform: translateY(-1.5px); }
 }
 
 /* Text Input Wrap */
@@ -2044,8 +2059,8 @@ html, body {
 
 .voice-orb-wrapper {
     position: relative;
-    width: 320px;
-    height: 320px;
+    width: 360px;
+    height: 360px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2055,8 +2070,8 @@ html, body {
     position: absolute;
     top: 0;
     left: 0;
-    width: 320px;
-    height: 320px;
+    width: 360px;
+    height: 360px;
     border-radius: 50%;
     pointer-events: none;
 }
@@ -2210,6 +2225,148 @@ html, body {
     border-color: #ef4444;
     transform: translateY(-1px);
     box-shadow: 0 6px 20px rgba(239, 68, 68, 0.35);
+}
+
+/* --------------------------------------------------------------------------
+   INLINE SPECTACULAR SOUND & TONE STAGE (Chat View)
+   -------------------------------------------------------------------------- */
+.inline-voice-stage {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    padding: 10px 16px;
+    animation: inlineFadeIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+    z-index: 10;
+}
+
+.inline-voice-stage.hidden {
+    display: none !important;
+}
+
+.inline-voice-card {
+    position: relative;
+    width: 100%;
+    max-width: 620px;
+    background: rgba(15, 23, 42, 0.85);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(56, 189, 248, 0.35);
+    border-radius: 20px;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55), 0 0 28px rgba(56, 189, 248, 0.18);
+    overflow: hidden;
+}
+
+[data-theme="light"] .inline-voice-card {
+    background: rgba(255, 255, 255, 0.9);
+    border-color: rgba(56, 189, 248, 0.4);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.08), 0 0 24px rgba(56, 189, 248, 0.14);
+}
+
+.inline-voice-orb-glow {
+    position: absolute;
+    width: 240px;
+    height: 70px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(circle, rgba(56, 189, 248, 0.3) 0%, transparent 70%);
+    pointer-events: none;
+    filter: blur(16px);
+    transition: background 0.3s ease;
+}
+
+#inlineWaveCanvas {
+    width: 100%;
+    height: 75px;
+    border-radius: 12px;
+    display: block;
+}
+
+.inline-voice-meta {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+}
+
+.inline-voice-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.inline-voice-tone {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: rgba(56, 189, 248, 0.15);
+    color: #38bdf8;
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    transition: all 0.3s ease;
+}
+
+.inline-voice-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 2px;
+}
+
+.btn-inline-finish {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 18px;
+    border-radius: 20px;
+    background: #38bdf8;
+    color: #030712;
+    border: none;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 0 18px rgba(56, 189, 248, 0.45);
+    transition: all 0.15s ease;
+}
+
+.btn-inline-finish:hover {
+    transform: scale(1.04);
+    box-shadow: 0 0 26px rgba(56, 189, 248, 0.7);
+}
+
+.btn-inline-expand {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 20px;
+    background: var(--bg-surface);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-base);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-inline-expand:hover {
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+}
+
+@keyframes inlineFadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 

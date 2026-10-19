@@ -187,7 +187,15 @@ function initControls() {
     }
 
     if (micBtn) {
-        micBtn.addEventListener("click", toggleRecording);
+        micBtn.addEventListener("click", () => {
+            if (isRecording) {
+                // If user was speaking, clicking mic button stops speaking and immediately sends reply!
+                stopRecording();
+            } else {
+                // Clicking mic button immediately launches the spectacular ChatGPT Voice Mode animation!
+                enterVoiceMode();
+            }
+        });
     }
 
     if (sendBtn) {
@@ -290,12 +298,27 @@ function initVoiceModeControls() {
     if (endConversationBtn) {
         endConversationBtn.addEventListener("click", endVoiceConversation);
     }
+
+    const inlineFinishBtn = document.getElementById("inlineFinishBtn");
+    if (inlineFinishBtn) {
+        inlineFinishBtn.addEventListener("click", () => {
+            if (isRecording) stopRecording();
+        });
+    }
+
+    const inlineExpandBtn = document.getElementById("inlineExpandBtn");
+    if (inlineExpandBtn) {
+        inlineExpandBtn.addEventListener("click", enterVoiceMode);
+    }
 }
 
 function enterVoiceMode() {
     isVoiceModalActive = true;
     const modal = document.getElementById("chatgptVoiceModal");
     if (modal) modal.classList.remove("hidden");
+
+    const inlineStage = document.getElementById("inlineVoiceStage");
+    if (inlineStage) inlineStage.classList.add("hidden");
 
     const modalState = document.getElementById("modalVoiceStateText");
     if (modalState) modalState.textContent = "Arogya is listening... speak freely";
@@ -325,6 +348,11 @@ function exitVoiceMode() {
     const modal = document.getElementById("chatgptVoiceModal");
     if (modal) modal.classList.add("hidden");
     drawIdleWaveform();
+    const inlineStage = document.getElementById("inlineVoiceStage");
+    if (inlineStage) {
+        if (isRecording) inlineStage.classList.remove("hidden");
+        else inlineStage.classList.add("hidden");
+    }
 }
 
 async function endVoiceConversation() {
@@ -341,7 +369,7 @@ async function endVoiceConversation() {
 
     // Refresh and list out the complete conversation in the main view
     if (currentSessionId) {
-        await loadSessionMessages(currentSessionId);
+        await loadSessionData(currentSessionId);
         await loadSessions();
     }
 
@@ -453,6 +481,9 @@ function startVisualizer(stream) {
     const orbCanvas = document.getElementById("voiceOrbCanvas");
     const orbCtx = orbCanvas ? orbCanvas.getContext("2d") : null;
 
+    const inlineCanvas = document.getElementById("inlineWaveCanvas");
+    const inlineCtx = inlineCanvas ? inlineCanvas.getContext("2d") : null;
+
     let rotationAngle = 0;
 
     function render() {
@@ -491,26 +522,30 @@ function startVisualizer(stream) {
         let toneLabel = "Natural";
         let toneClass = "tone-calm";
         let toneColor = "#38bdf8"; // Luminous Cyan
-        let glowColor = "rgba(56, 189, 248, 0.4)";
+        let glowColor = "rgba(56, 189, 248, 0.45)";
+        let secondaryColor = "#2dd4bf"; // Teal
 
         if (voiceToneCentroid < 160) {
             toneLabel = `Deep & Grounded • ${voiceToneCentroid} Hz`;
             toneClass = "tone-deep";
             toneColor = "#818cf8"; // Indigo
-            glowColor = "rgba(129, 140, 248, 0.4)";
+            glowColor = "rgba(129, 140, 248, 0.5)";
+            secondaryColor = "#c084fc"; // Violet
         } else if (voiceToneCentroid > 280) {
             toneLabel = `Expressive & High • ${voiceToneCentroid} Hz`;
             toneClass = "tone-elevated";
             toneColor = "#fb923c"; // Amber
-            glowColor = "rgba(251, 146, 60, 0.45)";
+            glowColor = "rgba(251, 146, 60, 0.55)";
+            secondaryColor = "#f43f5e"; // Rose
         } else {
             toneLabel = `Calm & Steady • ${voiceToneCentroid} Hz`;
             toneClass = "tone-calm";
             toneColor = "#38bdf8"; // Cyan
-            glowColor = "rgba(56, 189, 248, 0.4)";
+            glowColor = "rgba(56, 189, 248, 0.45)";
+            secondaryColor = "#2dd4bf"; // Teal
         }
 
-        // Update Ribbon & Modal Tone Badges
+        // Update Tone Badges across Ribbon, Modal, and Inline Stage
         const ribbonTonePill = document.getElementById("voiceTonePill");
         if (ribbonTonePill) {
             ribbonTonePill.classList.remove("hidden");
@@ -521,6 +556,16 @@ function startVisualizer(stream) {
         if (modalToneBadge) {
             modalToneBadge.className = `voice-modal-tone-badge ${toneClass}`;
             modalToneBadge.textContent = toneLabel;
+        }
+        const inlineToneBadge = document.getElementById("inlineVoiceToneText");
+        if (inlineToneBadge) {
+            inlineToneBadge.textContent = toneLabel;
+            inlineToneBadge.style.color = toneColor;
+            inlineToneBadge.style.borderColor = toneColor + "55";
+        }
+        const inlineGlow = document.getElementById("inlineOrbGlow");
+        if (inlineGlow) {
+            inlineGlow.style.background = `radial-gradient(circle, ${glowColor} 0%, transparent 70%)`;
         }
 
         if (micMeterFill) micMeterFill.style.width = `${percent}%`;
@@ -581,10 +626,10 @@ function startVisualizer(stream) {
 
             for (let i = 0; i < bufferLength; i++) {
                 const v = timeData[i] / 128.0;
-                const y = v * cy;
+                const dynamicY = (v - 1.0) * cy * 1.8 + cy;
 
-                if (i === 0) canvasCtx.moveTo(x, y);
-                else canvasCtx.lineTo(x, y);
+                if (i === 0) canvasCtx.moveTo(x, dynamicY);
+                else canvasCtx.lineTo(x, dynamicY);
 
                 x += sliceWidth;
             }
@@ -592,40 +637,43 @@ function startVisualizer(stream) {
             canvasCtx.shadowBlur = 0;
         }
 
-        // 6. Render Full-Screen ChatGPT Voice Orb (Spectacular Liquid Aura)
+        // 6. Render Full-Screen ChatGPT Voice Orb (Spectacular Liquid Aura + Breathing Harmonic Rings)
         if (orbCtx && orbCanvas) {
             orbCtx.clearRect(0, 0, orbCanvas.width, orbCanvas.height);
             const cx = orbCanvas.width / 2;
             const cy = orbCanvas.height / 2;
-            const baseRadius = 55 + (avg * 0.65);
+
+            // Ambient organic breathing oscillation so it feels alive even during silence
+            const breath = Math.sin(Date.now() / 360) * 5;
+            const baseRadius = 60 + breath + (avg * 0.75);
 
             rotationAngle += 0.02 + (avg * 0.001);
 
-            // Outer Radiant Bloom Glow
-            const radialGrad = orbCtx.createRadialGradient(cx, cy, baseRadius * 0.3, cx, cy, baseRadius * 1.8);
+            // Radiant Bloom Glow
+            const radialGrad = orbCtx.createRadialGradient(cx, cy, baseRadius * 0.25, cx, cy, baseRadius * 1.85);
             radialGrad.addColorStop(0, glowColor);
-            radialGrad.addColorStop(0.6, glowColor.replace("0.4", "0.15").replace("0.45", "0.15"));
+            radialGrad.addColorStop(0.5, glowColor.replace("0.5", "0.2").replace("0.55", "0.2"));
             radialGrad.addColorStop(1, "transparent");
 
             orbCtx.fillStyle = radialGrad;
             orbCtx.beginPath();
-            orbCtx.arc(cx, cy, baseRadius * 1.8, 0, Math.PI * 2);
+            orbCtx.arc(cx, cy, baseRadius * 1.85, 0, Math.PI * 2);
             orbCtx.fill();
 
-            // Dynamic Sine-Warped Harmonic Rings (Tone & Volume Driven)
-            for (let ring = 1; ring <= 3; ring++) {
-                const ringRadius = baseRadius + (ring * 18 * (avg / 40 + 0.3));
+            // Concentric Sine-Warped Harmonic Rings (Driven by Volume & Frequency)
+            for (let ring = 1; ring <= 4; ring++) {
+                const ringRadius = baseRadius + (ring * 16 * (avg / 35 + 0.35));
                 orbCtx.beginPath();
-                orbCtx.lineWidth = 1.8;
-                orbCtx.strokeStyle = toneColor;
-                orbCtx.globalAlpha = 0.85 / ring;
+                orbCtx.lineWidth = ring === 1 ? 2.5 : 1.8;
+                orbCtx.strokeStyle = ring % 2 === 0 ? secondaryColor : toneColor;
+                orbCtx.globalAlpha = Math.max(0.2, 0.9 / ring);
 
-                const points = 36;
+                const points = 48;
                 for (let p = 0; p <= points; p++) {
-                    const theta = (p / points) * Math.PI * 2 + (ring * 0.5 * (ring % 2 === 0 ? 1 : -1) * rotationAngle);
+                    const theta = (p / points) * Math.PI * 2 + (ring * 0.4 * (ring % 2 === 0 ? 1 : -1) * rotationAngle);
                     const harmonicIndex = Math.floor((p / points) * (bufferLength / 2));
-                    const freqWarp = (freqData[harmonicIndex] / 255.0) * 16 * (1 / ring);
-                    const r = ringRadius + Math.sin(theta * (ring + 2) + rotationAngle * 3) * (4 + freqWarp);
+                    const freqWarp = (freqData[harmonicIndex] / 255.0) * 22 * (1 / ring);
+                    const r = ringRadius + Math.sin(theta * (ring + 2) + rotationAngle * 3.2) * (5 + freqWarp);
                     const px = cx + Math.cos(theta) * r;
                     const py = cy + Math.sin(theta) * r;
 
@@ -635,7 +683,77 @@ function startVisualizer(stream) {
                 orbCtx.closePath();
                 orbCtx.stroke();
             }
+
+            // Orbiting Acoustic Spark Particles
+            const particleCount = 8;
+            for (let pt = 0; pt < particleCount; pt++) {
+                const ptAngle = rotationAngle * (1.2 + pt * 0.1) + (pt * (Math.PI * 2 / particleCount));
+                const ptDist = baseRadius * 1.35 + Math.sin(ptAngle * 3) * (8 + avg * 0.25);
+                const ptx = cx + Math.cos(ptAngle) * ptDist;
+                const pty = cy + Math.sin(ptAngle) * ptDist;
+                const ptRadius = 2.2 + (avg / 25);
+
+                orbCtx.beginPath();
+                orbCtx.fillStyle = toneColor;
+                orbCtx.globalAlpha = 0.75;
+                orbCtx.arc(ptx, pty, ptRadius, 0, Math.PI * 2);
+                orbCtx.fill();
+            }
+
             orbCtx.globalAlpha = 1.0;
+
+            // Reactive Center Badge Pulsing & Glow
+            const centerBadge = document.getElementById("voiceOrbCenterBadge");
+            if (centerBadge) {
+                const scaleVal = 1 + (percent / 200);
+                centerBadge.style.transform = `scale(${scaleVal})`;
+                centerBadge.style.boxShadow = `0 0 ${16 + percent * 0.7}px ${toneColor}88`;
+            }
+        }
+
+        // 7. Render Inline Audio Canvas (Active in Chat Stream)
+        if (inlineCtx && inlineCanvas) {
+            inlineCtx.clearRect(0, 0, inlineCanvas.width, inlineCanvas.height);
+            const w = inlineCanvas.width;
+            const h = inlineCanvas.height;
+            const cy = h / 2;
+
+            // Background Spectrum Histogram Bars
+            const numBars = 32;
+            const barWidth = w / numBars;
+            for (let b = 0; b < numBars; b++) {
+                const binIdx = Math.floor(b * (bufferLength / numBars));
+                const val = (freqData[binIdx] / 255.0);
+                const barHeight = Math.max(3, val * (h * 0.75));
+                const bx = b * barWidth;
+                const by = h - barHeight;
+
+                inlineCtx.fillStyle = toneColor;
+                inlineCtx.globalAlpha = 0.15 + (val * 0.35);
+                inlineCtx.fillRect(bx + 1, by, barWidth - 2, barHeight);
+            }
+
+            // Layered Flowing Fluid Sine Ribbons
+            for (let layer = 1; layer <= 2; layer++) {
+                inlineCtx.beginPath();
+                inlineCtx.lineWidth = layer === 1 ? 2.5 : 1.5;
+                inlineCtx.strokeStyle = layer === 1 ? toneColor : secondaryColor;
+                inlineCtx.globalAlpha = layer === 1 ? 0.9 : 0.6;
+
+                const step = w / 40;
+                for (let x = 0; x <= w; x += step) {
+                    const normX = x / w;
+                    const freqIdx = Math.floor(normX * (bufferLength / 2));
+                    const waveEnergy = (freqData[freqIdx] / 255.0) * (h * 0.35);
+                    const breath = Math.sin((x * 0.03) + (rotationAngle * (layer * 2))) * (4 + waveEnergy);
+                    const y = cy + breath;
+
+                    if (x === 0) inlineCtx.moveTo(x, y);
+                    else inlineCtx.lineTo(x, y);
+                }
+                inlineCtx.stroke();
+            }
+            inlineCtx.globalAlpha = 1.0;
         }
     }
     render();
@@ -1111,6 +1229,11 @@ async function startRecording() {
         const modalMic = document.getElementById("modalMicToggleBtn");
         if (modalMic) modalMic.classList.add("recording");
 
+        const inlineStage = document.getElementById("inlineVoiceStage");
+        if (inlineStage && !isVoiceModalActive) {
+            inlineStage.classList.remove("hidden");
+        }
+
         orbCaption.textContent = "Listening... Speak naturally in English or Tanglish";
         setLiveStatus("Listening...", "listening");
 
@@ -1137,6 +1260,9 @@ function stopRecording() {
         if (micBtn) micBtn.classList.remove("recording");
         const modalMic = document.getElementById("modalMicToggleBtn");
         if (modalMic) modalMic.classList.remove("recording");
+
+        const inlineStage = document.getElementById("inlineVoiceStage");
+        if (inlineStage) inlineStage.classList.add("hidden");
 
         setLiveStatus("Processing...", "listening");
         orbCaption.textContent = "Processing speech...";
