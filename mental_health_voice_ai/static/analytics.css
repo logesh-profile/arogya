@@ -536,18 +536,132 @@
     line-height: 1.5;
 }
 
-/* Responsive */
-@media (max-width: 900px) {
-    .kpi-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    .analytics-details-grid {
-        grid-template-columns: 1fr;
-    }
+/* ==========================================================================
+   ANALYTICS RESPONSIVE BREAKPOINTS (ALL DEVICES)
+   ========================================================================== */
+
+@media (max-width: 960px) {
     .analytics-header {
         padding: 14px 20px;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
     }
+
+    .analytics-header-left {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .analytics-header-right {
+        width: 100%;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
     .analytics-container {
         padding: 20px 16px;
+        gap: 20px;
+    }
+
+    .kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+    }
+
+    .analytics-details-grid {
+        grid-template-columns: 1fr;
+        gap: 18px;
+    }
+
+    .chart-stage-wrap {
+        height: 280px;
+    }
+}
+
+@media (max-width: 640px) {
+    .analytics-header {
+        padding: 12px 14px;
+        gap: 10px;
+    }
+
+    .analytics-page-title {
+        font-size: 1.18rem;
+    }
+
+    .header-divider {
+        display: none;
+    }
+
+    .analytics-container {
+        padding: 16px 12px;
+        gap: 16px;
+    }
+
+    .analytics-controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+    }
+
+    .session-filter-group {
+        width: 100%;
+    }
+
+    .session-select {
+        width: 100%;
+        font-size: 0.82rem;
+    }
+
+    .btn-back-companion {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+
+    .btn-export-report {
+        padding: 6px 14px;
+        font-size: 0.8rem;
+    }
+
+    .chart-card {
+        padding: 18px 14px;
+    }
+
+    .chart-stage-wrap {
+        height: 240px;
+    }
+
+    .analytics-footer {
+        padding: 18px 14px;
+    }
+}
+
+@media (max-width: 480px) {
+    .kpi-grid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .kpi-card {
+        padding: 14px 16px;
+    }
+
+    .kpi-value {
+        font-size: 1.8rem;
+    }
+
+    .chart-stage-wrap {
+        height: 210px;
+    }
+
+    .breakdown-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 6px;
+    }
+
+    .breakdown-bar-track {
+        width: 100%;
     }
 }

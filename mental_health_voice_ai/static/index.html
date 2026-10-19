@@ -187,10 +187,15 @@
                         <span class="brand-tagline">Clinical Companion</span>
                     </div>
                 </div>
-                <button id="newSessionBtn" class="btn-new-session" title="Start New Session">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                    <span>New</span>
-                </button>
+                <div class="sidebar-header-actions">
+                    <button id="newSessionBtn" class="btn-new-session" title="Start New Session">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        <span>New</span>
+                    </button>
+                    <button id="closeSidebarBtn" class="close-sidebar-btn" title="Close Sidebar">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                    </button>
+                </div>
             </div>
 
             <!-- Voice Engine Selector (Speed Control) -->
@@ -234,16 +239,24 @@
             </div>
         </aside>
 
+        <!-- Mobile Sidebar Backdrop -->
+        <div id="sidebarBackdrop" class="sidebar-backdrop hidden"></div>
+
         <!-- CENTER STAGE: Clean, Spacious Conversation Stream -->
         <main class="main-stage">
             <header class="stage-header">
                 <div class="header-left">
-                    <span class="session-category" id="currentSessionBadge">ACTIVE DIALOGUE</span>
-                    <div class="heading-editable-wrap">
-                        <h2 class="session-heading" id="currentSessionTitle">Emotional Wellness Reflection</h2>
-                        <button id="editSessionTitleBtn" class="btn-icon-subtle" title="Rename Session">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        </button>
+                    <button id="mobileMenuBtn" class="mobile-menu-btn" title="Open Sessions Sidebar">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                    </button>
+                    <div class="header-title-meta">
+                        <span class="session-category" id="currentSessionBadge">ACTIVE DIALOGUE</span>
+                        <div class="heading-editable-wrap">
+                            <h2 class="session-heading" id="currentSessionTitle">Emotional Wellness Reflection</h2>
+                            <button id="editSessionTitleBtn" class="btn-icon-subtle" title="Rename Session">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
 

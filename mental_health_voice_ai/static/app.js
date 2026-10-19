@@ -217,6 +217,26 @@ function initControls() {
             speakerToggleBtn.style.opacity = audioPlayer.muted ? "0.35" : "1";
         });
     }
+
+    // Mobile Sidebar Drawer Controls
+    const mobileMenuBtn = document.getElementById("mobileMenuBtn");
+    const closeSidebarBtn = document.getElementById("closeSidebarBtn");
+    const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+    const sidebar = document.getElementById("sidebar");
+
+    function openMobileSidebar() {
+        if (sidebar) sidebar.classList.add("mobile-open");
+        if (sidebarBackdrop) sidebarBackdrop.classList.remove("hidden");
+    }
+
+    function closeMobileSidebar() {
+        if (sidebar) sidebar.classList.remove("mobile-open");
+        if (sidebarBackdrop) sidebarBackdrop.classList.add("hidden");
+    }
+
+    if (mobileMenuBtn) mobileMenuBtn.addEventListener("click", openMobileSidebar);
+    if (closeSidebarBtn) closeSidebarBtn.addEventListener("click", closeMobileSidebar);
+    if (sidebarBackdrop) sidebarBackdrop.addEventListener("click", closeMobileSidebar);
 }
 
 function initPhase2Controls() {
@@ -874,12 +894,21 @@ function renderSessionsList(sessions) {
 async function selectSession(sessionId) {
     if (currentSessionId === sessionId) return;
     currentSessionId = sessionId;
+    const sidebar = document.getElementById("sidebar");
+    const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+    if (sidebar) sidebar.classList.remove("mobile-open");
+    if (sidebarBackdrop) sidebarBackdrop.classList.add("hidden");
     await loadSessionData(sessionId);
     await loadSessions();
 }
 
 async function startNewSession(triggerGreeting = true) {
     try {
+        const sidebar = document.getElementById("sidebar");
+        const sidebarBackdrop = document.getElementById("sidebarBackdrop");
+        if (sidebar) sidebar.classList.remove("mobile-open");
+        if (sidebarBackdrop) sidebarBackdrop.classList.add("hidden");
+
         const res = await fetch("/api/sessions", { method: "POST" });
         const newSess = await res.json();
         currentSessionId = newSess.session_id;
