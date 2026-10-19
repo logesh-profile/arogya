@@ -1835,3 +1835,381 @@ html, body {
     border-color: var(--border-focus);
 }
 
+/* --------------------------------------------------------------------------
+   LIVE VOICE MODE & SPECTACULAR AUDIO VISUALIZER
+   ChatGPT-Style Fluid Full-Duplex Dialogue & Tone Resonance
+   -------------------------------------------------------------------------- */
+.btn-voice-mode-pulse {
+    background: var(--text-primary) !important;
+    color: var(--bg-root) !important;
+    border-color: var(--text-primary) !important;
+    font-weight: 700 !important;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    box-shadow: 0 0 12px rgba(255, 255, 255, 0.15);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-voice-mode-pulse:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 0 18px rgba(255, 255, 255, 0.3);
+}
+
+.voice-mode-pulse-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #10b981;
+    box-shadow: 0 0 8px #10b981;
+    animation: voiceLivePulse 1.4s infinite alternate;
+}
+
+@keyframes voiceLivePulse {
+    0% { transform: scale(0.8); opacity: 0.7; }
+    100% { transform: scale(1.3); opacity: 1; }
+}
+
+/* Tone Pill indicator in Ribbon */
+.voice-tone-pill, .voice-modal-tone-badge {
+    font-family: var(--font-instrument);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-base);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    transition: all 0.25s ease;
+}
+
+.voice-tone-pill.tone-calm, .voice-modal-tone-badge.tone-calm {
+    color: #38bdf8;
+    border-color: rgba(56, 189, 248, 0.35);
+    background: rgba(56, 189, 248, 0.08);
+}
+
+.voice-tone-pill.tone-deep, .voice-modal-tone-badge.tone-deep {
+    color: #818cf8;
+    border-color: rgba(129, 140, 248, 0.35);
+    background: rgba(129, 140, 248, 0.08);
+}
+
+.voice-tone-pill.tone-elevated, .voice-modal-tone-badge.tone-elevated {
+    color: #fb923c;
+    border-color: rgba(251, 146, 60, 0.35);
+    background: rgba(251, 146, 60, 0.08);
+}
+
+/* Automatic Grounding Banner */
+.auto-grounding-banner {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: rgba(239, 68, 68, 0.08);
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    margin-bottom: 16px;
+    animation: fadeIn 0.3s ease;
+}
+
+.auto-badge {
+    font-family: var(--font-instrument);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #f87171;
+}
+
+.auto-desc {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+}
+
+/* --------------------------------------------------------------------------
+   CHATGPT IMMERSIVE VOICE MODE MODAL
+   -------------------------------------------------------------------------- */
+.chatgpt-voice-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.chatgpt-voice-modal.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.chatgpt-voice-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.92);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
+}
+
+[data-theme="light"] .chatgpt-voice-backdrop {
+    background: rgba(255, 255, 255, 0.94);
+}
+
+.chatgpt-voice-container {
+    position: relative;
+    z-index: 2;
+    width: 100%;
+    max-width: 680px;
+    height: 88vh;
+    max-height: 780px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px 32px;
+}
+
+/* Modal Top Bar */
+.chatgpt-voice-topbar {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.voice-topbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.voice-topbar-meta {
+    display: flex;
+    flex-direction: column;
+}
+
+.voice-mode-title {
+    font-family: var(--font-ui);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.voice-mode-sub {
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.voice-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.btn-voice-minimize {
+    background: transparent;
+    border: 1px solid var(--border-base);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    padding: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.btn-voice-minimize:hover {
+    color: var(--text-primary);
+    border-color: var(--border-hover);
+    background: var(--bg-surface);
+}
+
+/* Modal Stage: Spectacular Voice Orb */
+.chatgpt-voice-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    flex: 1;
+    gap: 28px;
+}
+
+.voice-orb-wrapper {
+    position: relative;
+    width: 320px;
+    height: 320px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#voiceOrbCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 320px;
+    height: 320px;
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.voice-orb-center-badge {
+    position: relative;
+    z-index: 3;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-base);
+    box-shadow: 0 0 24px rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-primary);
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.voice-orb-wrapper.speaking .voice-orb-center-badge {
+    box-shadow: 0 0 40px rgba(56, 189, 248, 0.3);
+    border-color: rgba(56, 189, 248, 0.5);
+    color: #38bdf8;
+}
+
+.voice-orb-wrapper.listening .voice-orb-center-badge {
+    box-shadow: 0 0 40px rgba(255, 255, 255, 0.25);
+    border-color: var(--border-focus);
+}
+
+/* Dialogue Card in Voice Mode */
+.voice-dialogue-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    max-width: 520px;
+    gap: 12px;
+}
+
+.voice-state-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 5px 12px;
+    border-radius: 16px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-base);
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.voice-pulsing-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-primary);
+    animation: livePulse 1s infinite alternate;
+}
+
+.voice-live-caption-area {
+    min-height: 52px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.voice-user-live-text {
+    font-family: var(--font-caption);
+    font-size: 17px;
+    font-style: italic;
+    font-weight: 300;
+    color: var(--text-user-echo);
+    line-height: 1.45;
+}
+
+.voice-ai-live-text {
+    font-family: var(--font-caption);
+    font-size: 19px;
+    font-weight: 300;
+    color: var(--text-caption);
+    line-height: 1.5;
+}
+
+.voice-interrupt-tip {
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.01em;
+}
+
+/* Modal Bottom Bar: Big Mic + End Conversation */
+.chatgpt-voice-bottombar {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding-top: 16px;
+}
+
+.btn-voice-mic-large {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-base);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-voice-mic-large:hover {
+    transform: scale(1.06);
+    border-color: var(--border-focus);
+}
+
+.btn-voice-mic-large.recording {
+    background: var(--text-primary);
+    color: var(--bg-root);
+    border-color: var(--text-primary);
+    box-shadow: 0 0 20px rgba(255, 255, 255, 0.25);
+}
+
+/* The Prominent End Conversation Button */
+.btn-end-conversation {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    padding: 12px 24px;
+    border-radius: 28px;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.35);
+    color: #ef4444;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(239, 68, 68, 0.1);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-end-conversation:hover {
+    background: #ef4444;
+    color: #ffffff;
+    border-color: #ef4444;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.35);
+}
+
+

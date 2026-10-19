@@ -76,12 +76,18 @@ let breathingMode = "box";
 let breathingCycle = 1;
 let isBreathingPaused = false;
 
+// ChatGPT-Style Continuous Voice Dialogue & Spectacular Visualizer State
+let isVoiceModalActive = false;
+let voiceToneCentroid = 200;
+let currentAiReplyText = "";
+
 // --- INITIALIZATION ---
 document.addEventListener("DOMContentLoaded", async () => {
     initTheme();
     initVoiceEngine();
     initControls();
     initPhase2Controls();
+    initVoiceModeControls();
     initCanvasVisualizer();
     setupAudioPlayerEvents();
     await initMicDeviceSelector();
@@ -257,6 +263,92 @@ function initPhase2Controls() {
     }
 }
 
+// --- CHATGPT-STYLE LIVE VOICE MODE CONTROLS ---
+function initVoiceModeControls() {
+    const openVoiceModeBtn = document.getElementById("openVoiceModeBtn");
+    if (openVoiceModeBtn) {
+        openVoiceModeBtn.addEventListener("click", enterVoiceMode);
+    }
+
+    const modalMinimizeBtn = document.getElementById("modalMinimizeBtn");
+    if (modalMinimizeBtn) {
+        modalMinimizeBtn.addEventListener("click", exitVoiceMode);
+    }
+
+    const modalMicToggleBtn = document.getElementById("modalMicToggleBtn");
+    if (modalMicToggleBtn) {
+        modalMicToggleBtn.addEventListener("click", () => {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        });
+    }
+
+    const endConversationBtn = document.getElementById("endConversationBtn");
+    if (endConversationBtn) {
+        endConversationBtn.addEventListener("click", endVoiceConversation);
+    }
+}
+
+function enterVoiceMode() {
+    isVoiceModalActive = true;
+    const modal = document.getElementById("chatgptVoiceModal");
+    if (modal) modal.classList.remove("hidden");
+
+    const modalState = document.getElementById("modalVoiceStateText");
+    if (modalState) modalState.textContent = "Arogya is listening... speak freely";
+
+    const userText = document.getElementById("modalUserLiveText");
+    if (userText) userText.textContent = "Listening to your voice...";
+
+    const aiText = document.getElementById("modalAiLiveText");
+    if (aiText) aiText.textContent = "";
+
+    const orbWrap = document.getElementById("voiceOrbWrapper");
+    if (orbWrap) {
+        orbWrap.classList.remove("speaking");
+        orbWrap.classList.add("listening");
+    }
+
+    const modalMic = document.getElementById("modalMicToggleBtn");
+    if (modalMic) modalMic.classList.add("recording");
+
+    if (!isRecording) {
+        startRecording();
+    }
+}
+
+function exitVoiceMode() {
+    isVoiceModalActive = false;
+    const modal = document.getElementById("chatgptVoiceModal");
+    if (modal) modal.classList.add("hidden");
+    drawIdleWaveform();
+}
+
+async function endVoiceConversation() {
+    console.log("[*] Ending Voice Conversation Session...");
+    exitVoiceMode();
+
+    if (isRecording) {
+        stopRecording();
+    }
+    if (audioPlayer) {
+        audioPlayer.pause();
+        audioPlayer.currentTime = 0;
+    }
+
+    // Refresh and list out the complete conversation in the main view
+    if (currentSessionId) {
+        await loadSessionMessages(currentSessionId);
+        await loadSessions();
+    }
+
+    if (orbCaption) orbCaption.textContent = "Conversation completed. All exchanges listed below.";
+    setLiveStatus("Completed", "");
+}
+
 // --- MICROPHONE DETECTION WITH HARDWARE GUARANTEE ---
 async function initMicDeviceSelector() {
     if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
@@ -340,6 +432,7 @@ function resetMicMeter() {
     }
 }
 
+// --- SPECTACULAR SOUND & TONE AUDIO VISUALIZER ---
 function startVisualizer(stream) {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -349,33 +442,110 @@ function startVisualizer(stream) {
     }
     const source = audioContext.createMediaStreamSource(stream);
     analyser = audioContext.createAnalyser();
-    analyser.fftSize = 64;
+    analyser.fftSize = 256;
+    analyser.smoothingTimeConstant = 0.8;
     source.connect(analyser);
 
     const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
+    const freqData = new Uint8Array(bufferLength);
+    const timeData = new Uint8Array(bufferLength);
+
+    const orbCanvas = document.getElementById("voiceOrbCanvas");
+    const orbCtx = orbCanvas ? orbCanvas.getContext("2d") : null;
+
+    let rotationAngle = 0;
 
     function render() {
-        if (!isRecording) return;
+        if (!isRecording && (!audioPlayer || audioPlayer.paused)) {
+            drawIdleWaveform();
+            return;
+        }
         animFrameId = requestAnimationFrame(render);
-        analyser.getByteFrequencyData(dataArray);
+        analyser.getByteFrequencyData(freqData);
+        analyser.getByteTimeDomainData(timeData);
 
+        // 1. Calculate RMS Volume (Energy)
         let sum = 0;
+        let weightedFreqSum = 0;
+        let totalFreqWeight = 0;
+
         for (let i = 0; i < bufferLength; i++) {
-            sum += dataArray[i];
+            const val = freqData[i];
+            sum += val;
+            if (val > 10) {
+                weightedFreqSum += i * val;
+                totalFreqWeight += val;
+            }
         }
         const avg = sum / bufferLength;
         const percent = Math.min(100, Math.round((avg / 100) * 100));
 
-        if (micMeterFill) {
-            micMeterFill.style.width = `${percent}%`;
-        }
-        if (micMeterStatus) {
-            micMeterStatus.textContent = percent > 5 ? `${percent}%` : "Quiet";
+        // 2. Estimate Spectral Centroid & Vocal Tone / Pitch
+        if (totalFreqWeight > 0) {
+            const centroidBin = weightedFreqSum / totalFreqWeight;
+            const nyquist = (audioContext.sampleRate || 16000) / 2;
+            voiceToneCentroid = Math.round((centroidBin / bufferLength) * nyquist);
         }
 
-        // Hands-Free Conversational Voice Activity Detection (VAD)
-        if (isHandsFree && isRecording) {
+        // Determine Tone & Chromatic Color Palette
+        let toneLabel = "Natural";
+        let toneClass = "tone-calm";
+        let toneColor = "#38bdf8"; // Luminous Cyan
+        let glowColor = "rgba(56, 189, 248, 0.4)";
+
+        if (voiceToneCentroid < 160) {
+            toneLabel = `Deep & Grounded • ${voiceToneCentroid} Hz`;
+            toneClass = "tone-deep";
+            toneColor = "#818cf8"; // Indigo
+            glowColor = "rgba(129, 140, 248, 0.4)";
+        } else if (voiceToneCentroid > 280) {
+            toneLabel = `Expressive & High • ${voiceToneCentroid} Hz`;
+            toneClass = "tone-elevated";
+            toneColor = "#fb923c"; // Amber
+            glowColor = "rgba(251, 146, 60, 0.45)";
+        } else {
+            toneLabel = `Calm & Steady • ${voiceToneCentroid} Hz`;
+            toneClass = "tone-calm";
+            toneColor = "#38bdf8"; // Cyan
+            glowColor = "rgba(56, 189, 248, 0.4)";
+        }
+
+        // Update Ribbon & Modal Tone Badges
+        const ribbonTonePill = document.getElementById("voiceTonePill");
+        if (ribbonTonePill) {
+            ribbonTonePill.classList.remove("hidden");
+            ribbonTonePill.className = `voice-tone-pill ${toneClass}`;
+            ribbonTonePill.textContent = toneLabel;
+        }
+        const modalToneBadge = document.getElementById("modalToneBadge");
+        if (modalToneBadge) {
+            modalToneBadge.className = `voice-modal-tone-badge ${toneClass}`;
+            modalToneBadge.textContent = toneLabel;
+        }
+
+        if (micMeterFill) micMeterFill.style.width = `${percent}%`;
+        if (micMeterStatus) micMeterStatus.textContent = percent > 5 ? `${percent}%` : "Quiet";
+
+        // 3. ChatGPT-Style Barge-In / Interruption Detection
+        if (audioPlayer && !audioPlayer.paused && audioPlayer.currentTime > 0) {
+            if (percent > 14) {
+                console.log("[*] Barge-in detected: User interrupted Arogya!");
+                audioPlayer.pause();
+                audioPlayer.currentTime = 0;
+                setLiveStatus("Listening...", "listening");
+                orbCaption.textContent = "You spoke — Arogya paused to listen to you";
+                const modalStateText = document.getElementById("modalVoiceStateText");
+                if (modalStateText) modalStateText.textContent = "Arogya paused • Listening to you...";
+                const orbWrap = document.getElementById("voiceOrbWrapper");
+                if (orbWrap) {
+                    orbWrap.classList.remove("speaking");
+                    orbWrap.classList.add("listening");
+                }
+            }
+        }
+
+        // 4. Conversational Voice Activity Detection (VAD)
+        if ((isHandsFree || isVoiceModalActive) && isRecording) {
             if (percent > 12) {
                 vadHasSpoken = true;
                 if (vadSilenceTimer) {
@@ -385,27 +555,87 @@ function startVisualizer(stream) {
             } else if (vadHasSpoken && percent <= 10) {
                 if (!vadSilenceTimer) {
                     vadSilenceTimer = setTimeout(() => {
-                        if (isHandsFree && isRecording && vadHasSpoken) {
+                        if ((isHandsFree || isVoiceModalActive) && isRecording && vadHasSpoken) {
                             vadHasSpoken = false;
                             stopRecording();
                         }
-                    }, 1400); // 1.4s natural pause detection
+                    }, 1400); // 1.4s natural pause
                 }
             }
         }
 
+        // 5. Render Ribbon Canvas Waveform (Sound & Tone Responsive)
         if (canvasCtx && waveformCanvas) {
             canvasCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
-            const isDark = document.documentElement.getAttribute("data-theme") !== "light";
-            const barWidth = (waveformCanvas.width / bufferLength) * 1.5;
+            const cy = waveformCanvas.height / 2;
+            const w = waveformCanvas.width;
+
+            canvasCtx.beginPath();
+            canvasCtx.lineWidth = 2.5;
+            canvasCtx.strokeStyle = toneColor;
+            canvasCtx.shadowBlur = 10;
+            canvasCtx.shadowColor = glowColor;
+
+            const sliceWidth = w / bufferLength;
             let x = 0;
 
             for (let i = 0; i < bufferLength; i++) {
-                const barHeight = (dataArray[i] / 255.0) * (waveformCanvas.height - 4);
-                canvasCtx.fillStyle = isDark ? "#FFFFFF" : "#000000";
-                canvasCtx.fillRect(x, (waveformCanvas.height - barHeight) / 2, barWidth - 1, barHeight);
-                x += barWidth + 1;
+                const v = timeData[i] / 128.0;
+                const y = v * cy;
+
+                if (i === 0) canvasCtx.moveTo(x, y);
+                else canvasCtx.lineTo(x, y);
+
+                x += sliceWidth;
             }
+            canvasCtx.stroke();
+            canvasCtx.shadowBlur = 0;
+        }
+
+        // 6. Render Full-Screen ChatGPT Voice Orb (Spectacular Liquid Aura)
+        if (orbCtx && orbCanvas) {
+            orbCtx.clearRect(0, 0, orbCanvas.width, orbCanvas.height);
+            const cx = orbCanvas.width / 2;
+            const cy = orbCanvas.height / 2;
+            const baseRadius = 55 + (avg * 0.65);
+
+            rotationAngle += 0.02 + (avg * 0.001);
+
+            // Outer Radiant Bloom Glow
+            const radialGrad = orbCtx.createRadialGradient(cx, cy, baseRadius * 0.3, cx, cy, baseRadius * 1.8);
+            radialGrad.addColorStop(0, glowColor);
+            radialGrad.addColorStop(0.6, glowColor.replace("0.4", "0.15").replace("0.45", "0.15"));
+            radialGrad.addColorStop(1, "transparent");
+
+            orbCtx.fillStyle = radialGrad;
+            orbCtx.beginPath();
+            orbCtx.arc(cx, cy, baseRadius * 1.8, 0, Math.PI * 2);
+            orbCtx.fill();
+
+            // Dynamic Sine-Warped Harmonic Rings (Tone & Volume Driven)
+            for (let ring = 1; ring <= 3; ring++) {
+                const ringRadius = baseRadius + (ring * 18 * (avg / 40 + 0.3));
+                orbCtx.beginPath();
+                orbCtx.lineWidth = 1.8;
+                orbCtx.strokeStyle = toneColor;
+                orbCtx.globalAlpha = 0.85 / ring;
+
+                const points = 36;
+                for (let p = 0; p <= points; p++) {
+                    const theta = (p / points) * Math.PI * 2 + (ring * 0.5 * (ring % 2 === 0 ? 1 : -1) * rotationAngle);
+                    const harmonicIndex = Math.floor((p / points) * (bufferLength / 2));
+                    const freqWarp = (freqData[harmonicIndex] / 255.0) * 16 * (1 / ring);
+                    const r = ringRadius + Math.sin(theta * (ring + 2) + rotationAngle * 3) * (4 + freqWarp);
+                    const px = cx + Math.cos(theta) * r;
+                    const py = cy + Math.sin(theta) * r;
+
+                    if (p === 0) orbCtx.moveTo(px, py);
+                    else orbCtx.lineTo(px, py);
+                }
+                orbCtx.closePath();
+                orbCtx.stroke();
+            }
+            orbCtx.globalAlpha = 1.0;
         }
     }
     render();
@@ -417,15 +647,44 @@ function setupAudioPlayerEvents() {
     audioPlayer.addEventListener("play", () => {
         setLiveStatus("Speaking...", "listening");
         orbCaption.textContent = "Arogya is speaking...";
+
+        if (isVoiceModalActive) {
+            const aiText = document.getElementById("modalAiLiveText");
+            if (aiText && currentAiReplyText) aiText.textContent = currentAiReplyText;
+
+            const modalState = document.getElementById("modalVoiceStateText");
+            if (modalState) modalState.textContent = "Arogya is speaking... (tap or speak to interrupt)";
+
+            const orbWrap = document.getElementById("voiceOrbWrapper");
+            if (orbWrap) {
+                orbWrap.classList.add("speaking");
+                orbWrap.classList.remove("listening");
+            }
+        }
     });
 
     audioPlayer.addEventListener("ended", () => {
         setLiveStatus("Ready", "");
-        orbCaption.textContent = isHandsFree ? "Hands-Free active. Listening..." : "Click microphone or type to reflect";
+        orbCaption.textContent = (isHandsFree || isVoiceModalActive) ? "Listening to your thoughts..." : "Click microphone or type to reflect";
         drawIdleWaveform();
 
-        // Hands-Free Loop: automatically resume listening after Arogya finishes speaking
-        if (isHandsFree && !isRecording) {
+        if (isVoiceModalActive) {
+            const modalState = document.getElementById("modalVoiceStateText");
+            if (modalState) modalState.textContent = "Arogya is listening... speak freely";
+
+            const orbWrap = document.getElementById("voiceOrbWrapper");
+            if (orbWrap) {
+                orbWrap.classList.remove("speaking");
+                orbWrap.classList.add("listening");
+            }
+
+            // In Voice Mode: automatically resume listening for user's next turn
+            setTimeout(() => {
+                if (isVoiceModalActive && !isRecording) {
+                    startRecording();
+                }
+            }, 500);
+        } else if (isHandsFree && !isRecording) {
             setTimeout(() => {
                 if (isHandsFree && !isRecording) {
                     startRecording();
@@ -436,6 +695,10 @@ function setupAudioPlayerEvents() {
 
     audioPlayer.addEventListener("pause", () => {
         setLiveStatus("Ready", "");
+        if (isVoiceModalActive) {
+            const orbWrap = document.getElementById("voiceOrbWrapper");
+            if (orbWrap) orbWrap.classList.remove("speaking");
+        }
     });
 }
 
@@ -720,6 +983,12 @@ function initSpeechRecognition() {
             if (liveText && textInput) {
                 textInput.value = liveText;
             }
+            if (isVoiceModalActive) {
+                const modalUserLive = document.getElementById("modalUserLiveText");
+                if (modalUserLive && liveText) {
+                    modalUserLive.textContent = `"${liveText}"`;
+                }
+            }
         };
 
         speechRecognizer.onerror = (e) => {
@@ -790,6 +1059,10 @@ async function startRecording() {
                 if (textInput) textInput.value = "";
                 orbCaption.textContent = "Transcribing speech with neural Whisper...";
                 setLiveStatus("Transcribing...", "listening");
+                if (isVoiceModalActive) {
+                    const modalState = document.getElementById("modalVoiceStateText");
+                    if (modalState) modalState.textContent = "Transcribing your speech...";
+                }
 
                 try {
                     const formTr = new FormData();
@@ -800,18 +1073,26 @@ async function startRecording() {
 
                     if (trText.length > 1) {
                         if (textInput) textInput.value = trText;
-                        orbCaption.textContent = "Speech transcribed. Click Send or press Enter.";
+                        if (isVoiceModalActive) {
+                            const modalUser = document.getElementById("modalUserLiveText");
+                            if (modalUser) modalUser.textContent = `"${trText}"`;
+                        }
+                        orbCaption.textContent = "Speech transcribed. Reflecting...";
                         await handleTextSubmit();
                         return;
                     } else {
-                        orbCaption.textContent = "Microphone captured silence. Please select physical mic or type.";
+                        orbCaption.textContent = "Microphone captured silence. Speak into the mic or type.";
+                        if (isVoiceModalActive) {
+                            const modalState = document.getElementById("modalVoiceStateText");
+                            if (modalState) modalState.textContent = "Silence captured. Speak again when ready.";
+                        }
                     }
                 } catch(e) {
                     console.error("Transcribe error:", e);
                     orbCaption.textContent = "Could not catch words clearly. Try speaking again.";
                 }
             } else {
-                orbCaption.textContent = "Speech converted. Click Send or press Enter.";
+                orbCaption.textContent = "Speech captured. Reflecting...";
                 await handleTextSubmit();
                 return;
             }
@@ -827,8 +1108,21 @@ async function startRecording() {
         mediaRecorder.start(250);
         isRecording = true;
         if (micBtn) micBtn.classList.add("recording");
+        const modalMic = document.getElementById("modalMicToggleBtn");
+        if (modalMic) modalMic.classList.add("recording");
+
         orbCaption.textContent = "Listening... Speak naturally in English or Tanglish";
         setLiveStatus("Listening...", "listening");
+
+        if (isVoiceModalActive) {
+            const modalState = document.getElementById("modalVoiceStateText");
+            if (modalState) modalState.textContent = "Arogya is listening... speak freely";
+            const orbWrap = document.getElementById("voiceOrbWrapper");
+            if (orbWrap) {
+                orbWrap.classList.remove("speaking");
+                orbWrap.classList.add("listening");
+            }
+        }
 
         startVisualizer(stream);
     } catch (err) {
@@ -841,10 +1135,18 @@ function stopRecording() {
     if (isRecording) {
         isRecording = false;
         if (micBtn) micBtn.classList.remove("recording");
+        const modalMic = document.getElementById("modalMicToggleBtn");
+        if (modalMic) modalMic.classList.remove("recording");
+
         setLiveStatus("Processing...", "listening");
         orbCaption.textContent = "Processing speech...";
         drawIdleWaveform();
         resetMicMeter();
+
+        if (isVoiceModalActive) {
+            const modalState = document.getElementById("modalVoiceStateText");
+            if (modalState) modalState.textContent = "Arogya is reflecting...";
+        }
 
         if (speechRecognizer) {
             try { speechRecognizer.stop(); } catch(e){}
@@ -870,6 +1172,13 @@ async function handleTextSubmit() {
     appendPendingUserToUI(text);
     setLiveStatus("Reflecting...", "listening");
     orbCaption.textContent = "Arogya is reflecting...";
+
+    if (isVoiceModalActive) {
+        const modalState = document.getElementById("modalVoiceStateText");
+        if (modalState) modalState.textContent = "Arogya is reflecting...";
+        const userLive = document.getElementById("modalUserLiveText");
+        if (userLive) userLive.textContent = `"${text}"`;
+    }
 
     const audioToSend = lastRecordedBlob;
     lastRecordedBlob = null;
@@ -901,6 +1210,15 @@ async function handleTextSubmit() {
             data = await res.json();
         }
 
+        currentAiReplyText = data.reply_text || "";
+
+        if (isVoiceModalActive) {
+            const aiLive = document.getElementById("modalAiLiveText");
+            if (aiLive) aiLive.textContent = data.reply_text;
+            const modalState = document.getElementById("modalVoiceStateText");
+            if (modalState) modalState.textContent = "Arogya is speaking... (tap or speak to interrupt)";
+        }
+
         // Render response: Arogya Newsreader caption on top, user's words italic underneath
         appendExchangeToUI(data.reply_text, text, data.audio_url, true);
 
@@ -920,8 +1238,14 @@ async function handleTextSubmit() {
             }
         }
 
-        // Auto-invite gentle breathing if anxiety/tension is detected
-        if (data.suggest_grounding) {
+        // Point 3: AUTOMATIC GROUNDING WHEN MENTAL SCORE < 60%
+        const wellness = (data.evaluation && data.evaluation.overall_wellness !== undefined) ? data.evaluation.overall_wellness : data.overall_wellness;
+        if (wellness !== null && wellness < 60) {
+            console.log(`[!] Low mental wellness score detected (${wellness}% < 60%). Automatically triggering guided grounding breathwork.`);
+            setTimeout(() => {
+                openGroundingModal("box", true, wellness);
+            }, 800);
+        } else if (data.suggest_grounding) {
             showGroundingInvite(data.grounding_mode || "box");
         }
 
@@ -1111,15 +1435,30 @@ function showGroundingInvite(mode = "box") {
     }
 }
 
-function openGroundingModal(mode = "box") {
+function openGroundingModal(mode = "box", isAutomatic = false, wellnessScore = null) {
     const modal = document.getElementById("groundingModal");
     if (modal) modal.classList.remove("hidden");
+
+    const autoBanner = document.getElementById("automaticGroundingBanner");
+    if (autoBanner) {
+        if (isAutomatic) {
+            autoBanner.classList.remove("hidden");
+            const desc = autoBanner.querySelector(".auto-desc");
+            if (desc && wellnessScore !== null) {
+                desc.textContent = `Arogya noticed elevated emotional strain (${wellnessScore}% wellness score). Automatically guiding your breath to regulate autonomic equilibrium.`;
+            }
+        } else {
+            autoBanner.classList.add("hidden");
+        }
+    }
     setBreathingMode(mode);
 }
 
 function closeGroundingModal() {
     const modal = document.getElementById("groundingModal");
     if (modal) modal.classList.add("hidden");
+    const autoBanner = document.getElementById("automaticGroundingBanner");
+    if (autoBanner) autoBanner.classList.add("hidden");
     stopBreathing();
 }
 
