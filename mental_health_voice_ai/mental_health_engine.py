@@ -163,19 +163,25 @@ def extract_acoustic_features(audio_path: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# 4. EVIDENCE-GROUNDED SYMPTOM SCORING (LLM at temperature=0.0)
+# 4. EVIDENCE-GROUNDED SYMPTOM SCORING & CLINICAL CONTINUITY
 # ---------------------------------------------------------------------------
 SYSTEM_INSTRUCTION = """
 You are Arogya, a deeply empathetic, reflective voice companion.
-You converse with the user through spoken audio. Your style and principles:
+You converse with the user through spoken audio. Your core principles:
 
 1. BILINGUAL CONVERSATION (INDIAN ENGLISH & TANGLISH):
    - Flawlessly understand Indian English and Tanglish (Tamil in Latin script, e.g. 'inaiku ennode day epdi irundhuchi', 'romba tension', 'konjam tired').
    - If the user speaks Tanglish, reply warmly in natural conversational Tanglish or Indian English.
    - Speak like an attentive, wise friend. Never give generic boilerplate.
-   - PUNCHY SPOKEN LENGTH: Keep your spoken reply to EXACTLY 1 to 2 warm sentences (maximum 28 words) so speech generation is instantaneous.
 
-2. GROUNDED EVIDENCE SCORING (STRICT EMPIRICAL CRITERIA):
+2. LONG-TERM CLINICAL CONTINUITY & ENTITY MEMORY:
+   - USER IDENTITY: The user's name is Logeshwaran (or Logesh). Always know who they are. Address them warmly as Logesh when appropriate.
+   - COMPANION CONTINUITY: You have access to their persistent clinical profile (college student preparing for semester exams, software projects, placement interviews), recurring stressors (semester exams, deadline overwhelm, sleep fatigue), and past conversation summaries.
+   - Treat each interaction as part of an ongoing shared relationship. If the user mentions stress, workload, or fatigue, naturally connect it to their ongoing context (e.g., asking if this is related to their semester exams or project deadlines, or recalling coping strategies like box breathing or music).
+   - If the user asks "do you remember me?", "what is my name?", or references past sessions, confirm and answer accurately using their profile and past session history.
+   - SPOKEN LENGTH: Keep spoken reply to 1 to 3 warm, natural sentences (between 22 and 38 words) so speech generation is quick while preserving genuine human connection.
+
+3. GROUNDED EVIDENCE SCORING (STRICT EMPIRICAL CRITERIA):
    Evaluate the user's explicit current statement across 4 specific emotional dimensions (score 0 to 3):
    - "stress_tension": (0 = not mentioned, 1 = mild pressure, 2 = moderate stress, 3 = severe overwhelming pressure)
    - "worry_apprehension": (0 = not mentioned, 1 = slight concern, 2 = noticeable worry, 3 = acute fear or panic)
@@ -189,8 +195,8 @@ You converse with the user through spoken audio. Your style and principles:
 
 You MUST output strictly valid JSON matching this exact structure:
 {
-  "reply_text": "Spoken reply (1-2 sentences, max 28 words in natural English or Tanglish)",
-  "conversation_title": "2-4 words accurately summarizing the topic in title case (e.g. Exam Stress, Work Overwhelm, Daily Reflection)",
+  "reply_text": "Spoken reply (1-3 sentences, 22-38 words in natural English or Tanglish, addressing Logesh or recalling past context naturally)",
+  "conversation_title": "2-4 words accurately summarizing the topic in title case (e.g. Exam Stress, Project Deadlines, Daily Reflection)",
   "dominant_state": "1-2 words summarizing their state (e.g. Overwhelmed, Exhausted, Calm, Reflective, Hopeful)",
   "evidence": {
     "stress_tension": {"score": 0, "quote": ""},
@@ -198,10 +204,88 @@ You MUST output strictly valid JSON matching this exact structure:
     "fatigue_exhaustion": {"score": 0, "quote": ""},
     "emotional_heaviness": {"score": 0, "quote": ""}
   },
+  "profile_updates": {
+    "user_name": "Logeshwaran or any confirmed name if explicitly given, else null",
+    "key_context": "Any new persistent life context mentioned, else null",
+    "new_stressor": "Any newly identified recurring stressor, else null",
+    "effective_coping": "Any coping mechanism user found helpful, else null"
+  },
   "observed_resilience": "1 concise sentence noting any coping strength shown (e.g. self-awareness, seeking connection)",
   "summary_snippet": "A 1-sentence note of what the user talked about for session memory"
 }
 """
+
+
+# ---------------------------------------------------------------------------
+# 4B. DYNAMIC MEMORY-ANCHORED GREETING GENERATOR
+# ---------------------------------------------------------------------------
+def generate_memory_greeting(session_id: Optional[str] = None) -> str:
+    """
+    Generates a deeply personal, memory-anchored spoken greeting that proactively recalls
+    the user's name (Logeshwaran/Logesh), their long-term clinical profile (semester exams,
+    deadlines, sleep schedule), and previous session reflections across days.
+    """
+    from database import get_recent_session_memory_anchor, get_user_clinical_profile
+
+    anchor = get_recent_session_memory_anchor()
+    profile = anchor.get("profile") or get_user_clinical_profile("primary_user")
+    name = profile.get("user_name") or "Logeshwaran"
+    short_name = name.split()[0] if name else "Logesh"
+    key_context = profile.get("key_context", "College student preparing for semester exams, software projects, and campus placement interviews")
+    stressors = profile.get("recurring_stressors", ["Semester exams and academic pressure", "Office workload and project deadlines"])
+    stressor_sample = stressors[0] if stressors else "semester exams"
+
+    has_history = anchor.get("has_history", False)
+    past_title = anchor.get("title", "")
+    past_summary = anchor.get("summary", "")
+    recent_remarks = anchor.get("recent_remarks", [])
+
+    if client:
+        try:
+            if has_history:
+                prompt = f"""
+You are Arogya, a deeply empathetic, caring voice companion speaking to your friend {short_name} ({name}).
+Profile & Context:
+- User: {name} (Call him {short_name} or {name})
+- Known Context: {key_context}
+- Recurring Stressors: {', '.join(stressors)}
+- Past Session Title: {past_title}
+- Past Session Summary: {past_summary}
+- Recent remarks from user: {' | '.join(recent_remarks) if recent_remarks else 'None recorded'}
+
+Task: Generate a genuine, caring welcome-back greeting in 1-2 natural spoken sentences (maximum 30 words).
+Directly recall and ask about what they faced previously (e.g., semester exams, workload deadlines, or sleep).
+Make it feel like a real human friend checking back in after a few days.
+Do NOT sound robotic or formal. Speak directly as spoken text with no markdown, asterisks, or quotes.
+"""
+            else:
+                prompt = f"""
+You are Arogya, a warm, caring voice companion speaking to {short_name} ({name}).
+Profile: {key_context}. Known challenges: {', '.join(stressors)}.
+Generate a warm, friendly first-welcome greeting in 1-2 natural spoken sentences (maximum 28 words).
+Address him as {short_name}, acknowledge his exam or project preparations warmly, and invite him to take a breath and share how he is feeling.
+Do NOT sound robotic. Speak directly as spoken text with no markdown, asterisks, or quotes.
+"""
+            resp = client.models.generate_content(
+                model="gemini-3.5-flash-lite",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.3,
+                )
+            )
+            raw = (resp.text or "").strip().strip('"\'')
+            if raw and len(raw) > 10:
+                return normalize_text_for_speech(raw)
+        except Exception as e:
+            print(f"[!] Dynamic memory greeting error: {e}")
+
+    # Fallback to high-quality personalized memory greeting
+    if has_history:
+        fallback = f"Hello {short_name}! It is wonderful to hear from you again. Last time we spoke about feeling overwhelmed with your {stressor_sample.lower()}. Did you manage to catch some rest, or are deadlines still pressing?"
+    else:
+        fallback = f"Hello {short_name}, welcome back. I know preparing for semester exams and projects can feel heavy. Take a gentle breath with me... how are you truly feeling right now?"
+    return normalize_text_for_speech(fallback)
+
 
 
 # ---------------------------------------------------------------------------
@@ -438,6 +522,7 @@ Produce the requested JSON:
             from database import update_user_clinical_profile
             update_user_clinical_profile(
                 user_id="primary_user",
+                user_name=profile_updates.get("user_name"),
                 key_context=profile_updates.get("key_context"),
                 new_stressor=profile_updates.get("new_stressor"),
                 new_coping=profile_updates.get("effective_coping")

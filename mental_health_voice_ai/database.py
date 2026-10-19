@@ -95,21 +95,34 @@ def init_db():
         )
     """)
 
-    # Seed default primary profile if absent
-    cursor.execute("SELECT user_id FROM user_clinical_profile WHERE user_id = 'primary_user'")
-    if not cursor.fetchone():
-        now = datetime.now().isoformat()
+    # Seed or upgrade default primary profile
+    cursor.execute("SELECT user_id, user_name FROM user_clinical_profile WHERE user_id = 'primary_user'")
+    row = cursor.fetchone()
+    now = datetime.now().isoformat()
+    if not row:
         cursor.execute("""
             INSERT INTO user_clinical_profile (user_id, user_name, key_context, recurring_stressors, effective_coping, baseline_wellness, last_updated)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             "primary_user",
-            "Friend",
-            "Student navigating academic deadlines, career placements, and daily personal routines",
-            json.dumps(["Academic deadlines and performance pressure", "Sleep and energy regulation", "Balancing technical projects"]),
-            json.dumps(["Guided box breathing (4-4-4-4)", "Taking short screen-free walks", "Reflective spoken dialogue"]),
+            "Logeshwaran",
+            "College student preparing for semester exams, software projects, and campus placement interviews",
+            json.dumps(["Semester exams and academic pressure", "Office workload and project deadlines", "Sleep deprivation and fatigue", "Campus placement anxiety"]),
+            json.dumps(["Guided box breathing (4-4-4-4)", "Taking short walks", "Reflective spoken pauses", "Listening to calming music"]),
             75.0,
             now
+        ))
+    elif row["user_name"] == "Friend" or not row["user_name"]:
+        cursor.execute("""
+            UPDATE user_clinical_profile 
+            SET user_name = 'Logeshwaran',
+                key_context = 'College student preparing for semester exams, software projects, and campus placement interviews',
+                recurring_stressors = ?,
+                effective_coping = ?
+            WHERE user_id = 'primary_user'
+        """, (
+            json.dumps(["Semester exams and academic pressure", "Office workload and project deadlines", "Sleep deprivation and fatigue", "Campus placement anxiety"]),
+            json.dumps(["Guided box breathing (4-4-4-4)", "Taking short walks", "Reflective spoken pauses", "Listening to calming music"])
         ))
 
     conn.commit()
@@ -551,13 +564,14 @@ def get_user_clinical_profile(user_id: str = "primary_user") -> Dict[str, Any]:
 
 def update_user_clinical_profile(
     user_id: str = "primary_user",
+    user_name: Optional[str] = None,
     key_context: Optional[str] = None,
     new_stressor: Optional[str] = None,
     new_coping: Optional[str] = None,
     baseline_wellness: Optional[float] = None
 ) -> Dict[str, Any]:
     """
-    Updates or appends clinical memory entities (recurring stressors, effective coping, context notes).
+    Updates or appends clinical memory entities (name, recurring stressors, effective coping, context notes).
     """
     curr = get_user_clinical_profile(user_id)
     stressors = curr.get("recurring_stressors", [])
@@ -577,6 +591,7 @@ def update_user_clinical_profile(
     if key_context and isinstance(key_context, str) and len(key_context.strip()) > 3:
         context = key_context.strip()
 
+    name = user_name.strip() if (user_name and isinstance(user_name, str) and len(user_name.strip()) > 1) else curr.get("user_name", "Logeshwaran")
     b_well = baseline_wellness if baseline_wellness is not None else curr.get("baseline_wellness", 75.0)
     now = datetime.now().isoformat()
 
@@ -584,18 +599,57 @@ def update_user_clinical_profile(
     cursor = conn.cursor()
     cursor.execute("""
         INSERT INTO user_clinical_profile (user_id, user_name, key_context, recurring_stressors, effective_coping, baseline_wellness, last_updated)
-        VALUES (?, 'Friend', ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
+            user_name = excluded.user_name,
             key_context = excluded.key_context,
             recurring_stressors = excluded.recurring_stressors,
             effective_coping = excluded.effective_coping,
             baseline_wellness = excluded.baseline_wellness,
             last_updated = excluded.last_updated
-    """, (user_id, context, json.dumps(stressors), json.dumps(coping), b_well, now))
+    """, (user_id, name, context, json.dumps(stressors), json.dumps(coping), b_well, now))
     conn.commit()
     conn.close()
 
     return get_user_clinical_profile(user_id)
+
+def get_recent_session_memory_anchor() -> Dict[str, Any]:
+    """
+    Retrieves the most recent meaningful session topic, user quotes, and recurring stressors
+    for memory-anchored greeting recall across days.
+    """
+    profile = get_user_clinical_profile("primary_user")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT session_id, title, created_at, overall_wellness, dominant_emotion, summary
+        FROM sessions
+        WHERE summary IS NOT NULL AND summary != '' AND summary != 'Initial conversation started.'
+        ORDER BY created_at DESC
+        LIMIT 1
+    """)
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return {"has_history": False, "profile": profile}
+
+    sess = dict(row)
+    cursor.execute("""
+        SELECT role, text FROM messages
+        WHERE session_id = ? AND role = 'user'
+        ORDER BY id DESC LIMIT 2
+    """, (sess["session_id"],))
+    msgs = [r["text"] for r in cursor.fetchall()]
+    conn.close()
+
+    return {
+        "has_history": True,
+        "profile": profile,
+        "title": sess.get("title"),
+        "summary": sess.get("summary"),
+        "dominant_emotion": sess.get("dominant_emotion"),
+        "recent_remarks": msgs
+    }
 
 def get_historical_context(current_session_id: Optional[str] = None, limit: int = 4) -> str:
     """
@@ -603,12 +657,14 @@ def get_historical_context(current_session_id: Optional[str] = None, limit: int 
     incorporating the persistent clinical profile so Arogya naturally references long-term stressors.
     """
     profile = get_user_clinical_profile("primary_user")
-    stressors_text = ", ".join(profile.get("recurring_stressors", [])) or "None identified yet"
-    coping_text = ", ".join(profile.get("effective_coping", [])) or "Guided breathing and reflective pauses"
+    name = profile.get("user_name", "Logeshwaran")
+    stressors_text = ", ".join(profile.get("recurring_stressors", [])) or "Semester exams, Project deadlines, Sleep fatigue"
+    coping_text = ", ".join(profile.get("effective_coping", [])) or "Guided breathing, Short walks, Calming pauses"
 
     lines = [
         "--- LONG-TERM CLINICAL PROFILE & RECURRING STRESSOR MEMORY ---",
-        f"• User Profile & Context: {profile.get('key_context', 'General wellbeing reflection')}",
+        f"• User's Name: {name} (Always address and know the user as {name})",
+        f"• User Profile & Context: {profile.get('key_context', 'College student facing semester exams and placement preparation')}",
         f"• Recurring Known Stressors: {stressors_text}",
         f"• Effective Coping Strategies: {coping_text}",
         f"• Baseline Wellness Standard: {profile.get('baseline_wellness', 75)}/100",

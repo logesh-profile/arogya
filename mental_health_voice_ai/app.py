@@ -41,7 +41,7 @@ from database import (
     get_user_clinical_profile,
     update_user_clinical_profile
 )
-from mental_health_engine import extract_acoustic_features, analyze_and_respond, generate_quick_session_title
+from mental_health_engine import extract_acoustic_features, analyze_and_respond, generate_quick_session_title, generate_memory_greeting
 from voice_engine import transcribe_audio, synthesize_speech
 
 app = FastAPI(title="Arogya - Mental Health Voice Companion")
@@ -143,25 +143,10 @@ def remove_session(session_id: str):
 @app.get("/api/greeting")
 async def get_initial_greeting(session_id: Optional[str] = None, voice_mode: str = "fast"):
     """
-    Instant initial greeting: returns pre-cached studio audio for sub-millisecond page startup.
+    Dynamic memory-anchored greeting: Proactively connects with user's name and past clinical journey.
     """
-    history_context = get_historical_context(session_id, limit=2)
-    has_history = "--- PAST CONVERSATIONAL MEMORY" in history_context
-
-    static_dir = os.path.join(BASE_DIR, "static", "audio")
-    if has_history:
-        greeting_text = "Hello again. It is wonderful to hear from you. Take a soft, gentle breath... how are you truly feeling right now?"
-        cached_rel = "/static/audio/greeting_welcome_back.mp3"
-        cached_path = os.path.join(static_dir, "greeting_welcome_back.mp3")
-    else:
-        greeting_text = "Hello there, and welcome. I am Arogya, your personal wellbeing companion. I am right here with you. Take a comfortable breath... how has your day been treating you?"
-        cached_rel = "/static/audio/greeting_welcome.mp3"
-        cached_path = os.path.join(static_dir, "greeting_welcome.mp3")
-
-    if os.path.exists(cached_path):
-        audio_url = cached_rel
-    else:
-        audio_url = await synthesize_speech(greeting_text, mode=voice_mode)
+    greeting_text = generate_memory_greeting(session_id)
+    audio_url = await synthesize_speech(greeting_text, mode=voice_mode)
 
     # Save to session if session_id provided
     if session_id:
