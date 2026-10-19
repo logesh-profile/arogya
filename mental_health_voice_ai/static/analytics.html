@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arogya • Longitudinal Clinical Analytics & Trajectory</title>
+    <meta name="description" content="Longitudinal mental health trajectory, acoustic voice prosody biomarkers, and multi-session clinical profile.">
+    <!-- Google Fonts: Newsreader, Plus Jakarta Sans, Space Grotesk -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;1,6..72,300;1,6..72,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/analytics.css">
+</head>
+<body class="analytics-body">
+    <!-- Top Bar Navigation -->
+    <header class="analytics-header">
+        <div class="analytics-header-left">
+            <a href="/" class="btn-back-companion" id="backToChatBtn" title="Return to Spoken Companion">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                <span>Back to Companion</span>
+            </a>
+            <div class="header-divider"></div>
+            <div class="analytics-title-wrap">
+                <h1 class="analytics-page-title">Longitudinal Clinical Analytics</h1>
+                <span class="analytics-subtitle">Multi-Session Trajectory & Voice Biomarker History</span>
+            </div>
+        </div>
+        <div class="analytics-header-right">
+            <a href="/api/analytics/export/download" class="btn-export-report" id="exportReportBtn" title="Download Full Markdown Report">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                <span>Export Report</span>
+            </a>
+            <button id="themeToggleBtn" class="theme-toggle-btn" title="Toggle Light / Dark Mode">
+                <svg class="theme-icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                <svg class="theme-icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                <span class="theme-label" id="themeLabel">Dark</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="analytics-container">
+        <!-- KPI Summary Cards -->
+        <section class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label-row">
+                    <span class="kpi-label">LIFETIME BASELINE</span>
+                    <span class="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </span>
+                </div>
+                <div class="kpi-value-row">
+                    <span class="kpi-num tabular-num" id="kpiLifetime">75</span>
+                    <span class="kpi-denom tabular-num">/100</span>
+                </div>
+                <span class="kpi-meta" id="kpiLifetimeMeta">Across all conversation sessions</span>
+            </div>
+
+            <div class="kpi-card highlight-card">
+                <div class="kpi-label-row">
+                    <span class="kpi-label">LONGITUDINAL TRAJECTORY</span>
+                    <span class="trajectory-badge" id="kpiTrajectoryBadge">Steady</span>
+                </div>
+                <div class="kpi-value-row">
+                    <span class="kpi-num tabular-num" id="kpiDelta">+0.0</span>
+                    <span class="kpi-denom">pts vs baseline</span>
+                </div>
+                <span class="kpi-meta" id="kpiTrajectoryDesc">Recent reflections maintain emotional equilibrium.</span>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-label-row">
+                    <span class="kpi-label">MONITORED REFLECTIONS</span>
+                    <span class="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                    </span>
+                </div>
+                <div class="kpi-value-row">
+                    <span class="kpi-num tabular-num" id="kpiReflections">0</span>
+                    <span class="kpi-denom tabular-num" id="kpiSessionsCount">across 0 sessions</span>
+                </div>
+                <span class="kpi-meta">Grounded self-reported evidence quotes</span>
+            </div>
+
+            <div class="kpi-card">
+                <div class="kpi-label-row">
+                    <span class="kpi-label">PROSODIC PITCH STABILITY</span>
+                    <span class="kpi-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                    </span>
+                </div>
+                <div class="kpi-value-row">
+                    <span class="kpi-num tabular-num" id="kpiSemitones">1.85</span>
+                    <span class="kpi-denom">st</span>
+                </div>
+                <span class="kpi-meta">pYIN semitone std relative to speaker median</span>
+            </div>
+        </section>
+
+        <!-- Longitudinal Trend Chart Section -->
+        <section class="analytics-card chart-section">
+            <div class="card-header-row">
+                <div class="card-title-wrap">
+                    <h2 class="card-title">Multi-Session Wellness Trend</h2>
+                    <span class="card-subtitle">Deterministic overall wellness trajectories across all completed sessions</span>
+                </div>
+                <div class="chart-legend">
+                    <span class="legend-item"><span class="legend-dot wellness-dot"></span> Session Wellness</span>
+                    <span class="legend-item"><span class="legend-line baseline-line"></span> Lifetime Baseline</span>
+                </div>
+            </div>
+            <div class="canvas-container">
+                <canvas id="trendCanvas" width="900" height="280"></canvas>
+            </div>
+            <div class="chart-footer-note">
+                <span>Scores are calculated deterministically in Python from verbatim dialogue quotes. Higher values represent emotional stability.</span>
+            </div>
+        </section>
+
+        <!-- Two Column Details Grid -->
+        <div class="analytics-details-grid">
+            <!-- Left: Symptom Distributions & Evidence -->
+            <section class="analytics-card">
+                <div class="card-header-row">
+                    <div class="card-title-wrap">
+                        <h2 class="card-title">Symptom Distribution (All Time)</h2>
+                        <span class="card-subtitle">Average symptom score (0–3) backed by verbatim quotes</span>
+                    </div>
+                </div>
+                <div class="symptom-distribution-list" id="symptomsList">
+                    <!-- Populated dynamically via JS -->
+                </div>
+            </section>
+
+            <!-- Right: Clinical Profile & Recurring Memory -->
+            <section class="analytics-card">
+                <div class="card-header-row">
+                    <div class="card-title-wrap">
+                        <h2 class="card-title">Long-Term Clinical Profile</h2>
+                        <span class="card-subtitle">Persistent memory entities referenced naturally across days</span>
+                    </div>
+                </div>
+                <div class="profile-content-wrap">
+                    <div class="profile-block">
+                        <span class="profile-field-label">KEY USER CONTEXT</span>
+                        <p class="profile-field-text" id="profileContext">Loading context...</p>
+                    </div>
+
+                    <div class="profile-block">
+                        <span class="profile-field-label">RECURRING STRESSOR THEMES</span>
+                        <div class="tag-cloud" id="stressorsTagCloud">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="profile-block">
+                        <span class="profile-field-label">EFFECTIVE COPING MECHANISMS</span>
+                        <div class="tag-cloud coping-cloud" id="copingTagCloud">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                    <div class="profile-block">
+                        <span class="profile-field-label">OBSERVED RESILIENCE & STRENGTHS</span>
+                        <ul class="strengths-list" id="strengthsList">
+                            <!-- Populated dynamically -->
+                        </ul>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <!-- Chronological Session Log Timeline -->
+        <section class="analytics-card timeline-section">
+            <div class="card-header-row">
+                <div class="card-title-wrap">
+                    <h2 class="card-title">Chronological Session Log</h2>
+                    <span class="card-subtitle">Detailed history of past dialogues, emotional tone, and captured verbatim quotes</span>
+                </div>
+            </div>
+            <div class="session-timeline-list" id="timelineList">
+                <!-- Populated dynamically -->
+            </div>
+        </section>
+    </main>
+
+    <footer class="analytics-footer">
+        <p class="footer-disclaimer">
+            Arogya Clinical Telemetry • Grounded exclusively in self-reported dialogue and acoustic pitch variation. For emotional reflection and early triage only, not a clinical psychiatric diagnosis.
+        </p>
+    </footer>
+
+    <script src="/static/analytics.js"></script>
+</body>
+</html>

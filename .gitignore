@@ -1,0 +1,33 @@
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Binaries & Executables (ffmpeg/ffprobe > 100MB)
+*.exe
+*.dll
+*.so
+
+# Applio local RVC suite
+Applio/
+
+# Audio Cache & Temporary Media
+mental_health_voice_ai/audio_cache/
+*.webm
+temp_*.wav
+clean_tr_*.wav
+user_speech_*.wav
+
+# Secrets & Environment variables
+.env
+mental_health_voice_ai/.env
+
+# Python Cache & Artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+
+# Databases & Local Logs
+*.log
+*.sqlite3-journal

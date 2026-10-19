@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arogya • AI Mental Health & Voice Companion</title>
+    <meta name="description" content="Speech-to-Speech Emotional Wellbeing Companion with Grounded Self-Reported Evidence and Long-Term Memory.">
+    <!-- Google Fonts: Newsreader (Warm Serif), Plus Jakarta Sans (UI Geometric), Space Grotesk (Tabular Instrument) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;1,6..72,300;1,6..72,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- Crisis Safety Helpline Banner (Hidden by Default) -->
+    <div id="crisisModal" class="crisis-modal-overlay hidden">
+        <div class="crisis-card">
+            <div class="crisis-header">
+                <div class="crisis-icon-box">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                </div>
+                <div class="crisis-titles">
+                    <h3>Confidential Support Resources</h3>
+                    <p>Free, confidential mental health professionals are ready to assist you 24/7:</p>
+                </div>
+                <button id="closeCrisisBtn" class="crisis-close-btn" title="Dismiss">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="crisis-helpline-grid" id="crisisHelplineGrid">
+                <a href="tel:14416" class="helpline-badge">
+                    <div class="helpline-call-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                    </div>
+                    <div class="helpline-details">
+                        <span class="helpline-number tabular-num">14416</span>
+                        <span class="helpline-name">Tele-MANAS (Govt. of India 24/7 National Toll-Free)</span>
+                    </div>
+                </a>
+                <a href="tel:18005990019" class="helpline-badge">
+                    <div class="helpline-call-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                    </div>
+                    <div class="helpline-details">
+                        <span class="helpline-number tabular-num">1800-599-0019</span>
+                        <span class="helpline-name">KIRAN Mental Health Support Service</span>
+                    </div>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Guided Calming Grounding Overlay (Box 4-4-4-4 & 4-7-8 Breathing with High-End Concentric Animation) -->
+    <div id="groundingModal" class="grounding-modal-overlay hidden">
+        <div class="grounding-container">
+            <div class="grounding-header">
+                <div class="grounding-title-group">
+                    <span class="grounding-mode-badge" id="groundingModeBadge">BOX 4-4-4-4 • CLINICAL RELAXATION</span>
+                    <h3 class="grounding-title">Guided Grounding Breath</h3>
+                </div>
+                <div class="grounding-controls-top">
+                    <div class="breathing-mode-selector">
+                        <button class="mode-btn active" id="modeBoxBtn" data-mode="box">Box (4-4-4-4)</button>
+                        <button class="mode-btn" id="mode478Btn" data-mode="478">Vagus (4-7-8)</button>
+                    </div>
+                    <button id="closeGroundingBtn" class="crisis-close-btn" title="Exit Exercise">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Concentric Pulsing Breathing Animation Engine -->
+            <div class="breathing-stage">
+                <div class="breathing-ring ring-outer" id="ringOuter"></div>
+                <div class="breathing-ring ring-middle" id="ringMiddle"></div>
+                <div class="breathing-ring ring-inner" id="ringInner">
+                    <div class="breathing-core">
+                        <span class="phase-instruction" id="phaseInstruction">Inhale</span>
+                        <span class="phase-countdown tabular-num" id="phaseCountdown">4s</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grounding-footer">
+                <div class="cycle-tracker">
+                    <span class="cycle-text" id="cycleTrackerText">Cycle 1 of 4</span>
+                    <span class="breathing-tip" id="breathingTip">Allow your shoulders to soften and follow the expanding rhythm.</span>
+                </div>
+                <button id="toggleBreathingBtn" class="btn-breathing-action">Pause Breath</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- App Layout: Wide Tranquil Two-Column with Slide-over Insights Drawer -->
+    <div class="app-layout" id="appLayout">
+        <!-- LEFT SIDEBAR: Sessions History & Voice Engine Switcher -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <div class="brand">
+                    <div class="brand-symbol">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </div>
+                    <div class="brand-info">
+                        <h1 class="brand-title">Arogya</h1>
+                        <span class="brand-tagline">Clinical Companion</span>
+                    </div>
+                </div>
+                <button id="newSessionBtn" class="btn-new-session" title="Start New Session">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    <span>New</span>
+                </button>
+            </div>
+
+            <!-- Voice Engine Selector (Speed Control) -->
+            <div class="voice-engine-card">
+                <div class="voice-card-header">
+                    <span class="panel-section-label">VOICE ENGINE</span>
+                    <span class="engine-badge tabular-num" id="currentEngineBadge">INSTANT</span>
+                </div>
+                <div class="engine-toggle-group">
+                    <button class="engine-btn active" id="engineFastBtn" data-mode="fast">
+                        <span class="engine-name">Fast Neural</span>
+                        <span class="engine-meta tabular-num">~0.4s • Instant</span>
+                    </button>
+                    <button class="engine-btn" id="engineClonedBtn" data-mode="cloned">
+                        <span class="engine-name">Cloned F5-TTS</span>
+                        <span class="engine-meta tabular-num">~1.9s • GPU Reference</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sessions List -->
+            <div class="sessions-section">
+                <div class="section-title-row">
+                    <span class="panel-section-label">CONVERSATIONS</span>
+                    <span class="session-count-tag tabular-num" id="sessionCountTag">0</span>
+                </div>
+                <div class="sessions-list" id="sessionsList">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <a href="/analytics" class="btn-sidebar-analytics" id="sidebarAnalyticsLink" title="View Longitudinal Analytics & Trajectory">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    <span>Longitudinal Analytics ↗</span>
+                </a>
+                <div class="memory-indicator">
+                    <span class="memory-dot"></span>
+                    <span>Longitudinal Memory Active</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- CENTER STAGE: Clean, Spacious Conversation Stream -->
+        <main class="main-stage">
+            <header class="stage-header">
+                <div class="header-left">
+                    <span class="session-category" id="currentSessionBadge">ACTIVE DIALOGUE</span>
+                    <div class="heading-editable-wrap">
+                        <h2 class="session-heading" id="currentSessionTitle">Emotional Wellness Reflection</h2>
+                        <button id="editSessionTitleBtn" class="btn-icon-subtle" title="Rename Session">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="header-right">
+                    <!-- Grounding Breathing Trigger Button -->
+                    <button id="openGroundingBtn" class="btn-header-tool" title="Open Guided Calming Breathing">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>
+                        <span>Grounding</span>
+                    </button>
+
+                    <!-- Hands-Free VAD Mode Toggle -->
+                    <button id="handsFreeToggleBtn" class="btn-header-tool btn-hands-free" title="Toggle Hands-Free Continuous Dialogue">
+                        <span class="hands-free-dot"></span>
+                        <span id="handsFreeLabel">Hands-Free: OFF</span>
+                    </button>
+
+                    <!-- Dedicated Separate Analytics Page Link -->
+                    <a href="/analytics" class="btn-header-tool btn-analytics-nav" title="Open Multi-Session Analytics & Trajectory">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+                        <span>Analytics</span>
+                    </a>
+
+                    <!-- On-Demand Insights Drawer Toggle Button -->
+                    <button id="toggleInsightsBtn" class="btn-insights-toggle" title="View Estimated Signals & Reasons">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 20V10M12 20V4M6 20v-6"/>
+                        </svg>
+                        <span>Insights</span>
+                    </button>
+
+                    <!-- Theme Toggle (Light / Dark) -->
+                    <button id="themeToggleBtn" class="theme-toggle-btn" title="Toggle Light / Dark Mode">
+                        <svg class="theme-icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="5"></circle>
+                            <line x1="12" y1="1" x2="12" y2="3"></line>
+                            <line x1="12" y1="21" x2="12" y2="23"></line>
+                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                            <line x1="1" y1="12" x2="3" y2="12"></line>
+                            <line x1="21" y1="12" x2="23" y2="12"></line>
+                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                        </svg>
+                        <svg class="theme-icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                        </svg>
+                        <span class="theme-label" id="themeLabel">Dark</span>
+                    </button>
+
+                    <div class="live-status-pill" id="liveStatusPill">
+                        <span class="status-indicator"></span>
+                        <span id="liveStatusText">Ready</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Minimalist Wave Ribbon & VU Meter -->
+            <div class="voice-ribbon-bar" id="voiceRibbonBar">
+                <div class="voice-ribbon-left">
+                    <div class="voice-waveform-wrap">
+                        <canvas id="waveformCanvas" width="140" height="26"></canvas>
+                    </div>
+                    <span class="voice-status-caption" id="orbCaption">Click microphone or type below to reflect</span>
+                </div>
+                <!-- Precision VU Meter -->
+                <div class="mic-meter-box" id="micMeterBox">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                    <div class="mic-meter-bar-track">
+                        <div class="mic-meter-bar-fill" id="micMeterFill"></div>
+                    </div>
+                    <span class="mic-meter-status-text tabular-num" id="micMeterStatus">Standby</span>
+                </div>
+            </div>
+
+            <!-- Chat Stream (Captions & Spoken Words Hero Stage) -->
+            <div class="chat-stream" id="chatStream">
+                <!-- Dynamically populated with Newsreader caption cards -->
+            </div>
+
+            <!-- Tension Detected Subtle Grounding Pill -->
+            <div id="groundingInvitePill" class="grounding-invite-pill hidden">
+                <div class="invite-pill-content">
+                    <div class="invite-pill-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>
+                    </div>
+                    <span class="invite-pill-text">Noticeable emotional tension detected. Take a 1-minute calming breath?</span>
+                    <button id="acceptGroundingBtn" class="btn-pill-start">Start Breath</button>
+                    <button id="dismissGroundingBtn" class="btn-pill-dismiss" title="Dismiss">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Interaction Dock -->
+            <footer class="interaction-dock">
+                <!-- Microphone Hardware Selector -->
+                <div class="mic-toolbar">
+                    <div class="mic-select-wrap">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                        <select id="micDeviceSelect" class="mic-select" title="Microphone Input Hardware">
+                            <option value="">Detecting audio microphones...</option>
+                        </select>
+                    </div>
+                    <span class="mic-tip-text">Physical mic (Realtek / Headset) recommended</span>
+                </div>
+
+                <div class="dock-container">
+                    <!-- Mic Button with Dual-Ring Speaking Animation -->
+                    <button id="micBtn" class="btn-mic" title="Click to speak">
+                        <svg class="mic-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="23"/>
+                            <line x1="8" y1="23" x2="16" y2="23"/>
+                        </svg>
+                    </button>
+
+                    <!-- Text Input -->
+                    <div class="text-input-wrap">
+                        <input type="text" id="textInput" placeholder="Speak through microphone or type your thoughts in English or Tanglish..." autocomplete="off">
+                        <button id="sendBtn" class="btn-send" title="Send message">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="22" y1="2" x2="11" y2="13"></line>
+                                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                            </svg>
+                        </button>
+                    </div>
+
+                    <!-- Speaker Autoplay Toggle -->
+                    <button id="speakerToggleBtn" class="btn-icon" title="Toggle audio voice playback">
+                        <svg id="speakerIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                        </svg>
+                    </button>
+                </div>
+            </footer>
+        </main>
+
+        <!-- SLIDE-OVER INSIGHTS DRAWER: Opens On Demand Whenever User Wants -->
+        <aside class="insights-drawer" id="insightsDrawer">
+            <div class="drawer-header">
+                <div class="drawer-titles">
+                    <h3 class="drawer-title">Estimated Emotional Signals</h3>
+                    <span class="drawer-subtitle" id="drawerSubtitle">Cumulative Average Across Conversations</span>
+                </div>
+                <button id="closeInsightsBtn" class="drawer-close-btn" title="Close Panel">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <!-- Overall Wellness Dial Card with Confidence -->
+            <div class="score-card">
+                <div class="score-dial-wrap">
+                    <svg class="score-svg" viewBox="0 0 100 100">
+                        <circle class="score-bg-circle" cx="50" cy="50" r="40"></circle>
+                        <circle class="score-progress-circle" id="scoreCircle" cx="50" cy="50" r="40" style="stroke-dashoffset: 62.8;"></circle>
+                    </svg>
+                    <div class="score-value-box">
+                        <span class="score-number tabular-num" id="wellnessScoreNum">75</span>
+                        <span class="score-max tabular-num">/100</span>
+                    </div>
+                </div>
+                <div class="score-summary">
+                    <span class="score-status-badge" id="wellnessBadge">Grounded & Balanced</span>
+                    <span class="confidence-indicator tabular-num" id="confidenceBadge">Confidence: 60%</span>
+                    <span class="dominant-emotion-text" id="dominantEmotion">Primary State: Calm</span>
+                    <span class="session-aggregate-note tabular-num" id="aggregateNote">Session Average (1 reflection)</span>
+                </div>
+            </div>
+
+            <!-- Grounded Symptom Breakdown with Exact Quotes & Reasons -->
+            <div class="drawer-section">
+                <div class="section-label-row">
+                    <span class="panel-section-label">EVALUATED SYMPTOMS & COMPILED EVIDENCE (ALL CHATS)</span>
+                </div>
+                <div class="evidence-list" id="evidenceReasonsList">
+                    <!-- Populated dynamically with scores & quotes -->
+                </div>
+            </div>
+
+            <!-- Voice Prosodic Biomarkers (Code DSP) -->
+            <div class="drawer-section">
+                <div class="section-label-row">
+                    <span class="panel-section-label">VOICE PROSODIC SIGNALS (DSP)</span>
+                </div>
+                <div class="telemetry-card">
+                    <div class="prosody-metric-row">
+                        <span class="prosody-label">Pitch Variation (Semitones)</span>
+                        <span class="prosody-val tabular-num" id="semitoneVal">1.8 st</span>
+                    </div>
+                    <p class="telemetry-note" id="prosodyNote">
+                        Speaker-relative pitch variance normalized to self-median.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Download Report Button -->
+            <div class="drawer-actions">
+                <button id="downloadReportBtn" class="btn-download-report" title="Download Session Report (Markdown)">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="7 10 12 15 17 10"></polyline>
+                        <line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                    <span>Download Session Report</span>
+                </button>
+                <span class="ethical-disclaimer">
+                    Estimated signals derived from self-reported dialogue and voice prosody. For personal reflection only, not a clinical diagnosis.
+                </span>
+            </div>
+        </aside>
+    </div>
+
+    <!-- Hidden audio element for speech playback -->
+    <audio id="audioPlayer" preload="auto"></audio>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

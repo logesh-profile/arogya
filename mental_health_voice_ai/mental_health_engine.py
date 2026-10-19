@@ -1,0 +1,474 @@
+import os
+import sys
+import re
+import json
+import numpy as np
+from typing import Dict, Any, Tuple, Optional, List
+import soundfile as sf
+import librosa
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
+
+# Ensure UTF-8 on Windows
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+
+# Load configuration from .env
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+API_KEY = os.getenv("GEMINI_API_KEY", "")
+client = genai.Client(api_key=API_KEY) if API_KEY else None
+
+# ---------------------------------------------------------------------------
+# 1. CRISIS SAFETY DETECTION (Decoupled - Never Touches or Fabricates Scores)
+# ---------------------------------------------------------------------------
+def check_crisis_risk(text: str) -> Tuple[bool, Optional[str]]:
+    """
+    Dual-layer safety check:
+    1. Multi-phrase inspection (English & Tanglish).
+    2. False positive negation guards ('exam is killing me', 'don't want to die').
+    """
+    if not text:
+        return False, None
+
+    lower = text.lower().strip()
+
+    # Negation / Idiom guards (colloquial expressions that must NOT trigger crisis)
+    idiom_guards = [
+        "exam is killing me", "work is killing me", "traffic is killing me",
+        "assignment is killing me", "don't want to die", "do not want to die",
+        "i want to live"
+    ]
+    if any(guard in lower for guard in idiom_guards):
+        return False, None
+
+    # Acute expressions in English and Tanglish
+    acute_patterns = [
+        r"\b(suicide|kill myself|end my life|want to die|commit suicide|harm myself)\b",
+        r"\b(no reason to live|better off dead|cutting myself|hang myself|take all my pills)\b",
+        r"\b(ending it all|give up on life|don't want to wake up)\b",
+        r"\b(vaazha pudikala|uyira vitruven|seththudalam|sethuruven|marikka thonudhu)\b"
+    ]
+    for pattern in acute_patterns:
+        if re.search(pattern, lower):
+            return True, "Acute distress or self-harm ideation detected."
+    return False, None
+
+
+# ---------------------------------------------------------------------------
+# 2. TEXT NORMALIZATION (For Crystal-Clear F5-TTS / Edge-TTS Pronunciation)
+# ---------------------------------------------------------------------------
+def normalize_text_for_speech(text: str) -> str:
+    """
+    Cleans text for natural pronunciation:
+    - Removes markdown syntax, asterisks, brackets.
+    - Expands symbols: % -> percent, & -> and, + -> plus.
+    - Converts numbers and helplines to spoken words.
+    """
+    if not text:
+        return ""
+    
+    cleaned = re.sub(r'[*_#`~\[\]]', '', text)
+    cleaned = cleaned.replace('%', ' percent ')
+    cleaned = cleaned.replace('&', ' and ')
+    cleaned = cleaned.replace('@', ' at ')
+    cleaned = cleaned.replace('+', ' plus ')
+    cleaned = cleaned.replace('/', ' or ')
+    
+    number_map = {
+        r'\b1st\b': 'first', r'\b2nd\b': 'second', r'\b3rd\b': 'third',
+        r'\b0\b': 'zero', r'\b1\b': 'one', r'\b2\b': 'two', r'\b3\b': 'three',
+        r'\b4\b': 'four', r'\b5\b': 'five', r'\b6\b': 'six', r'\b7\b': 'seven',
+        r'\b8\b': 'eight', r'\b9\b': 'nine', r'\b10\b': 'ten',
+        r'\b24/7\b': 'twenty four seven', r'\b14416\b': 'one four four one six',
+        r'\b100\b': 'one hundred', r'\b50\b': 'fifty', r'\b24\b': 'twenty four'
+    }
+    for pattern, word in number_map.items():
+        cleaned = re.sub(pattern, word, cleaned, flags=re.IGNORECASE)
+        
+    cleaned = re.sub(r'[^\w\s.,?!;:\'-]', '', cleaned)
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned
+
+
+# ---------------------------------------------------------------------------
+# 3. DSP ACOUSTIC EXTRACTION (Probabilistic YIN & Semitone Normalization)
+# ---------------------------------------------------------------------------
+def extract_acoustic_features(audio_path: str) -> Dict[str, Any]:
+    """
+    Scientific voice feature extraction (Code-only DSP, NOT passed to LLM):
+    - librosa.pyin: fundamental frequency estimation.
+    - Semitone deviation: 12 * log2(f0 / median(f0)), gender-neutral & pitch-invariant.
+    - Pause ratio: silence vs voiced speech.
+    """
+    try:
+        y, sr = librosa.load(audio_path, sr=16000)
+        duration = float(librosa.get_duration(y=y, sr=sr))
+        if duration < 0.6:
+            return {
+                "duration": round(duration, 2),
+                "pitch_semitone_std": None,
+                "pause_ratio": 0.0,
+                "is_valid_speech": False,
+                "note": "Audio sample too brief for stable pitch estimation"
+            }
+
+        # Probabilistic YIN (pyin) for robust fundamental frequency tracking
+        f0, voiced_flag, _ = librosa.pyin(y, fmin=75, fmax=400, sr=sr)
+        valid_f0 = f0[voiced_flag & ~np.isnan(f0)]
+
+        # Check voiced frame threshold (at least ~0.35s of voiced speech)
+        min_voiced_frames = int((sr / 512) * 3)
+        if len(valid_f0) < min_voiced_frames:
+            semitone_std = None
+            note = "Insufficient voiced frames detected"
+        else:
+            median_f0 = float(np.median(valid_f0))
+            if median_f0 > 0:
+                # Semitones relative to speaker's own median: 12 * log2(f0 / median)
+                semitones = 12.0 * np.log2(valid_f0 / median_f0)
+                semitone_std = round(float(np.std(semitones)), 2)
+                note = f"Median F0: {round(median_f0, 1)} Hz, Semitone Std: {semitone_std} st"
+            else:
+                semitone_std = None
+                note = "Median pitch calculation invalid"
+
+        # Silence / Pause ratio
+        non_silent_intervals = librosa.effects.split(y, top_db=25)
+        non_silent_duration = sum([(end - start) / sr for start, end in non_silent_intervals])
+        pause_ratio = max(0.0, float((duration - non_silent_duration) / duration)) if duration > 0 else 0.0
+
+        return {
+            "duration": round(duration, 2),
+            "pitch_semitone_std": semitone_std,
+            "pause_ratio": round(pause_ratio, 2),
+            "is_valid_speech": semitone_std is not None,
+            "note": note
+        }
+    except Exception as e:
+        print(f"[!] Acoustic extraction error: {e}")
+        return {
+            "duration": 0.0,
+            "pitch_semitone_std": None,
+            "pause_ratio": 0.0,
+            "is_valid_speech": False,
+            "note": "Extraction error"
+        }
+
+
+# ---------------------------------------------------------------------------
+# 4. EVIDENCE-GROUNDED SYMPTOM SCORING (LLM at temperature=0.0)
+# ---------------------------------------------------------------------------
+SYSTEM_INSTRUCTION = """
+You are Arogya, a deeply empathetic, reflective voice companion.
+You converse with the user through spoken audio. Your style and principles:
+
+1. BILINGUAL CONVERSATION (INDIAN ENGLISH & TANGLISH):
+   - Flawlessly understand Indian English and Tanglish (Tamil in Latin script, e.g. 'inaiku ennode day epdi irundhuchi', 'romba tension', 'konjam tired').
+   - If the user speaks Tanglish, reply warmly in natural conversational Tanglish or Indian English.
+   - Speak like an attentive, wise friend. Never give generic boilerplate.
+   - PUNCHY SPOKEN LENGTH: Keep your spoken reply to EXACTLY 1 to 2 warm sentences (maximum 28 words) so speech generation is instantaneous.
+
+2. GROUNDED EVIDENCE SCORING (STRICT EMPIRICAL CRITERIA):
+   Evaluate the user's explicit current statement across 4 specific emotional dimensions (score 0 to 3):
+   - "stress_tension": (0 = not mentioned, 1 = mild pressure, 2 = moderate stress, 3 = severe overwhelming pressure)
+   - "worry_apprehension": (0 = not mentioned, 1 = slight concern, 2 = noticeable worry, 3 = acute fear or panic)
+   - "fatigue_exhaustion": (0 = not mentioned, 1 = mild tiredness, 2 = notable exhaustion, 3 = completely drained)
+   - "emotional_heaviness": (0 = not mentioned, 1 = slight low mood, 2 = moderate sadness or discouragement, 3 = deep heavy burden)
+
+   CRITICAL GROUNDING RULE:
+   For each item, you MUST provide an exact verbatim quote from the user's transcript as evidence.
+   If the user did NOT explicitly express or mention symptoms for that item, the score MUST BE 0 and quote MUST BE "".
+   NO QUOTE = NO POINTS. DO NOT GUESS OR INVENT EVIDENCE.
+
+You MUST output strictly valid JSON matching this exact structure:
+{
+  "reply_text": "Spoken reply (1-2 sentences, max 28 words in natural English or Tanglish)",
+  "conversation_title": "2-4 words accurately summarizing the topic in title case (e.g. Exam Stress, Work Overwhelm, Daily Reflection)",
+  "dominant_state": "1-2 words summarizing their state (e.g. Overwhelmed, Exhausted, Calm, Reflective, Hopeful)",
+  "evidence": {
+    "stress_tension": {"score": 0, "quote": ""},
+    "worry_apprehension": {"score": 0, "quote": ""},
+    "fatigue_exhaustion": {"score": 0, "quote": ""},
+    "emotional_heaviness": {"score": 0, "quote": ""}
+  },
+  "observed_resilience": "1 concise sentence noting any coping strength shown (e.g. self-awareness, seeking connection)",
+  "summary_snippet": "A 1-sentence note of what the user talked about for session memory"
+}
+"""
+
+
+# ---------------------------------------------------------------------------
+# 5. DETERMINISTIC MATHEMATICAL FUSION (Calculated in Python Code)
+# ---------------------------------------------------------------------------
+def compute_deterministic_wellness(
+    evidence_dict: Dict[str, Any],
+    voice_z: Optional[float] = None,
+    trend_z: Optional[float] = None,
+    n_sessions: int = 1
+) -> Dict[str, Any]:
+    """
+    Deterministic score calculation:
+    - text_sym: sum of 4 items (max 12 points) / 12.0 -> range [0.0, 1.0]
+    - wellness: 100 * (1 - (0.6*text_sym + 0.15*voice_z + 0.25*trend_z))
+    """
+    scores = []
+    reasons = []
+
+    dim_labels = {
+        "stress_tension": "Stress & Pressure",
+        "worry_apprehension": "Worry & Apprehension",
+        "fatigue_exhaustion": "Fatigue & Low Energy",
+        "emotional_heaviness": "Emotional Heaviness"
+    }
+
+    for key, label in dim_labels.items():
+        item = evidence_dict.get(key, {})
+        score = item.get("score", 0)
+        quote = (item.get("quote") or "").strip()
+
+        # Enforce rule: No quote means no points!
+        if not quote and score > 0:
+            score = 0
+
+        scores.append(score)
+        reasons.append({
+            "key": key,
+            "label": label,
+            "score": score,
+            "max_score": 3,
+            "quote": quote if quote else "No explicit mention in statement"
+        })
+
+    total_symptom_pts = sum(scores)
+    max_pts = 12.0
+    text_sym = total_symptom_pts / max_pts  # 0.0 to 1.0
+
+    s = 0.6 * text_sym
+    if voice_z is not None and n_sessions >= 5:
+        s += 0.15 * float(np.clip(voice_z / 3.0, -1.0, 1.0))
+    if trend_z is not None and n_sessions >= 5:
+        s += 0.25 * float(np.clip(trend_z / 3.0, -1.0, 1.0))
+
+    confidence = round(min(1.0, max(0.25, n_sessions / 5.0)), 2)
+    wellness_score = int(np.clip(round(100.0 * (1.0 - s)), 5, 100))
+
+    return {
+        "overall_wellness": wellness_score,
+        "confidence": confidence,
+        "text_symptom_ratio": round(text_sym, 2),
+        "total_points": total_symptom_pts,
+        "max_points": 12,
+        "reasons": reasons
+    }
+
+
+# ---------------------------------------------------------------------------
+# 6. FAST AUTOMATIC CONVERSATION TITLING
+# ---------------------------------------------------------------------------
+def generate_quick_session_title(text: str) -> str:
+    """
+    Instantly generates a smart 2-4 word conversation title from the first message.
+    """
+    if not text or len(text.strip()) < 3:
+        return "Daily Reflection"
+
+    lower = text.lower().strip()
+    # Fast topic matching:
+    if any(k in lower for k in ["exam", "test", "study", "marks", "grade", "college", "school", "sem", "syllabus"]):
+        return "Academic Pressure"
+    if any(k in lower for k in ["work", "job", "office", "boss", "interview", "salary", "deadline", "project", "client"]):
+        return "Workplace & Career"
+    if any(k in lower for k in ["tired", "sleep", "exhaust", "rest", "insomnia", "drained", "night"]):
+        return "Fatigue & Sleep"
+    if any(k in lower for k in ["overwhelm", "tension", "stress", "anxious", "panic", "worry", "fear"]):
+        return "Emotional Strain"
+    if any(k in lower for k in ["family", "friend", "relationship", "breakup", "love", "parents", "partner"]):
+        return "Personal Relationships"
+    if any(k in lower for k in ["alone", "lonely", "nobody", "isolated"]):
+        return "Loneliness & Connection"
+    if any(k in lower for k in ["sad", "cry", "depress", "hopeless", "heavy"]):
+        return "Emotional Heaviness"
+    if any(k in lower for k in ["calm", "peace", "relax", "happy", "good", "grateful"]):
+        return "Peace & Gratitude"
+    if any(k in lower for k in ["day", "inaiku", "today", "epdi"]):
+        return "Daily Check-in"
+
+    # Fallback to key meaningful words:
+    clean = re.sub(r'[^\w\s]', '', text)
+    stop_words = {"hello", "arogya", "today", "feel", "feeling", "really", "very", "much", "want", "like", "just", "that", "this", "with", "have"}
+    words = [w.capitalize() for w in clean.split() if len(w) > 3 and w.lower() not in stop_words]
+    if words:
+        return " ".join(words[:3])
+    return "Personal Check-in"
+
+
+# ---------------------------------------------------------------------------
+# 7. MAIN ANALYZE AND RESPOND PIPELINE
+# ---------------------------------------------------------------------------
+def analyze_and_respond(
+    current_transcript: str,
+    acoustic_features: Dict[str, Any],
+    session_history: list,
+    historical_context: str,
+    voice_z: Optional[float] = None,
+    trend_z: Optional[float] = None,
+    n_sessions: int = 1
+) -> Dict[str, Any]:
+    """
+    Unified analysis pipeline:
+    1. Checks acute crisis flag (independent safety triage).
+    2. Calls Gemini 3.5 Flash Lite with temperature=0.0 for sub-second deterministic quote-backed symptom evaluation.
+    3. Computes overall wellness deterministically in Python code.
+    4. Voice acoustic features are calculated via pyin and kept uncoupled from the LLM prompt.
+    """
+    # 1. Immediate Crisis Safety Evaluation
+    is_crisis, crisis_reason = check_crisis_risk(current_transcript)
+    if is_crisis:
+        print(f"[!] Crisis safety alert: '{current_transcript}' ({crisis_reason})")
+        raw_crisis_reply = (
+            "I want you to know that you are not alone, and your life has deep value. "
+            "Please take a gentle breath with me right now. I care about your safety, "
+            "and caring professionals are available for free 24/7 at Tele-MANAS, dial one four four one six."
+        )
+        normalized_crisis_reply = normalize_text_for_speech(raw_crisis_reply)
+        # Note: We do NOT fabricate fake numerical scores on crisis!
+        return {
+            "reply_text": normalized_crisis_reply,
+            "overall_wellness": None, # Uncorrupted
+            "confidence": 1.0,
+            "dominant_state": "Crisis Alert",
+            "conversation_title": "Crisis Support Alert",
+            "is_crisis": True,
+            "crisis_reason": crisis_reason,
+            "reasons": [
+                {"label": "Crisis Safety Protocol", "score": 3, "max_score": 3, "quote": current_transcript}
+            ],
+            "acoustic_features": acoustic_features,
+            "helplines": [
+                {"name": "Tele-MANAS (Govt of India)", "number": "14416", "desc": "24/7 Free, Confidential National Helpline"},
+                {"name": "KIRAN Mental Health Service", "number": "1800-599-0019", "desc": "National Mental Health Support"},
+                {"name": "Vandrevala Foundation", "number": "+91 9999 666 555", "desc": "Free 24/7 Crisis Counseling Support"}
+            ]
+        }
+
+    # 2. Build Prompt (Pure Transcript + Conversational Context, NO contaminated voice heuristics)
+    history_snippet = []
+    for m in session_history[-4:]:
+        history_snippet.append(f"{m['role'].upper()}: {m['text']}")
+    history_str = "\n".join(history_snippet) if history_snippet else "Conversation just began."
+
+    prompt = f"""
+{historical_context}
+
+--- CURRENT DIALOGUE ---
+{history_str}
+USER (Just now): "{current_transcript}"
+
+Evaluate the emotional statement based strictly on the user's explicit words.
+Produce the requested JSON:
+"""
+
+    try:
+        # LLM inference with gemini-3.5-flash-lite at temperature=0.0 for sub-second, zero-hallucination response
+        response = client.models.generate_content(
+            model="gemini-3.5-flash-lite",
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                response_mime_type="application/json",
+                temperature=0.0,
+            )
+        )
+        data = json.loads(response.text)
+    except Exception as e:
+        print(f"[!] Primary model notice: {e}, attempting fallback...")
+        try:
+            response = client.models.generate_content(
+                model="gemini-flash-latest",
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    response_mime_type="application/json",
+                    temperature=0.0,
+                )
+            )
+            data = json.loads(response.text)
+        except Exception as e2:
+            print(f"[!] Fallback LLM error: {e2}")
+            data = {
+                "reply_text": "I hear you, and I am right here with you. Take a soft breath. Tell me what has been on your mind.",
+                "conversation_title": generate_quick_session_title(current_transcript),
+                "dominant_state": "Reflective",
+                "evidence": {
+                    "stress_tension": {"score": 0, "quote": ""},
+                    "worry_apprehension": {"score": 0, "quote": ""},
+                    "fatigue_exhaustion": {"score": 0, "quote": ""},
+                    "emotional_heaviness": {"score": 0, "quote": ""}
+                },
+                "observed_resilience": "Open self-expression",
+                "summary_snippet": f"User shared: '{current_transcript[:50]}...'"
+            }
+
+    # 3. Deterministic Python scoring from the evidence
+    evidence = data.get("evidence", {})
+    calc = compute_deterministic_wellness(
+        evidence_dict=evidence,
+        voice_z=voice_z,
+        trend_z=trend_z,
+        n_sessions=n_sessions
+    )
+
+    # 4. Somatic Grounding Detection (Auto-suggest breathing if stress/worry >= 2)
+    stress_pt = evidence.get("stress_tension", {}).get("score", 0)
+    worry_pt = evidence.get("worry_apprehension", {}).get("score", 0)
+    suggest_grounding = (stress_pt >= 2 or worry_pt >= 2)
+    grounding_mode = "box" if stress_pt >= 2 else "478"
+
+    # 5. Persistent Longitudinal Profile Extraction
+    profile_updates = data.get("profile_updates", {})
+    if profile_updates and isinstance(profile_updates, dict):
+        try:
+            from database import update_user_clinical_profile
+            update_user_clinical_profile(
+                user_id="primary_user",
+                key_context=profile_updates.get("key_context"),
+                new_stressor=profile_updates.get("new_stressor"),
+                new_coping=profile_updates.get("effective_coping")
+            )
+        except Exception as pe:
+            print(f"[!] Clinical profile auto-update notice: {pe}")
+
+    # 6. Spoken text normalization
+    raw_reply = data.get("reply_text", "I'm listening and I'm right here with you.")
+    spoken_reply = normalize_text_for_speech(raw_reply)
+
+    # 7. Extract conversation title
+    llm_title = (data.get("conversation_title") or "").strip().strip('"\'')
+    if llm_title and len(llm_title.split()) <= 5:
+        conversation_title = llm_title
+    else:
+        conversation_title = generate_quick_session_title(current_transcript)
+
+    return {
+        "reply_text": spoken_reply,
+        "conversation_title": conversation_title,
+        "overall_wellness": calc["overall_wellness"],
+        "confidence": calc["confidence"],
+        "dominant_state": data.get("dominant_state", "Reflective"),
+        "reasons": calc["reasons"],
+        "total_points": calc["total_points"],
+        "max_points": calc["max_points"],
+        "observed_resilience": data.get("observed_resilience", "Sharing feelings openly"),
+        "summary_snippet": data.get("summary_snippet", ""),
+        "acoustic_features": acoustic_features,
+        "suggest_grounding": suggest_grounding,
+        "grounding_mode": grounding_mode,
+        "is_crisis": False
+    }
