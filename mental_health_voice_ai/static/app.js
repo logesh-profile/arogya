@@ -81,6 +81,11 @@ let isVoiceModalActive = false;
 let voiceToneCentroid = 200;
 let currentAiReplyText = "";
 
+// Auth State Variables
+let currentUser = null;
+let googleClientId = "";
+let isGoogleConfigured = false;
+
 // --- INITIALIZATION ---
 document.addEventListener("DOMContentLoaded", async () => {
     initTheme();
@@ -91,11 +96,256 @@ document.addEventListener("DOMContentLoaded", async () => {
     initCanvasVisualizer();
     setupAudioPlayerEvents();
     await initMicDeviceSelector();
+    await initAuth();
 
     await loadSessions();
     // Always start a fresh new chat session on entry
     await startNewSession(true);
 });
+
+// ==========================================================================
+// GOOGLE OAUTH 2.0 & MULTI-USER AUTHENTICATION CONTROLLER
+// ==========================================================================
+async function initAuth() {
+    try {
+        // 1. Fetch server auth configuration
+        const cfgRes = await fetch("/api/auth/config");
+        if (cfgRes.ok) {
+            const cfg = await cfgRes.json();
+            googleClientId = cfg.client_id || "";
+            isGoogleConfigured = cfg.is_configured || false;
+        }
+
+        // 2. Fetch authenticated state
+        const meRes = await fetch("/api/auth/me");
+        if (meRes.ok) {
+            const meData = await meRes.json();
+            currentUser = meData.user;
+            updateAuthUI(meData.authenticated, meData.user);
+        }
+
+        // 3. Setup GSI (Google Identity Services) button if configured
+        setupGoogleIdentity();
+
+        // 4. Bind UI Click Handlers
+        setupAuthEvents();
+    } catch (e) {
+        console.warn("Auth initialization notice:", e);
+    }
+}
+
+function updateAuthUI(isAuthenticated, user) {
+    const signInBtn = document.getElementById("authSignInBtn");
+    const userMenuWrap = document.getElementById("userProfileDropdown");
+    const nameLabel = document.getElementById("userNameLabel");
+    const cardUserName = document.getElementById("cardUserName");
+    const cardUserEmail = document.getElementById("cardUserEmail");
+    const userAvatarImg = document.getElementById("userAvatarImg");
+    const userAvatarFallback = document.getElementById("userAvatarFallback");
+    const sidebarUserName = document.getElementById("sidebarUserName");
+    const sidebarUserAvatar = document.getElementById("sidebarUserAvatar");
+
+    const displayName = (user && (user.given_name || user.name)) ? (user.given_name || user.name) : "Logeshwaran";
+    const fullName = (user && user.name) ? user.name : "Logeshwaran";
+    const email = (user && user.email) ? user.email : "logeshwaran@example.com";
+    const picture = (user && user.picture) ? user.picture : "";
+    const initial = fullName ? fullName[0].toUpperCase() : "L";
+
+    if (nameLabel) nameLabel.textContent = displayName;
+    if (cardUserName) cardUserName.textContent = fullName;
+    if (cardUserEmail) cardUserEmail.textContent = email;
+    if (sidebarUserName) sidebarUserName.textContent = displayName;
+    if (userAvatarFallback) userAvatarFallback.textContent = initial;
+    if (sidebarUserAvatar) sidebarUserAvatar.textContent = initial;
+
+    if (picture) {
+        if (userAvatarImg) {
+            userAvatarImg.src = picture;
+            userAvatarImg.classList.remove("hidden");
+        }
+        if (userAvatarFallback) userAvatarFallback.classList.add("hidden");
+    } else {
+        if (userAvatarImg) userAvatarImg.classList.add("hidden");
+        if (userAvatarFallback) userAvatarFallback.classList.remove("hidden");
+    }
+
+    if (isAuthenticated) {
+        if (signInBtn) signInBtn.classList.add("hidden");
+        if (userMenuWrap) userMenuWrap.classList.remove("hidden");
+    } else {
+        if (signInBtn) signInBtn.classList.remove("hidden");
+        if (userMenuWrap) userMenuWrap.classList.remove("hidden");
+    }
+
+    // Highlight active demo account button in modal
+    const logeshBtn = document.getElementById("demoLoginLogeshBtn");
+    const sarahBtn = document.getElementById("demoLoginSarahBtn");
+    if (logeshBtn) logeshBtn.classList.toggle("active", user && (user.id === "primary_user" || user.name === "Logeshwaran"));
+    if (sarahBtn) sarahBtn.classList.toggle("active", user && (user.id === "usr_sarah_researcher" || (user.name && user.name.includes("Sarah"))));
+}
+
+function setupGoogleIdentity() {
+    const gsiContainer = document.getElementById("gsiButtonContainer");
+    const gsiNotice = document.getElementById("gsiUnconfiguredNotice");
+
+    if (isGoogleConfigured && googleClientId && window.google && google.accounts) {
+        try {
+            google.accounts.id.initialize({
+                client_id: googleClientId,
+                callback: handleGoogleCredentialResponse,
+                auto_select: false
+            });
+            if (gsiContainer) {
+                gsiContainer.innerHTML = "";
+                google.accounts.id.renderButton(gsiContainer, {
+                    theme: "outline",
+                    size: "large",
+                    type: "standard",
+                    shape: "pill",
+                    width: 280,
+                    text: "signin_with"
+                });
+            }
+            if (gsiNotice) gsiNotice.classList.add("hidden");
+        } catch (err) {
+            console.warn("Google Identity render notice:", err);
+            if (gsiNotice) gsiNotice.classList.remove("hidden");
+        }
+    } else {
+        if (gsiNotice) gsiNotice.classList.remove("hidden");
+    }
+}
+
+async function handleGoogleCredentialResponse(response) {
+    if (!response || !response.credential) return;
+    try {
+        const res = await fetch("/api/auth/google", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ credential: response.credential })
+        });
+        if (!res.ok) {
+            const err = await res.json();
+            alert("Google Sign-In notice: " + (err.detail || "Authentication error"));
+            return;
+        }
+        const data = await res.json();
+        currentUser = data.user;
+        updateAuthUI(true, data.user);
+        closeAuthModal();
+        await loadSessions();
+        await startNewSession(true);
+    } catch (e) {
+        console.error("Google sign-in error:", e);
+    }
+}
+
+function setupAuthEvents() {
+    const signInBtn = document.getElementById("authSignInBtn");
+    const userProfileBtn = document.getElementById("userProfileBtn");
+    const userDropdownCard = document.getElementById("userDropdownCard");
+    const closeAuthModalBtn = document.getElementById("closeAuthModalBtn");
+    const authModal = document.getElementById("authModal");
+    const cardSignOutBtn = document.getElementById("cardSignOutBtn");
+    const cardSwitchAccountBtn = document.getElementById("cardSwitchAccountBtn");
+    const sidebarAuthBtn = document.getElementById("sidebarAuthBtn");
+
+    if (signInBtn) {
+        signInBtn.addEventListener("click", openAuthModal);
+    }
+    if (sidebarAuthBtn) {
+        sidebarAuthBtn.addEventListener("click", openAuthModal);
+    }
+    if (cardSwitchAccountBtn) {
+        cardSwitchAccountBtn.addEventListener("click", () => {
+            if (userDropdownCard) userDropdownCard.classList.add("hidden");
+            openAuthModal();
+        });
+    }
+
+    if (userProfileBtn && userDropdownCard) {
+        userProfileBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            userDropdownCard.classList.toggle("hidden");
+        });
+
+        document.addEventListener("click", (e) => {
+            if (!userDropdownCard.contains(e.target) && e.target !== userProfileBtn) {
+                userDropdownCard.classList.add("hidden");
+            }
+        });
+    }
+
+    if (closeAuthModalBtn) {
+        closeAuthModalBtn.addEventListener("click", closeAuthModal);
+    }
+    if (authModal) {
+        authModal.addEventListener("click", (e) => {
+            if (e.target === authModal) closeAuthModal();
+        });
+    }
+
+    // Sign out button
+    if (cardSignOutBtn) {
+        cardSignOutBtn.addEventListener("click", async () => {
+            if (userDropdownCard) userDropdownCard.classList.add("hidden");
+            try {
+                await fetch("/api/auth/logout", { method: "POST" });
+                currentUser = null;
+                updateAuthUI(false, { name: "Logeshwaran", email: "logeshwaran@example.com" });
+                await loadSessions();
+                await startNewSession(true);
+            } catch (e) {
+                console.warn("Logout notice:", e);
+            }
+        });
+    }
+
+    // Demo account quick switchers
+    const demoLogesh = document.getElementById("demoLoginLogeshBtn");
+    const demoSarah = document.getElementById("demoLoginSarahBtn");
+
+    if (demoLogesh) {
+        demoLogesh.addEventListener("click", () => switchDemoAccount("logeshwaran"));
+    }
+    if (demoSarah) {
+        demoSarah.addEventListener("click", () => switchDemoAccount("sarah"));
+    }
+}
+
+async function switchDemoAccount(accountType) {
+    try {
+        const res = await fetch("/api/auth/demo", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ account: accountType })
+        });
+        if (res.ok) {
+            const data = await res.json();
+            currentUser = data.user;
+            updateAuthUI(true, data.user);
+            closeAuthModal();
+            // Reload user's isolated sessions and start fresh active dialogue
+            await loadSessions();
+            await startNewSession(true);
+        }
+    } catch (e) {
+        console.error("Demo account switch error:", e);
+    }
+}
+
+function openAuthModal() {
+    const modal = document.getElementById("authModal");
+    if (modal) {
+        modal.classList.remove("hidden");
+        setupGoogleIdentity();
+    }
+}
+
+function closeAuthModal() {
+    const modal = document.getElementById("authModal");
+    if (modal) modal.classList.add("hidden");
+}
 
 // --- THEME ENGINE (BLACK & WHITE: LIGHT / DARK) ---
 function initTheme() {

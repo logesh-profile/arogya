@@ -58,6 +58,11 @@ Existing solutions suffer from three fatal flaws:
 - Independent safety filter detecting acute crisis or self-harm ideation without corrupting numerical scores.
 - Immediate direct integration with **Tele-MANAS (14416)**, **KIRAN (1800-599-0019)**, and **Vandrevala Foundation**.
 
+### 10. Google OAuth 2.0 Authentication & Multi-User Data Isolation
+- **100% Free Google Sign-In:** Leverages Google Identity Services (GSI) web SDK with zero third-party subscription fees or quotas.
+- **Strict User Privacy Isolation:** User reflections, voice prosody recordings, mental health records, and clinical memory profiles are keyed to each individual user ID.
+- **Seamless Local Demo Mode:** Supports 1-click test profiles (`Logeshwaran` and `Dr. Sarah Chen`) for rapid local evaluation without requiring an immediate Google Cloud console configuration.
+
 ---
 
 ## 🛠️ System Architecture
@@ -121,6 +126,7 @@ pip install -r requirements.txt
 Create a `.env` file inside `mental_health_voice_ai/`:
 ```bash
 GEMINI_API_KEY=your_gemini_api_key_here
+GOOGLE_CLIENT_ID=your_google_oauth_client_id_here.apps.googleusercontent.com  # Optional for production Google Sign-In
 ```
 
 ### 4. Launch Arogya
@@ -137,6 +143,10 @@ Open **`http://localhost:8000`** in Chrome or Edge.
 | :--- | :--- | :--- |
 | `/` | `GET` | Main companion conversational interface |
 | `/analytics` | `GET` | Dedicated separate longitudinal analytics portal |
+| `/api/auth/me` | `GET` | Active authenticated user profile and session state |
+| `/api/auth/google` | `POST` | Authenticate via Google OAuth 2.0 credential token |
+| `/api/auth/demo` | `POST` | Switch between local demo profiles (Logeshwaran / Dr. Sarah Chen) |
+| `/api/auth/logout` | `POST` | Terminate session and clear authentication cookie |
 | `/api/chat/voice` | `POST` | Core speech-to-speech loop with evidence scoring & prosody |
 | `/api/chat/text` | `POST` | Rapid text chat with grounded evidence & titling |
 | `/api/analytics/summary` | `GET` | Longitudinal multi-session metrics, trend points & profile |

@@ -14,10 +14,13 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
+from dotenv import load_dotenv
 
 # Local imports
 from database import (
@@ -39,10 +42,21 @@ from database import (
     get_aggregated_mental_health_insights,
     get_analytics_summary,
     get_user_clinical_profile,
-    update_user_clinical_profile
+    update_user_clinical_profile,
+    upsert_google_user,
+    upsert_demo_user,
+    create_auth_session,
+    get_user_by_session_token,
+    revoke_auth_session,
+    get_user_by_id
 )
 from mental_health_engine import extract_acoustic_features, analyze_and_respond, generate_quick_session_title, generate_memory_greeting
 from voice_engine import transcribe_audio, synthesize_speech
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
 
 app = FastAPI(title="Arogya - Mental Health Voice Companion")
 
@@ -55,7 +69,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 CACHE_DIR = os.path.join(BASE_DIR, "audio_cache")
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -64,6 +77,34 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/audio", StaticFiles(directory=CACHE_DIR), name="audio")
+
+# ---------------------------------------------------------------------------
+# AUTHENTICATION DEPENDENCIES & HELPERS
+# ---------------------------------------------------------------------------
+def get_current_user(request: Request) -> Optional[dict]:
+    token = request.cookies.get("arogya_session")
+    if not token:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+    if token:
+        return get_user_by_session_token(token)
+    return None
+
+def get_effective_user(request: Request) -> dict:
+    user = get_current_user(request)
+    if user:
+        return user
+    primary = get_user_by_id("primary_user")
+    if primary:
+        return primary
+    return {
+        "id": "primary_user",
+        "name": "Logeshwaran",
+        "given_name": "Logeshwaran",
+        "email": "logeshwaran@example.com",
+        "picture": ""
+    }
 
 def prune_audio_cache(max_age_hours: int = 84):
     """Deletes temporary audio cache files older than max_age_hours (default 84 hours)."""
@@ -89,7 +130,7 @@ def prune_audio_cache(max_age_hours: int = 84):
 def on_startup():
     init_db()
     prune_audio_cache(max_age_hours=84)
-    print("[*] Arogya Mental Health Server started at http://localhost:8000")
+    print(f"[*] Arogya Mental Health Server started at http://localhost:8000 (Google OAuth configured: {bool(GOOGLE_CLIENT_ID and not GOOGLE_CLIENT_ID.startswith('your_'))})")
 
 
 @app.get("/")
@@ -101,27 +142,122 @@ def analytics_page():
     return FileResponse(os.path.join(STATIC_DIR, "analytics.html"))
 
 @app.get("/api/analytics/summary")
-def get_analytics():
-    return get_analytics_summary()
+def get_analytics(request: Request):
+    user = get_effective_user(request)
+    return get_analytics_summary(user_id=user["id"])
 
+# ---------------------------------------------------------------------------
+# AUTHENTICATION ROUTES (GOOGLE OAUTH 2.0 & MULTI-USER DEMO SWITCHER)
+# ---------------------------------------------------------------------------
+@app.get("/api/auth/config")
+def get_auth_config():
+    is_conf = bool(GOOGLE_CLIENT_ID and not GOOGLE_CLIENT_ID.startswith("your_"))
+    return {
+        "client_id": GOOGLE_CLIENT_ID if is_conf else "",
+        "is_configured": is_conf
+    }
+
+@app.get("/api/auth/me")
+def get_auth_me(request: Request):
+    user = get_current_user(request)
+    return {
+        "authenticated": bool(user),
+        "user": user or get_user_by_id("primary_user")
+    }
+
+@app.post("/api/auth/google")
+async def auth_google(request: Request, response: Response):
+    """
+    Verifies Google Identity Services (GSI) credential token on backend,
+    creates/updates user, and establishes an HTTP-only session cookie.
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request payload")
+
+    credential = data.get("credential")
+    if not credential:
+        raise HTTPException(status_code=400, detail="Missing Google credential token")
+
+    try:
+        aud = GOOGLE_CLIENT_ID if (GOOGLE_CLIENT_ID and not GOOGLE_CLIENT_ID.startswith("your_")) else None
+        id_info = google_id_token.verify_oauth2_token(credential, google_requests.Request(), audience=aud)
+        google_id = id_info.get("sub")
+        email = id_info.get("email", "")
+        name = id_info.get("name", "User")
+        given_name = id_info.get("given_name", name.split()[0] if name else "User")
+        picture = id_info.get("picture", "")
+
+        user = upsert_google_user(google_id, email, name, given_name, picture)
+        session_token = create_auth_session(user["id"])
+        response.set_cookie(
+            key="arogya_session",
+            value=session_token,
+            max_age=30 * 86400,
+            httponly=True,
+            samesite="lax",
+            secure=False
+        )
+        return {"status": "success", "user": user}
+    except Exception as e:
+        print(f"[!] Google token verification failed: {e}")
+        raise HTTPException(status_code=401, detail=f"Authentication verification error: {str(e)}")
+
+@app.post("/api/auth/demo")
+async def auth_demo(request: Request, response: Response):
+    """Instant 1-click test login allowing switching between Logeshwaran and Dr. Sarah Chen."""
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    account_type = data.get("account", "logeshwaran")
+    user = upsert_demo_user(account_type)
+    session_token = create_auth_session(user["id"])
+    response.set_cookie(
+        key="arogya_session",
+        value=session_token,
+        max_age=30 * 86400,
+        httponly=True,
+        samesite="lax",
+        secure=False
+    )
+    return {"status": "success", "user": user}
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request, response: Response):
+    token = request.cookies.get("arogya_session")
+    if token:
+        revoke_auth_session(token)
+    response.delete_cookie(key="arogya_session")
+    return {"status": "logged_out"}
+
+# ---------------------------------------------------------------------------
+# SESSIONS & CLINICAL CONVERSATIONS (USER ISOLATED)
+# ---------------------------------------------------------------------------
 @app.get("/api/sessions")
-def list_sessions():
-    return get_all_sessions()
+def list_sessions(request: Request):
+    user = get_effective_user(request)
+    return get_all_sessions(user_id=user["id"])
 
 @app.post("/api/sessions")
-def new_session():
+def new_session(request: Request):
+    user = get_effective_user(request)
     session_id = f"sess_{uuid.uuid4().hex[:10]}"
     title = "New Reflection"
-    sess = create_session(session_id, title)
+    sess = create_session(session_id, title, user_id=user["id"])
     return sess
 
 @app.get("/api/sessions/{session_id}")
-def load_session(session_id: str):
-    sess = get_session(session_id)
+def load_session(session_id: str, request: Request):
+    user = get_effective_user(request)
+    sess = get_session(session_id, user_id=user["id"])
     if not sess:
-        raise HTTPException(status_code=404, detail="Session not found")
+        sess = get_session(session_id)
+        if not sess:
+            raise HTTPException(status_code=404, detail="Session not found")
     messages = get_session_messages(session_id)
-    aggregated = get_aggregated_mental_health_insights(session_id)
+    aggregated = get_aggregated_mental_health_insights(session_id, user_id=user["id"])
     return {
         "session": sess,
         "messages": messages,
@@ -129,23 +265,25 @@ def load_session(session_id: str):
     }
 
 @app.patch("/api/sessions/{session_id}")
-def update_session_title(session_id: str, title: str = Form(...)):
-    if not rename_session(session_id, title):
+def update_session_title(session_id: str, request: Request, title: str = Form(...)):
+    user = get_effective_user(request)
+    if not rename_session(session_id, title, user_id=user["id"]):
         raise HTTPException(status_code=404, detail="Session not found")
     return {"status": "success", "session_id": session_id, "title": title}
 
 @app.delete("/api/sessions/{session_id}")
-def remove_session(session_id: str):
-    delete_session(session_id)
+def remove_session(session_id: str, request: Request):
+    user = get_effective_user(request)
+    delete_session(session_id, user_id=user["id"])
     return {"status": "deleted", "session_id": session_id}
 
-
 @app.get("/api/greeting")
-async def get_initial_greeting(session_id: Optional[str] = None, voice_mode: str = "fast"):
+async def get_initial_greeting(request: Request, session_id: Optional[str] = None, voice_mode: str = "fast"):
     """
-    Dynamic memory-anchored greeting: Proactively connects with user's name and past clinical journey.
+    Dynamic memory-anchored greeting: Proactively connects with authenticated user's name and past clinical journey.
     """
-    greeting_text = generate_memory_greeting(session_id)
+    user = get_effective_user(request)
+    greeting_text = generate_memory_greeting(session_id, user_id=user["id"])
     audio_url = await synthesize_speech(greeting_text, mode=voice_mode)
 
     # Save to session if session_id provided
@@ -199,6 +337,7 @@ async def transcribe_only(file: UploadFile = File(...)):
 
 @app.post("/api/chat/voice")
 async def process_voice_chat(
+    request: Request,
     file: UploadFile = File(...),
     session_id: str = Form(...),
     voice_mode: str = Form("cloned"),
@@ -213,6 +352,8 @@ async def process_voice_chat(
     5. Evaluates mental health score & generates empathetic reply (Gemini 3.8 Flash)
     6. Synthesizes voice in Indian accent (F5-TTS cloned / fast Indian neural)
     """
+    user = get_effective_user(request)
+
     # 1. Save uploaded raw audio
     raw_filename = f"user_raw_{uuid.uuid4().hex[:8]}.webm"
     raw_path = os.path.join(CACHE_DIR, raw_filename)
@@ -262,9 +403,9 @@ async def process_voice_chat(
 
     # 5. Session History & Baseline Statistical Context
     session_messages = get_session_messages(session_id)
-    historical_context = get_historical_context(session_id)
-    n_sessions = get_session_count()
-    baseline = get_user_baseline_stats()
+    historical_context = get_historical_context(session_id, user_id=user["id"])
+    n_sessions = get_session_count(user_id=user["id"])
+    baseline = get_user_baseline_stats(user_id=user["id"])
 
     semitone_std = acoustic_features.get("pitch_semitone_std")
     voice_z = None
@@ -293,7 +434,8 @@ async def process_voice_chat(
         historical_context=historical_context,
         voice_z=voice_z,
         trend_z=trend_z,
-        n_sessions=n_sessions
+        n_sessions=n_sessions,
+        user_id=user["id"]
     )
 
     reply_text = eval_result.get("reply_text", "I'm listening and I'm right here with you.")
@@ -315,10 +457,10 @@ async def process_voice_chat(
     save_mental_health_record(eval_result)
 
     # 11. Compute Cumulative Session Average & Compiled Insights
-    aggregated = get_aggregated_mental_health_insights(session_id)
+    aggregated = get_aggregated_mental_health_insights(session_id, user_id=user["id"])
 
     # 12. Instant Auto-titling based on First Message
-    current_sess = get_session(session_id)
+    current_sess = get_session(session_id, user_id=user["id"]) or get_session(session_id)
     new_title = None
     default_prefixes = ["Check-in", "New Reflection", "Emotional Wellness Reflection", "New Assessment", "Daily Reflection"]
     curr_t = current_sess.get("title", "") if current_sess else ""
@@ -347,6 +489,7 @@ async def process_voice_chat(
 
 @app.post("/api/chat/text")
 async def process_text_chat(
+    request: Request,
     text: str = Form(...),
     session_id: str = Form(...),
     voice_mode: str = Form("fast")
@@ -354,6 +497,7 @@ async def process_text_chat(
     """
     Instant text chat with grounded evidence scoring and immediate titling.
     """
+    user = get_effective_user(request)
     dummy_acoustics = {
         "duration": 0.0,
         "pitch_semitone_std": None,
@@ -363,9 +507,9 @@ async def process_text_chat(
     }
 
     session_messages = get_session_messages(session_id)
-    historical_context = get_historical_context(session_id)
-    n_sessions = get_session_count()
-    baseline = get_user_baseline_stats()
+    historical_context = get_historical_context(session_id, user_id=user["id"])
+    n_sessions = get_session_count(user_id=user["id"])
+    baseline = get_user_baseline_stats(user_id=user["id"])
 
     latest_rec = get_latest_mental_health_record(session_id)
     trend_z = None
@@ -381,7 +525,8 @@ async def process_text_chat(
         historical_context=historical_context,
         voice_z=None,
         trend_z=trend_z,
-        n_sessions=n_sessions
+        n_sessions=n_sessions,
+        user_id=user["id"]
     )
 
     reply_text = eval_result.get("reply_text", "I hear you, and thank you for sharing that with me.")
@@ -399,9 +544,9 @@ async def process_text_chat(
     save_mental_health_record(eval_result)
 
     # Compute Cumulative Session Average & Compiled Insights
-    aggregated = get_aggregated_mental_health_insights(session_id)
+    aggregated = get_aggregated_mental_health_insights(session_id, user_id=user["id"])
 
-    current_sess = get_session(session_id)
+    current_sess = get_session(session_id, user_id=user["id"]) or get_session(session_id)
     new_title = None
     default_prefixes = ["Check-in", "New Reflection", "Emotional Wellness Reflection", "New Assessment", "Daily Reflection"]
     curr_t = current_sess.get("title", "") if current_sess else ""
@@ -428,21 +573,23 @@ async def process_text_chat(
     }
 
 @app.get("/api/sessions/{session_id}/report")
-def get_session_report_data(session_id: str):
+def get_session_report_data(session_id: str, request: Request):
     """
     Returns full structured report data for this conversation.
     """
-    report = get_session_report(session_id)
+    user = get_effective_user(request)
+    report = get_session_report(session_id, user_id=user["id"])
     if not report:
         raise HTTPException(status_code=404, detail="Session report not found")
     return report
 
 @app.get("/api/sessions/{session_id}/report/download")
-def download_session_report(session_id: str):
+def download_session_report(session_id: str, request: Request):
     """
     Generates a clean, transparent Markdown clinical reflection report for download.
     """
-    report = get_session_report(session_id)
+    user = get_effective_user(request)
+    report = get_session_report(session_id, user_id=user["id"])
     if not report:
         raise HTTPException(status_code=404, detail="Session not found")
 
@@ -502,11 +649,12 @@ def download_session_report(session_id: str):
     )
 
 @app.get("/api/analytics/export/download")
-def download_analytics_report():
+def download_analytics_report(request: Request):
     """
     Generates a full multi-session longitudinal clinical report in Markdown format.
     """
-    summary = get_analytics_summary()
+    user = get_effective_user(request)
+    summary = get_analytics_summary(user_id=user["id"])
     kpis = summary.get("kpis", {})
     profile = summary.get("profile", {})
     timeline = summary.get("timeline", [])

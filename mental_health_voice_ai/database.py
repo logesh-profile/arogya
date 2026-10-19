@@ -1,7 +1,9 @@
 import os
 import sqlite3
 import json
-from datetime import datetime
+import secrets
+import uuid
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import numpy as np
 
@@ -18,6 +20,31 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
+    # Users table for Google OAuth 2.0 and profile persistence
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            google_id TEXT UNIQUE,
+            email TEXT,
+            name TEXT,
+            given_name TEXT,
+            picture TEXT,
+            created_at TIMESTAMP,
+            last_login TIMESTAMP
+        )
+    """)
+
+    # User Auth Web Sessions (HTTP-Only Cookie mapping)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_sessions (
+            session_token TEXT PRIMARY KEY,
+            user_id TEXT,
+            created_at TIMESTAMP,
+            expires_at TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    """)
+
     # Sessions table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
@@ -27,7 +54,8 @@ def init_db():
             last_active TIMESTAMP,
             overall_wellness INTEGER DEFAULT 75,
             dominant_emotion TEXT DEFAULT 'Calm',
-            summary TEXT DEFAULT ''
+            summary TEXT DEFAULT '',
+            user_id TEXT DEFAULT 'primary_user'
         )
     """)
 
@@ -70,6 +98,12 @@ def init_db():
 
     # Attempt migration if columns missing
     try:
+        cursor.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT DEFAULT 'primary_user'")
+    except Exception: pass
+    try:
+        cursor.execute("UPDATE sessions SET user_id = 'primary_user' WHERE user_id IS NULL OR user_id = ''")
+    except Exception: pass
+    try:
         cursor.execute("ALTER TABLE mental_health_records ADD COLUMN confidence REAL DEFAULT 0.5")
     except Exception: pass
     try:
@@ -82,7 +116,7 @@ def init_db():
         cursor.execute("ALTER TABLE mental_health_records ADD COLUMN dominant_state TEXT DEFAULT 'Reflective'")
     except Exception: pass
 
-    # User clinical profile table (Phase 2 Persistent Cross-Session Memory)
+    # User clinical profile table (Persistent Cross-Session Memory)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_clinical_profile (
             user_id TEXT PRIMARY KEY,
@@ -95,7 +129,7 @@ def init_db():
         )
     """)
 
-    # Seed or upgrade default primary profile
+    # Seed default primary profile
     cursor.execute("SELECT user_id, user_name FROM user_clinical_profile WHERE user_id = 'primary_user'")
     row = cursor.fetchone()
     now = datetime.now().isoformat()
@@ -125,17 +159,178 @@ def init_db():
             json.dumps(["Guided box breathing (4-4-4-4)", "Taking short walks", "Reflective spoken pauses", "Listening to calming music"])
         ))
 
+    # Ensure default primary_user exists in users table
+    cursor.execute("SELECT id FROM users WHERE id = 'primary_user'")
+    if not cursor.fetchone():
+        cursor.execute("""
+            INSERT INTO users (id, google_id, email, name, given_name, picture, created_at, last_login)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            "primary_user",
+            "primary_user_google",
+            "logeshwaran@example.com",
+            "Logeshwaran",
+            "Logeshwaran",
+            "",
+            now,
+            now
+        ))
+
     conn.commit()
     conn.close()
 
-def create_session(session_id: str, title: str = "New Assessment") -> Dict[str, Any]:
+# ---------------------------------------------------------------------------
+# USER MANAGEMENT & GOOGLE AUTHENTICATION HELPERS
+# ---------------------------------------------------------------------------
+def upsert_google_user(google_id: str, email: str, name: str, given_name: str = "", picture: str = "") -> Dict[str, Any]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    cursor.execute("SELECT * FROM users WHERE google_id = ? OR (email = ? AND email != '')", (google_id, email))
+    row = cursor.fetchone()
+    if row:
+        user_id = row["id"]
+        cursor.execute("""
+            UPDATE users 
+            SET google_id = ?, email = ?, name = ?, given_name = ?, picture = ?, last_login = ?
+            WHERE id = ?
+        """, (google_id, email, name, given_name or name, picture, now, user_id))
+    else:
+        user_id = f"usr_{uuid.uuid4().hex[:12]}"
+        cursor.execute("""
+            INSERT INTO users (id, google_id, email, name, given_name, picture, created_at, last_login)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, google_id, email, name, given_name or name, picture, now, now))
+
+    # Ensure individual clinical memory profile exists for this user_id
+    cursor.execute("SELECT user_id FROM user_clinical_profile WHERE user_id = ?", (user_id,))
+    if not cursor.fetchone():
+        display_name = given_name or name or "Friend"
+        cursor.execute("""
+            INSERT INTO user_clinical_profile (user_id, user_name, key_context, recurring_stressors, effective_coping, baseline_wellness, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (
+            user_id,
+            display_name,
+            f"{display_name}'s personal emotional wellness journey and reflections",
+            json.dumps(["Academic deadlines and performance pressure", "Workload stress and fatigue", "Sleep regulation"]),
+            json.dumps(["Guided box breathing (4-4-4-4)", "Taking short walks", "Reflective spoken pauses"]),
+            75.0,
+            now
+        ))
+
+    conn.commit()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    user_data = dict(cursor.fetchone())
+    conn.close()
+    return user_data
+
+def upsert_demo_user(account_type: str = "logeshwaran") -> Dict[str, Any]:
+    """Provides instant 1-click test accounts so multi-user isolation can be tested locally."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    if account_type == "sarah":
+        user_id = "usr_sarah_researcher"
+        google_id = "demo_google_sarah"
+        email = "sarah.chen@university.edu"
+        name = "Dr. Sarah Chen"
+        given_name = "Sarah"
+        picture = "https://images.unsplash.com/photo-1594824813583-a447c284ee1b?w=150&auto=format&fit=crop&q=80"
+        context = "Clinical researcher exploring mindful breathing, academic workload, and evening sleep continuity"
+        stressors = ["Research grant deadlines", "Publication reviews", "Irregular sleep schedule"]
+        coping = ["4-7-8 vagus breathing", "Herbal tea before sleep", "Spoken reflections"]
+    else:
+        user_id = "primary_user"
+        google_id = "primary_user_google"
+        email = "logeshwaran@example.com"
+        name = "Logeshwaran"
+        given_name = "Logeshwaran"
+        picture = ""
+        context = "College student preparing for semester exams, software projects, and campus placement interviews"
+        stressors = ["Semester exams and academic pressure", "Office workload and project deadlines", "Sleep deprivation and fatigue", "Campus placement anxiety"]
+        coping = ["Guided box breathing (4-4-4-4)", "Taking short walks", "Reflective spoken pauses", "Listening to calming music"]
+
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    if not cursor.fetchone():
+        cursor.execute("""
+            INSERT INTO users (id, google_id, email, name, given_name, picture, created_at, last_login)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, google_id, email, name, given_name, picture, now, now))
+    else:
+        cursor.execute("UPDATE users SET last_login = ? WHERE id = ?", (now, user_id))
+
+    cursor.execute("SELECT user_id FROM user_clinical_profile WHERE user_id = ?", (user_id,))
+    if not cursor.fetchone():
+        cursor.execute("""
+            INSERT INTO user_clinical_profile (user_id, user_name, key_context, recurring_stressors, effective_coping, baseline_wellness, last_updated)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, given_name, context, json.dumps(stressors), json.dumps(coping), 75.0, now))
+
+    conn.commit()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    user_data = dict(cursor.fetchone())
+    conn.close()
+    return user_data
+
+def create_auth_session(user_id: str, expires_days: int = 30) -> str:
+    conn = get_connection()
+    cursor = conn.cursor()
+    token = secrets.token_hex(32)
+    now = datetime.now()
+    expires = now + timedelta(days=expires_days)
+    cursor.execute("""
+        INSERT INTO user_sessions (session_token, user_id, created_at, expires_at)
+        VALUES (?, ?, ?, ?)
+    """, (token, user_id, now.isoformat(), expires.isoformat()))
+    conn.commit()
+    conn.close()
+    return token
+
+def get_user_by_session_token(token: str) -> Optional[Dict[str, Any]]:
+    if not token:
+        return None
     conn = get_connection()
     cursor = conn.cursor()
     now = datetime.now().isoformat()
     cursor.execute("""
-        INSERT INTO sessions (session_id, title, created_at, last_active, overall_wellness, dominant_emotion, summary)
-        VALUES (?, ?, ?, ?, 75, 'Calm', 'Initial conversation started.')
-    """, (session_id, title, now, now))
+        SELECT u.* FROM users u
+        JOIN user_sessions s ON u.id = s.user_id
+        WHERE s.session_token = ? AND s.expires_at > ?
+    """, (token, now))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def revoke_auth_session(token: str) -> bool:
+    if not token:
+        return False
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM user_sessions WHERE session_token = ?", (token,))
+    conn.commit()
+    conn.close()
+    return True
+
+def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+# ---------------------------------------------------------------------------
+# SESSION PERSISTENCE & MULTI-USER ISOLATION
+# ---------------------------------------------------------------------------
+def create_session(session_id: str, title: str = "New Assessment", user_id: str = "primary_user") -> Dict[str, Any]:
+    conn = get_connection()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    cursor.execute("""
+        INSERT INTO sessions (session_id, title, created_at, last_active, overall_wellness, dominant_emotion, summary, user_id)
+        VALUES (?, ?, ?, ?, 75, 'Calm', 'Initial conversation started.', ?)
+    """, (session_id, title, now, now, user_id))
     conn.commit()
     conn.close()
     return {
@@ -143,25 +338,37 @@ def create_session(session_id: str, title: str = "New Assessment") -> Dict[str, 
         "title": title,
         "created_at": now,
         "overall_wellness": 75,
-        "dominant_emotion": "Calm"
+        "dominant_emotion": "Calm",
+        "user_id": user_id
     }
 
-def get_all_sessions() -> List[Dict[str, Any]]:
+def get_all_sessions(user_id: Optional[str] = None) -> List[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT session_id, title, created_at, last_active, overall_wellness, dominant_emotion, summary
-        FROM sessions
-        ORDER BY last_active DESC
-    """)
+    if user_id:
+        cursor.execute("""
+            SELECT session_id, title, created_at, last_active, overall_wellness, dominant_emotion, summary, user_id
+            FROM sessions
+            WHERE user_id = ?
+            ORDER BY last_active DESC
+        """, (user_id,))
+    else:
+        cursor.execute("""
+            SELECT session_id, title, created_at, last_active, overall_wellness, dominant_emotion, summary, user_id
+            FROM sessions
+            ORDER BY last_active DESC
+        """)
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
 
-def get_session(session_id: str) -> Optional[Dict[str, Any]]:
+def get_session(session_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,))
+    if user_id:
+        cursor.execute("SELECT * FROM sessions WHERE session_id = ? AND user_id = ?", (session_id, user_id))
+    else:
+        cursor.execute("SELECT * FROM sessions WHERE session_id = ?", (session_id,))
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
@@ -192,17 +399,25 @@ def update_session_meta(session_id: str, title: Optional[str] = None, wellness: 
     conn.commit()
     conn.close()
 
-def rename_session(session_id: str, new_title: str) -> bool:
+def rename_session(session_id: str, new_title: str, user_id: Optional[str] = None) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("UPDATE sessions SET title = ? WHERE session_id = ?", (new_title.strip(), session_id))
+    if user_id:
+        cursor.execute("UPDATE sessions SET title = ? WHERE session_id = ? AND user_id = ?", (new_title.strip(), session_id, user_id))
+    else:
+        cursor.execute("UPDATE sessions SET title = ? WHERE session_id = ?", (new_title.strip(), session_id))
     conn.commit()
     conn.close()
     return True
 
-def delete_session(session_id: str) -> bool:
+def delete_session(session_id: str, user_id: Optional[str] = None) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
+    if user_id:
+        cursor.execute("SELECT session_id FROM sessions WHERE session_id = ? AND user_id = ?", (session_id, user_id))
+        if not cursor.fetchone():
+            conn.close()
+            return False
     cursor.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
     cursor.execute("DELETE FROM mental_health_records WHERE session_id = ?", (session_id,))
     cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
@@ -314,27 +529,40 @@ def get_latest_mental_health_record(session_id: Optional[str] = None) -> Optiona
         d["strengths"] = []
     return d
 
-def get_session_count() -> int:
+def get_session_count(user_id: Optional[str] = None) -> int:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM sessions")
+    if user_id:
+        cursor.execute("SELECT COUNT(*) FROM sessions WHERE user_id = ?", (user_id,))
+    else:
+        cursor.execute("SELECT COUNT(*) FROM sessions")
     count = cursor.fetchone()[0]
     conn.close()
     return count
 
-def get_user_baseline_stats() -> Dict[str, Any]:
+def get_user_baseline_stats(user_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Computes running baseline statistics (mean and standard deviation)
     from historical records to calculate z-scores in code.
+    Filters by user_id if provided.
     """
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT overall_wellness, voice_semitone_std
-        FROM mental_health_records
-        WHERE overall_wellness IS NOT NULL
-        ORDER BY id DESC LIMIT 30
-    """)
+    if user_id:
+        cursor.execute("""
+            SELECT r.overall_wellness, r.voice_semitone_std
+            FROM mental_health_records r
+            JOIN sessions s ON r.session_id = s.session_id
+            WHERE s.user_id = ? AND r.overall_wellness IS NOT NULL
+            ORDER BY r.id DESC LIMIT 30
+        """, (user_id,))
+    else:
+        cursor.execute("""
+            SELECT overall_wellness, voice_semitone_std
+            FROM mental_health_records
+            WHERE overall_wellness IS NOT NULL
+            ORDER BY id DESC LIMIT 30
+        """)
     rows = cursor.fetchall()
     conn.close()
 
@@ -357,10 +585,10 @@ def get_user_baseline_stats() -> Dict[str, Any]:
         "voice_std": v_std
     }
 
-def get_aggregated_mental_health_insights(session_id: Optional[str] = None) -> Dict[str, Any]:
+def get_aggregated_mental_health_insights(session_id: Optional[str] = None, user_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Computes cumulative average mental health score and compiles verbatim reasons
-    across all exchanges within the session and across all conversations.
+    across all exchanges within the session and across all conversations for this user.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -375,13 +603,22 @@ def get_aggregated_mental_health_insights(session_id: Optional[str] = None) -> D
         """, (session_id,))
         session_records = [dict(r) for r in cursor.fetchall()]
 
-    # 2. Fetch historical records across all sessions
-    cursor.execute("""
-        SELECT overall_wellness, dominant_state, voice_semitone_std
-        FROM mental_health_records
-        WHERE overall_wellness IS NOT NULL
-        ORDER BY id DESC LIMIT 100
-    """)
+    # 2. Fetch historical records across sessions for this user
+    if user_id:
+        cursor.execute("""
+            SELECT r.overall_wellness, r.dominant_state, r.voice_semitone_std
+            FROM mental_health_records r
+            JOIN sessions s ON r.session_id = s.session_id
+            WHERE s.user_id = ? AND r.overall_wellness IS NOT NULL
+            ORDER BY r.id DESC LIMIT 100
+        """, (user_id,))
+    else:
+        cursor.execute("""
+            SELECT overall_wellness, dominant_state, voice_semitone_std
+            FROM mental_health_records
+            WHERE overall_wellness IS NOT NULL
+            ORDER BY id DESC LIMIT 100
+        """)
     all_time_rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
 
@@ -503,12 +740,12 @@ def get_aggregated_mental_health_insights(session_id: Optional[str] = None) -> D
         "note": f"Cumulative average across {n_exchanges} reflection{'s' if n_exchanges != 1 else ''} (All-Time Baseline: {all_time_avg}/100)"
     }
 
-def get_session_report(session_id: str) -> Optional[Dict[str, Any]]:
-    sess = get_session(session_id)
+def get_session_report(session_id: str, user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    sess = get_session(session_id, user_id=user_id)
     if not sess:
         return None
     messages = get_session_messages(session_id)
-    aggregated = get_aggregated_mental_health_insights(session_id)
+    aggregated = get_aggregated_mental_health_insights(session_id, user_id=user_id)
 
     return {
         "session_id": session_id,
@@ -613,21 +850,21 @@ def update_user_clinical_profile(
 
     return get_user_clinical_profile(user_id)
 
-def get_recent_session_memory_anchor() -> Dict[str, Any]:
+def get_recent_session_memory_anchor(user_id: str = "primary_user") -> Dict[str, Any]:
     """
     Retrieves the most recent meaningful session topic, user quotes, and recurring stressors
     for memory-anchored greeting recall across days.
     """
-    profile = get_user_clinical_profile("primary_user")
+    profile = get_user_clinical_profile(user_id)
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
         SELECT session_id, title, created_at, overall_wellness, dominant_emotion, summary
         FROM sessions
-        WHERE summary IS NOT NULL AND summary != '' AND summary != 'Initial conversation started.'
+        WHERE user_id = ? AND summary IS NOT NULL AND summary != '' AND summary != 'Initial conversation started.'
         ORDER BY created_at DESC
         LIMIT 1
-    """)
+    """, (user_id,))
     row = cursor.fetchone()
     if not row:
         conn.close()
@@ -651,12 +888,12 @@ def get_recent_session_memory_anchor() -> Dict[str, Any]:
         "recent_remarks": msgs
     }
 
-def get_historical_context(current_session_id: Optional[str] = None, limit: int = 4) -> str:
+def get_historical_context(current_session_id: Optional[str] = None, user_id: str = "primary_user", limit: int = 4) -> str:
     """
     Retrieves cross-session memory and clinical trends across past and present conversations,
     incorporating the persistent clinical profile so Arogya naturally references long-term stressors.
     """
-    profile = get_user_clinical_profile("primary_user")
+    profile = get_user_clinical_profile(user_id)
     name = profile.get("user_name", "Logeshwaran")
     stressors_text = ", ".join(profile.get("recurring_stressors", [])) or "Semester exams, Project deadlines, Sleep fatigue"
     coping_text = ", ".join(profile.get("effective_coping", [])) or "Guided breathing, Short walks, Calming pauses"
@@ -677,10 +914,10 @@ def get_historical_context(current_session_id: Optional[str] = None, limit: int 
     cursor.execute("""
         SELECT session_id, title, created_at, overall_wellness, dominant_emotion, summary
         FROM sessions
-        WHERE session_id != ? OR ? IS NULL
+        WHERE (session_id != ? OR ? IS NULL) AND user_id = ?
         ORDER BY last_active DESC
         LIMIT ?
-    """, (current_session_id or "", current_session_id or "", limit))
+    """, (current_session_id or "", current_session_id or "", user_id, limit))
     past_sessions = cursor.fetchall()
 
     if not past_sessions:
@@ -708,9 +945,9 @@ def get_historical_context(current_session_id: Optional[str] = None, limit: int 
     conn.close()
     return "\n".join(lines)
 
-def get_analytics_summary() -> Dict[str, Any]:
+def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
     """
-    Computes comprehensive longitudinal clinical analytics across all sessions:
+    Computes comprehensive longitudinal clinical analytics across all sessions for a specific user:
     - Multi-session time-series scores & trajectories
     - Symptom distributions with verbatim evidence quotes
     - Pitch stability and prosodic biomarker metrics
@@ -719,23 +956,26 @@ def get_analytics_summary() -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
 
-    # 1. Fetch all sessions in chronological order
+    # 1. Fetch all sessions in chronological order for this user
     cursor.execute("""
         SELECT session_id, title, created_at, last_active, overall_wellness, dominant_emotion, summary
         FROM sessions
+        WHERE user_id = ?
         ORDER BY created_at ASC
-    """)
+    """, (user_id,))
     session_rows = [dict(r) for r in cursor.fetchall()]
 
-    # 2. Fetch all mental health records
+    # 2. Fetch all mental health records for this user's sessions
     cursor.execute("""
-        SELECT * FROM mental_health_records
-        ORDER BY id ASC
-    """)
+        SELECT r.* FROM mental_health_records r
+        JOIN sessions s ON r.session_id = s.session_id
+        WHERE s.user_id = ?
+        ORDER BY r.id ASC
+    """, (user_id,))
     all_records = [dict(r) for r in cursor.fetchall()]
     conn.close()
 
-    profile = get_user_clinical_profile("primary_user")
+    profile = get_user_clinical_profile(user_id)
 
     # Map records by session_id
     records_by_session: Dict[str, List[Dict[str, Any]]] = {}

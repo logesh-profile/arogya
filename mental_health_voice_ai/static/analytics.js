@@ -4,8 +4,34 @@
 
 document.addEventListener("DOMContentLoaded", () => {
     initTheme();
+    loadCurrentUser();
     loadAnalyticsData();
 });
+
+// Load authenticated user profile
+async function loadCurrentUser() {
+    try {
+        const res = await fetch("/api/auth/me");
+        if (res.ok) {
+            const data = await res.json();
+            if (data.user) {
+                const nameLabel = document.getElementById("userNameLabel");
+                const avatarFallback = document.getElementById("userAvatarFallback");
+                const avatarImg = document.getElementById("userAvatarImg");
+                const disp = data.user.given_name || data.user.name || "Logeshwaran";
+                if (nameLabel) nameLabel.textContent = disp;
+                if (avatarFallback) avatarFallback.textContent = (data.user.name || disp)[0].toUpperCase();
+                if (data.user.picture && avatarImg) {
+                    avatarImg.src = data.user.picture;
+                    avatarImg.classList.remove("hidden");
+                    if (avatarFallback) avatarFallback.classList.add("hidden");
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("Analytics auth check notice:", e);
+    }
+}
 
 // Theme Management (Synced with Main Companion)
 function initTheme() {

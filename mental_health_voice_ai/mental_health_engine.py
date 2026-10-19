@@ -222,21 +222,21 @@ You MUST output strictly valid JSON matching this exact structure:
 # ---------------------------------------------------------------------------
 # 4B. DYNAMIC MEMORY-ANCHORED GREETING GENERATOR
 # ---------------------------------------------------------------------------
-def generate_memory_greeting(session_id: Optional[str] = None) -> str:
+def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "primary_user") -> str:
     """
     Generates a deeply personal, memory-anchored spoken greeting that proactively recalls
-    the user's name (Logeshwaran/Logesh), their long-term clinical profile (semester exams,
-    deadlines, sleep schedule), and previous session reflections across days.
+    the user's name, their long-term clinical profile (stressors, deadlines, sleep schedule),
+    and previous session reflections across days.
     """
     from database import get_recent_session_memory_anchor, get_user_clinical_profile
 
-    anchor = get_recent_session_memory_anchor()
-    profile = anchor.get("profile") or get_user_clinical_profile("primary_user")
-    name = profile.get("user_name") or "Logeshwaran"
-    short_name = name.split()[0] if name else "Logesh"
-    key_context = profile.get("key_context", "College student preparing for semester exams, software projects, and campus placement interviews")
-    stressors = profile.get("recurring_stressors", ["Semester exams and academic pressure", "Office workload and project deadlines"])
-    stressor_sample = stressors[0] if stressors else "semester exams"
+    anchor = get_recent_session_memory_anchor(user_id=user_id)
+    profile = anchor.get("profile") or get_user_clinical_profile(user_id)
+    name = profile.get("user_name") or "Friend"
+    short_name = name.split()[0] if name else "Friend"
+    key_context = profile.get("key_context", "Navigating daily deadlines, routines, and personal wellbeing")
+    stressors = profile.get("recurring_stressors", ["Daily workload and project deadlines"])
+    stressor_sample = stressors[0] if stressors else "workload"
 
     has_history = anchor.get("has_history", False)
     past_title = anchor.get("title", "")
@@ -406,7 +406,8 @@ def analyze_and_respond(
     historical_context: str,
     voice_z: Optional[float] = None,
     trend_z: Optional[float] = None,
-    n_sessions: int = 1
+    n_sessions: int = 1,
+    user_id: str = "primary_user"
 ) -> Dict[str, Any]:
     """
     Unified analysis pipeline:
@@ -524,7 +525,7 @@ Produce the requested JSON:
         try:
             from database import update_user_clinical_profile
             update_user_clinical_profile(
-                user_id="primary_user",
+                user_id=user_id,
                 user_name=profile_updates.get("user_name"),
                 key_context=profile_updates.get("key_context"),
                 new_stressor=profile_updates.get("new_stressor"),

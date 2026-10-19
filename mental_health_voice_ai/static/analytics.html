@@ -11,6 +11,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;1,6..72,300;1,6..72,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="/static/analytics.css">
+    <!-- Google Identity Services (GSI) OAuth 2.0 Web SDK -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body class="analytics-body">
     <!-- Top Bar Navigation -->
@@ -27,6 +29,17 @@
             </div>
         </div>
         <div class="analytics-header-right">
+            <!-- Google Authentication & User Profile Pill in Analytics -->
+            <div class="auth-header-wrapper" id="analyticsAuthWrapper">
+                <div id="userProfileDropdown" class="user-profile-menu-wrap">
+                    <button id="userProfileBtn" class="btn-user-pill" title="Active Clinical Profile Space">
+                        <img id="userAvatarImg" class="user-avatar-img hidden" src="" alt="Avatar">
+                        <span id="userAvatarFallback" class="user-avatar-fallback">L</span>
+                        <span id="userNameLabel" class="user-name-label">Logeshwaran</span>
+                    </button>
+                </div>
+            </div>
+
             <a href="/api/analytics/export/download" class="btn-export-report" id="exportReportBtn" title="Download Full Markdown Report">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 <span>Export Report</span>
