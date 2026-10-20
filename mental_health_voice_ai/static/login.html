@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arogya • CompanionAI Sign In</title>
+    <meta name="description" content="A friendly AI companion designed to support people experiencing loneliness and anyone who needs a compassionate conversational companion.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;1,6..72,300&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Dedicated Login Page Styles -->
+    <link rel="stylesheet" href="/static/login.css">
+    <!-- Google Identity Services (GSI) OAuth 2.0 Web SDK -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+</head>
+<body>
+    <div class="login-page-root">
+        <!-- Floating Navigation Header -->
+        <header class="login-page-nav">
+            <a href="/" class="login-nav-brand">
+                <div class="brand-heart-glyph">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                </div>
+                <div class="brand-nav-text">
+                    <span class="brand-nav-title">Arogya</span>
+                    <span class="brand-nav-sub">CompanionAI</span>
+                </div>
+            </a>
+            <div class="login-nav-right">
+                <a href="/" class="btn-nav-back">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    <span>Back to Chat</span>
+                </a>
+            </div>
+        </header>
+
+        <!-- Main Sliding Card Stage -->
+        <main class="login-stage-container">
+            <div class="sliding-card" id="slidingCard">
+                
+                <!-- 1. WHITE FORMS TRACK (Login & Sign Up) -->
+                <div class="forms-track">
+                    
+                    <!-- LOGIN FORM PANEL (Right Half during Login) -->
+                    <div class="form-panel form-panel-login" id="loginPanel">
+                        <div class="panel-header-row">
+                            <div class="status-indicator-tag">
+                                <span class="audio-bars">
+                                    <span class="bar"></span>
+                                    <span class="bar"></span>
+                                    <span class="bar"></span>
+                                    <span class="bar"></span>
+                                </span>
+                                <span>Login to Continue</span>
+                            </div>
+                        </div>
+
+                        <div class="form-title-group">
+                            <h2 class="form-title">Welcome Back</h2>
+                            <p class="form-subtitle">Sign in to continue your journey with your AI companion.</p>
+                        </div>
+
+                        <div class="form-action-body">
+                            <!-- Google Login Container -->
+                            <div class="google-auth-wrapper">
+                                <div id="gsiLoginButtonContainer" class="gsi-container"></div>
+                                <div class="google-trust-badge">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                    <span>Verified by Google • Encrypted &amp; private session</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-footer-row">
+                            <p class="form-switch-prompt">
+                                Don't have an account? 
+                                <button type="button" class="btn-link-switch" id="btnSwitchToSignUp">Sign Up</button>
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- SIGN UP FORM PANEL (Left Half during Sign Up) -->
+                    <div class="form-panel form-panel-signup" id="signupPanel">
+                        <div class="panel-header-row">
+                            <div class="status-indicator-tag">
+                                <span class="audio-bars">
+                                    <span class="bar"></span>
+                                    <span class="bar"></span>
+                                    <span class="bar"></span>
+                                    <span class="bar"></span>
+                                </span>
+                                <span>Create Account</span>
+                            </div>
+                        </div>
+
+                        <div class="form-title-group">
+                            <h2 class="form-title">Create Your Account</h2>
+                            <p class="form-subtitle">Join us and start your journey towards a happier, healthier you.</p>
+                        </div>
+
+                        <div class="form-action-body">
+                            <!-- Preferred Username input field -->
+                            <div class="input-field-group">
+                                <label for="signupPreferredNameInput" class="input-label">Preferred Name / Username</label>
+                                <div class="input-box-wrap">
+                                    <svg class="input-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                    <input type="text" id="signupPreferredNameInput" class="text-input" placeholder="e.g. Logesh" maxlength="30" autocomplete="off" />
+                                </div>
+                                <span class="input-tip-text">Arogya will greet you and personalize memories by this name.</span>
+                            </div>
+
+                            <!-- Google Sign Up Container -->
+                            <div class="google-auth-wrapper">
+                                <div id="gsiSignupButtonContainer" class="gsi-container"></div>
+                                <div class="google-trust-badge">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                    <span>One-click Sign Up with your verified Google account</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-footer-row">
+                            <p class="form-switch-prompt">
+                                Already have an account? 
+                                <button type="button" class="btn-link-switch" id="btnSwitchToLogin">Login</button>
+                            </p>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- 2. DARK OVERLAY SLIDER (Moves across left and right smoothly) -->
+                <div class="dark-overlay-slider" id="darkOverlaySlider">
+                    
+                    <!-- Left Overlay Content (Visible in Login Mode) -->
+                    <div class="overlay-content overlay-content-login" id="overlayContentLogin">
+                        <div class="overlay-brand-badge">
+                            <div class="overlay-heart-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                            </div>
+                            <div class="overlay-brand-text">
+                                <span class="overlay-brand-title">CompanionAI</span>
+                                <span class="overlay-brand-tag">Always Here. Always Listening.</span>
+                            </div>
+                        </div>
+
+                        <div class="overlay-headline-wrap">
+                            <h1 class="overlay-hero-title">You're not alone</h1>
+                            <p class="overlay-hero-desc">A friendly AI companion, ready to listen, support and brighten your day.</p>
+                        </div>
+
+                        <div class="overlay-artwork-frame">
+                            <img src="/static/assets/companion_robot_elderly.jpg" alt="Friendly companion robot with elderly person" class="overlay-art-img" />
+                        </div>
+
+                        <div class="overlay-features-grid">
+                            <div class="feature-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                <span>Talk Freely</span>
+                            </div>
+                            <div class="feature-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                                <span>Feel Supported</span>
+                            </div>
+                            <div class="feature-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                                <span>Better Days</span>
+                            </div>
+                            <div class="feature-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                                <span>You Matter</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Overlay Content (Visible in Sign Up Mode) -->
+                    <div class="overlay-content overlay-content-signup" id="overlayContentSignup">
+                        <div class="overlay-brand-badge">
+                            <div class="overlay-heart-icon">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                            </div>
+                            <div class="overlay-brand-text">
+                                <span class="overlay-brand-title">CompanionAI</span>
+                                <span class="overlay-brand-tag">Always Here. Always Listening.</span>
+                            </div>
+                        </div>
+
+                        <div class="overlay-headline-wrap">
+                            <p class="overlay-quote-callout">“Small conversations can make a big difference.”</p>
+                        </div>
+
+                        <div class="overlay-artwork-frame">
+                            <img src="/static/assets/companion_robot_chatting.jpg" alt="Arogya companion robot chatting with senior" class="overlay-art-img" />
+                        </div>
+
+                        <div class="overlay-features-grid">
+                            <div class="feature-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                <span>Chat Anytime</span>
+                            </div>
+                            <div class="feature-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                                <span>Feel Less Lonely</span>
+                            </div>
+                            <div class="feature-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                <span>Safe &amp; Private</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+
+            </div>
+        </main>
+
+        <!-- Notification Toast (for errors/feedback) -->
+        <div id="loginToast" class="login-toast hidden">
+            <span id="toastMessage"></span>
+        </div>
+    </div>
+
+    <!-- Login Logic Controller -->
+    <script src="/static/login.js"></script>
+</body>
+</html>

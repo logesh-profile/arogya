@@ -1,0 +1,682 @@
+/* ==========================================================================
+   AROGYA • COMPANIONAI SLIDING AUTHENTICATION INTERFACE
+   Strict Black & White Monochrome Palette • Cubic-Bezier Seamless Sliding
+   ========================================================================== */
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+:root {
+    --login-bg-page: #0a0a0c;
+    --login-bg-card-light: #ffffff;
+    --login-bg-card-dark: #0c0c0e;
+    --login-border-subtle: rgba(0, 0, 0, 0.08);
+    --login-border-dark: rgba(255, 255, 255, 0.12);
+    
+    --login-text-dark: #0f0f11;
+    --login-text-sub: #575760;
+    --login-text-light: #ffffff;
+    --login-text-light-sub: #9e9ea7;
+    
+    --slide-curve: cubic-bezier(0.68, -0.15, 0.265, 1.15);
+    --slide-duration: 0.72s;
+}
+
+body {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--login-bg-page);
+    color: var(--login-text-light);
+    min-height: 100vh;
+    overflow-x: hidden;
+    position: relative;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle background illumination */
+body::before {
+    content: '';
+    position: fixed;
+    top: -20%;
+    left: 20%;
+    width: 60vw;
+    height: 60vh;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.04) 0%, rgba(0, 0, 0, 0) 70%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+.login-page-root {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+    padding: 20px 24px 32px;
+}
+
+/* --- TOP FLOATING NAVIGATION --- */
+.login-page-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 1060px;
+    margin: 0 auto 20px;
+}
+
+.login-nav-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+    color: #ffffff;
+    transition: opacity 0.2s ease;
+}
+
+.login-nav-brand:hover {
+    opacity: 0.85;
+}
+
+.brand-heart-glyph {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    background: #16161a;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+}
+
+.brand-nav-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.brand-nav-title {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+}
+
+.brand-nav-sub {
+    font-size: 11px;
+    color: #888892;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.btn-nav-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 16px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #d1d1d6;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.btn-nav-back:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-1px);
+}
+
+/* --- MAIN STAGE & CARD CONTAINER --- */
+.login-stage-container {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 0 20px;
+}
+
+.sliding-card {
+    position: relative;
+    width: 980px;
+    max-width: 95vw;
+    height: 640px;
+    background: var(--login-bg-card-light);
+    border-radius: 28px;
+    box-shadow: 0 28px 70px -15px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+}
+
+/* --- 1. WHITE FORMS TRACK --- */
+.forms-track {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+}
+
+.form-panel {
+    position: absolute;
+    top: 0;
+    width: 50%;
+    height: 100%;
+    padding: 48px 48px 40px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    background: var(--login-bg-card-light);
+    color: var(--login-text-dark);
+    transition: opacity 0.4s ease, transform var(--slide-duration) var(--slide-curve);
+}
+
+/* LOGIN FORM (Stationed on the RIGHT half) */
+.form-panel-login {
+    right: 0;
+    left: auto;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+    z-index: 2;
+}
+
+/* SIGN UP FORM (Stationed on the LEFT half) */
+.form-panel-signup {
+    left: 0;
+    right: auto;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-35px);
+    z-index: 1;
+}
+
+/* STATE: When .signup-active is applied to .sliding-card */
+.sliding-card.signup-active .form-panel-login {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(35px);
+    z-index: 1;
+}
+
+.sliding-card.signup-active .form-panel-signup {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+    z-index: 2;
+}
+
+/* Form Elements */
+.panel-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.status-indicator-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    border-radius: 9999px;
+    background: #f4f4f6;
+    border: 1px solid #e5e5ea;
+    font-size: 12px;
+    font-weight: 600;
+    color: #44444a;
+    letter-spacing: -0.01em;
+}
+
+.audio-bars {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 10px;
+}
+
+.audio-bars .bar {
+    width: 2px;
+    height: 10px;
+    background: #0f0f11;
+    border-radius: 1px;
+    animation: barPulse 1.2s ease-in-out infinite alternate;
+}
+.audio-bars .bar:nth-child(2) { animation-delay: 0.2s; height: 6px; }
+.audio-bars .bar:nth-child(3) { animation-delay: 0.4s; height: 12px; }
+.audio-bars .bar:nth-child(4) { animation-delay: 0.1s; height: 8px; }
+
+@keyframes barPulse {
+    0% { transform: scaleY(0.4); opacity: 0.5; }
+    100% { transform: scaleY(1); opacity: 1; }
+}
+
+.form-title-group {
+    margin-top: 10px;
+    margin-bottom: 24px;
+}
+
+.form-title {
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: #0f0f11;
+    margin-bottom: 8px;
+}
+
+.form-subtitle {
+    font-size: 14px;
+    color: #63636e;
+    line-height: 1.5;
+    max-width: 360px;
+}
+
+/* Action Body */
+.form-action-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 18px;
+}
+
+/* Preferred Name Field (Sign Up) */
+.input-field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.input-label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #1a1a1f;
+    letter-spacing: -0.01em;
+}
+
+.input-box-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-icon {
+    position: absolute;
+    left: 14px;
+    color: #888892;
+    pointer-events: none;
+}
+
+.text-input {
+    width: 100%;
+    height: 48px;
+    padding: 0 16px 0 42px;
+    border-radius: 14px;
+    border: 1.5px solid #e2e2e8;
+    background: #f8f8fa;
+    color: #0f0f11;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.text-input:focus {
+    background: #ffffff;
+    border-color: #0f0f11;
+    box-shadow: 0 0 0 3px rgba(15, 15, 17, 0.08);
+}
+
+.text-input::placeholder {
+    color: #9e9ea7;
+}
+
+.input-tip-text {
+    font-size: 11.5px;
+    color: #71717a;
+    line-height: 1.35;
+}
+
+/* Google Auth Wrapper */
+.google-auth-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.gsi-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    min-height: 44px;
+}
+
+.google-trust-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #71717a;
+}
+
+.google-trust-badge svg {
+    color: #10b981;
+}
+
+/* Footer Link */
+.form-footer-row {
+    padding-top: 14px;
+    border-top: 1px solid #f0f0f3;
+    text-align: center;
+}
+
+.form-switch-prompt {
+    font-size: 13.5px;
+    color: #63636e;
+}
+
+.btn-link-switch {
+    background: none;
+    border: none;
+    color: #0f0f11;
+    font-family: inherit;
+    font-size: 13.5px;
+    font-weight: 700;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    margin-left: 4px;
+    transition: opacity 0.2s ease;
+}
+
+.btn-link-switch:hover {
+    opacity: 0.75;
+}
+
+/* --- 2. DARK OVERLAY SLIDER (Smooth Sliding Door) --- */
+.dark-overlay-slider {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 50%;
+    height: 100%;
+    background: var(--login-bg-card-dark);
+    color: var(--login-text-light);
+    border-radius: 28px;
+    z-index: 10;
+    overflow: hidden;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+    transition: transform var(--slide-duration) var(--slide-curve);
+    transform: translateX(0);
+}
+
+/* SLIDE TO RIGHT WHEN SIGN UP IS ACTIVE */
+.sliding-card.signup-active .dark-overlay-slider {
+    transform: translateX(100%);
+}
+
+/* Overlay Content Layers */
+.overlay-content {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    padding: 40px 42px 36px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    transition: opacity 0.35s ease 0.15s, transform 0.5s ease;
+}
+
+/* Login State (Left side) */
+.overlay-content-login {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+}
+
+.sliding-card.signup-active .overlay-content-login {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-40px);
+}
+
+/* Sign Up State (Right side) */
+.overlay-content-signup {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(40px);
+}
+
+.sliding-card.signup-active .overlay-content-signup {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+}
+
+/* Dark Panel Brand Header */
+.overlay-brand-badge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.overlay-heart-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+}
+
+.overlay-brand-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.overlay-brand-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #ffffff;
+    letter-spacing: -0.01em;
+}
+
+.overlay-brand-tag {
+    font-size: 10.5px;
+    color: #888892;
+    font-weight: 500;
+}
+
+/* Headlines */
+.overlay-headline-wrap {
+    margin: 8px 0 10px;
+}
+
+.overlay-hero-title {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 34px;
+    font-weight: 400;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    color: #ffffff;
+    margin-bottom: 8px;
+}
+
+.overlay-hero-desc {
+    font-size: 13.5px;
+    color: #a1a1aa;
+    line-height: 1.5;
+    max-width: 360px;
+}
+
+.overlay-quote-callout {
+    font-family: 'Newsreader', Georgia, serif;
+    font-style: italic;
+    font-size: 24px;
+    font-weight: 300;
+    line-height: 1.35;
+    color: #f4f4f6;
+    letter-spacing: -0.01em;
+    max-width: 360px;
+}
+
+/* Artwork Frames */
+.overlay-artwork-frame {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border-radius: 18px;
+    background: #000000;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    max-height: 250px;
+    margin: 10px 0;
+}
+
+.overlay-art-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 30%;
+    filter: contrast(1.05) brightness(0.98);
+}
+
+/* Features Grid */
+.overlay-features-grid {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.feature-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 9999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #e4e4e7;
+    font-size: 11.5px;
+    font-weight: 600;
+}
+
+.feature-item svg {
+    color: #ffffff;
+}
+
+/* --- TOAST NOTIFICATIONS --- */
+.login-toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(0);
+    padding: 12px 22px;
+    border-radius: 12px;
+    background: #18181b;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+    font-size: 13.5px;
+    font-weight: 600;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    z-index: 100;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.login-toast.hidden {
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+    pointer-events: none;
+}
+
+/* --- RESPONSIVE ADAPTATIONS --- */
+@media (max-width: 900px) {
+    .sliding-card {
+        height: auto;
+        min-height: 600px;
+    }
+    
+    .form-panel {
+        padding: 36px 30px;
+    }
+    
+    .overlay-content {
+        padding: 32px 28px;
+    }
+    
+    .overlay-hero-title {
+        font-size: 28px;
+    }
+}
+
+@media (max-width: 768px) {
+    .sliding-card {
+        width: 100%;
+        max-width: 480px;
+        min-height: 680px;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .dark-overlay-slider {
+        position: relative;
+        width: 100%;
+        height: 260px;
+        transform: none !important;
+        border-radius: 28px 28px 0 0;
+    }
+
+    .overlay-artwork-frame {
+        max-height: 120px;
+        margin: 6px 0;
+    }
+
+    .overlay-features-grid {
+        display: none;
+    }
+
+    .forms-track {
+        position: relative;
+        width: 100%;
+        height: auto;
+        min-height: 420px;
+    }
+
+    .form-panel {
+        width: 100%;
+        position: relative;
+        left: 0 !important;
+        right: 0 !important;
+        padding: 28px 24px 32px;
+    }
+
+    .form-panel-signup {
+        display: none;
+    }
+
+    .sliding-card.signup-active .form-panel-login {
+        display: none;
+    }
+
+    .sliding-card.signup-active .form-panel-signup {
+        display: flex;
+        opacity: 1;
+        transform: none;
+    }
+}

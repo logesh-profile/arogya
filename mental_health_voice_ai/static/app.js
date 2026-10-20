@@ -102,7 +102,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         await loadSessions();
         await startNewSession(true);
     } else {
-        openLoginGate(false);
+        updateAuthUI(false, null);
     }
 });
 
@@ -165,55 +165,71 @@ function updateAuthUI(isAuthenticated, user) {
     const sidebarUserEmail = document.getElementById("sidebarUserEmail");
 
     if (isAuthenticated && user) {
+        document.body.classList.add("user-authenticated");
         const displayName = user.display_name || user.preferred_name || user.given_name || user.name || "User";
         const email = user.email || "";
         const picture = user.picture || "";
         const initial = displayName ? displayName[0].toUpperCase() : "U";
 
         // Top-left corner pill
-        if (cornerSignInBtn) cornerSignInBtn.classList.add("hidden");
-        if (cornerPillWrap) cornerPillWrap.classList.remove("hidden");
+        if (cornerSignInBtn) {
+            cornerSignInBtn.classList.add("hidden");
+            cornerSignInBtn.style.display = "none";
+        }
+        if (cornerPillWrap) {
+            cornerPillWrap.classList.remove("hidden");
+            cornerPillWrap.style.display = "inline-flex";
+        }
         if (cornerUserName) cornerUserName.textContent = displayName;
 
+        // Avatar handling: strictly ONE avatar (image or fallback, NEVER stacked)
         if (picture) {
             if (cornerAvatarImg) {
                 cornerAvatarImg.src = picture;
                 cornerAvatarImg.style.display = "block";
                 cornerAvatarImg.classList.remove("hidden");
+                cornerAvatarImg.onerror = () => {
+                    cornerAvatarImg.style.display = "none";
+                    if (cornerAvatarFallback) {
+                        cornerAvatarFallback.textContent = initial;
+                        cornerAvatarFallback.style.display = "inline-flex";
+                    }
+                };
             }
             if (cornerAvatarFallback) {
                 cornerAvatarFallback.style.display = "none";
-                cornerAvatarFallback.classList.add("hidden");
             }
 
             if (popupUserAvatar) {
                 popupUserAvatar.src = picture;
                 popupUserAvatar.style.display = "block";
                 popupUserAvatar.classList.remove("hidden");
+                popupUserAvatar.onerror = () => {
+                    popupUserAvatar.style.display = "none";
+                    if (popupUserAvatarFallback) {
+                        popupUserAvatarFallback.textContent = initial;
+                        popupUserAvatarFallback.style.display = "flex";
+                    }
+                };
             }
             if (popupUserAvatarFallback) {
                 popupUserAvatarFallback.style.display = "none";
-                popupUserAvatarFallback.classList.add("hidden");
             }
         } else {
             if (cornerAvatarImg) {
                 cornerAvatarImg.style.display = "none";
-                cornerAvatarImg.classList.add("hidden");
             }
             if (cornerAvatarFallback) {
                 cornerAvatarFallback.textContent = initial;
                 cornerAvatarFallback.style.display = "inline-flex";
-                cornerAvatarFallback.classList.remove("hidden");
             }
 
             if (popupUserAvatar) {
                 popupUserAvatar.style.display = "none";
-                popupUserAvatar.classList.add("hidden");
             }
             if (popupUserAvatarFallback) {
                 popupUserAvatarFallback.textContent = initial;
                 popupUserAvatarFallback.style.display = "flex";
-                popupUserAvatarFallback.classList.remove("hidden");
             }
         }
 
@@ -226,9 +242,15 @@ function updateAuthUI(isAuthenticated, user) {
         if (sidebarUserAvatar) sidebarUserAvatar.textContent = initial;
         if (sidebarUserEmail) sidebarUserEmail.textContent = email ? email : "Active Private Space";
     } else {
-        // Logged out
-        if (cornerSignInBtn) cornerSignInBtn.classList.remove("hidden");
-        if (cornerPillWrap) cornerPillWrap.classList.add("hidden");
+        document.body.classList.remove("user-authenticated");
+        if (cornerSignInBtn) {
+            cornerSignInBtn.classList.remove("hidden");
+            cornerSignInBtn.style.display = "inline-flex";
+        }
+        if (cornerPillWrap) {
+            cornerPillWrap.classList.add("hidden");
+            cornerPillWrap.style.display = "none";
+        }
         if (sidebarUserName) sidebarUserName.textContent = "Guest";
         if (sidebarUserAvatar) sidebarUserAvatar.textContent = "G";
         if (sidebarUserEmail) sidebarUserEmail.textContent = "Sign in to persist chats";
@@ -387,9 +409,11 @@ function setupAuthEvents() {
     const sidebarAuthBtn = document.getElementById("sidebarAuthBtn");
     const onboardingForm = document.getElementById("onboardingNameForm");
 
-    // Top-left sign in button
+    // Top-left sign in button -> open dedicated sliding login page
     if (cornerSignInBtn) {
-        cornerSignInBtn.addEventListener("click", () => openLoginGate(false));
+        cornerSignInBtn.addEventListener("click", () => {
+            window.location.href = "/login";
+        });
     }
 
     // Top-left user pill click -> toggle pop-like window
@@ -409,24 +433,12 @@ function setupAuthEvents() {
         });
     }
 
-    // Switch Account button in pop-like window
+    // Switch Account button in pop-like window -> go to /login?action=switch
     if (switchAccountBtn) {
         switchAccountBtn.addEventListener("click", () => {
             if (userProfilePopup) userProfilePopup.classList.add("hidden");
             if (userProfileBtn) userProfileBtn.classList.remove("active");
-
-            // Disable auto-select so Google displays account chooser prompt
-            if (window.google && google.accounts && google.accounts.id) {
-                google.accounts.id.disableAutoSelect();
-            }
-
-            // Open login gate with close button enabled
-            openLoginGate(true);
-
-            // Re-trigger Google Identity prompt
-            if (window.google && google.accounts && google.accounts.id) {
-                google.accounts.id.prompt();
-            }
+            window.location.href = "/login?action=switch";
         });
     }
 
@@ -438,14 +450,26 @@ function setupAuthEvents() {
 
             try {
                 await fetch("/api/auth/logout", { method: "POST" });
+                if (window.google?.accounts?.id?.disableAutoSelect) {
+                    window.google.accounts.id.disableAutoSelect();
+                }
                 currentUser = null;
                 updateAuthUI(false, null);
-                if (sessionsList) sessionsList.innerHTML = `<div style="font-size:11.5px; color:var(--text-muted); padding:10px;">Sign in to view saved conversations.</div>`;
-                if (sessionCountTag) sessionCountTag.textContent = "0";
-                chatStream.innerHTML = "";
-                openLoginGate(false);
+                window.location.href = "/login";
             } catch (e) {
                 console.warn("Logout notice:", e);
+                window.location.href = "/login";
+            }
+        });
+    }
+
+    // Sidebar auth button
+    if (sidebarAuthBtn) {
+        sidebarAuthBtn.addEventListener("click", () => {
+            if (currentUser) {
+                if (userProfilePopup) userProfilePopup.classList.toggle("hidden");
+            } else {
+                window.location.href = "/login";
             }
         });
     }

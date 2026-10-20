@@ -125,6 +125,10 @@ def on_startup():
 def index():
     return FileResponse(os.path.join(STATIC_DIR, "index.html"))
 
+@app.get("/login")
+def login_page():
+    return FileResponse(os.path.join(STATIC_DIR, "login.html"))
+
 @app.get("/analytics")
 def analytics_page():
     return FileResponse(os.path.join(STATIC_DIR, "analytics.html"))
@@ -194,6 +198,10 @@ async def auth_google(request: Request, response: Response):
         picture = id_info.get("picture", "")
 
         user = upsert_google_user(google_id, email, name, given_name, picture)
+        preferred_name = data.get("preferred_name", "").strip()
+        if preferred_name:
+            user = update_user_preferred_name(user["id"], preferred_name)
+
         session_token = create_auth_session(user["id"])
         response.set_cookie(
             key="arogya_session",

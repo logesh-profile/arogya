@@ -145,24 +145,24 @@ def init_db():
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             "primary_user",
-            "Logeshwaran",
-            "College student preparing for semester exams, software projects, and campus placement interviews",
-            json.dumps(["Semester exams and academic pressure", "Office workload and project deadlines", "Sleep deprivation and fatigue", "Campus placement anxiety"]),
-            json.dumps(["Guided box breathing (4-4-4-4)", "Taking short walks", "Reflective spoken pauses", "Listening to calming music"]),
+            "Friend",
+            "Seeking conversational companionship and emotional support",
+            json.dumps([]),
+            json.dumps([]),
             75.0,
             now
         ))
     elif row["user_name"] == "Friend" or not row["user_name"]:
         cursor.execute("""
             UPDATE user_clinical_profile 
-            SET user_name = 'Logeshwaran',
-                key_context = 'College student preparing for semester exams, software projects, and campus placement interviews',
+            SET user_name = 'Friend',
+                key_context = 'Seeking conversational companionship and emotional support',
                 recurring_stressors = ?,
                 effective_coping = ?
             WHERE user_id = 'primary_user'
         """, (
-            json.dumps(["Semester exams and academic pressure", "Office workload and project deadlines", "Sleep deprivation and fatigue", "Campus placement anxiety"]),
-            json.dumps(["Guided box breathing (4-4-4-4)", "Taking short walks", "Reflective spoken pauses", "Listening to calming music"])
+            json.dumps([]),
+            json.dumps([])
         ))
 
     # Ensure default primary_user exists in users table
@@ -233,9 +233,9 @@ def upsert_google_user(google_id: str, email: str, name: str, given_name: str = 
         """, (
             user_id,
             display_name,
-            f"{display_name}'s personal emotional wellness journey and reflections",
-            json.dumps(["Academic deadlines and performance pressure", "Workload stress and fatigue", "Sleep regulation"]),
-            json.dumps(["Guided box breathing (4-4-4-4)", "Taking short walks", "Reflective spoken pauses"]),
+            f"{display_name}'s personal reflections and emotional wellbeing journey",
+            json.dumps([]),
+            json.dumps([]),
             75.0,
             now
         ))
@@ -890,14 +890,17 @@ def get_historical_context(current_session_id: Optional[str] = None, user_id: st
     incorporating the persistent clinical profile so Arogya naturally references long-term stressors.
     """
     profile = get_user_clinical_profile(user_id)
-    name = profile.get("user_name", "Logeshwaran")
-    stressors_text = ", ".join(profile.get("recurring_stressors", [])) or "Semester exams, Project deadlines, Sleep fatigue"
-    coping_text = ", ".join(profile.get("effective_coping", [])) or "Guided breathing, Short walks, Calming pauses"
+    name = profile.get("user_name", "Friend")
+    stressors_list = profile.get("recurring_stressors", [])
+    stressors_text = ", ".join(stressors_list) if stressors_list else "None recorded yet (First-time user or baseline)"
+    coping_list = profile.get("effective_coping", [])
+    coping_text = ", ".join(coping_list) if coping_list else "None recorded yet"
+    context_text = profile.get("key_context") or "Member seeking conversational companionship and emotional support"
 
     lines = [
         "--- LONG-TERM CLINICAL PROFILE & RECURRING STRESSOR MEMORY ---",
-        f"• User's Name: {name} (Always address and know the user as {name})",
-        f"• User Profile & Context: {profile.get('key_context', 'College student facing semester exams and placement preparation')}",
+        f"• User's Name: {name} (Address the user warmly as {name})",
+        f"• User Profile & Context: {context_text}",
         f"• Recurring Known Stressors: {stressors_text}",
         f"• Effective Coping Strategies: {coping_text}",
         f"• Baseline Wellness Standard: {profile.get('baseline_wellness', 75)}/100",

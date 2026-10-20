@@ -52,31 +52,175 @@
         </div>
     </div>
 
-    <!-- Google Sign-In Gate Modal (Shown when unauthenticated or switching accounts) -->
+    <!-- Modern Sliding Authentication Interface (Login & Sign Up on One Page) -->
     <div id="loginGateModal" class="auth-modal-overlay hidden">
-        <div class="auth-modal-card">
-            <div class="auth-modal-header">
-                <div class="auth-brand-badge">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-                    <span>Arogya Secure Space</span>
+        <div class="auth-slider-shell">
+            <!-- Close / Cancel button -->
+            <button id="closeLoginGateBtn" class="slider-close-btn" title="Close" type="button">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+
+            <div class="auth-slider-card" id="authSliderCard">
+                <!-- White Forms Container (Holds Login Form & Sign Up Form) -->
+                <div class="auth-forms-track">
+                    <!-- 1. LOGIN FORM PANEL (Right Side in Login state) -->
+                    <div class="auth-form-panel form-panel-login" id="loginFormPanel">
+                        <div class="form-header-row">
+                            <div class="form-category-tag">
+                                <span class="audio-waveform-icon">
+                                    <i></i><i></i><i></i><i></i>
+                                </span>
+                                <span>Login to Continue</span>
+                            </div>
+                        </div>
+
+                        <div class="form-hero-block">
+                            <h2 class="form-title">Welcome Back</h2>
+                            <p class="form-subtext">Sign in to continue your journey with your AI companion.</p>
+                        </div>
+
+                        <div class="form-action-body">
+                            <!-- Google Sign-In Container for Login -->
+                            <div class="google-auth-box">
+                                <div id="gsiLoginButtonContainer" class="gsi-render-area"></div>
+                                <div class="auth-guarantee-note">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                    <span>Verified by Google • Private &amp; secure session</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-footer-block">
+                            <p class="switch-link-text">
+                                Don't have an account? 
+                                <button type="button" class="btn-slider-switch" id="sliderGoToSignUpBtn">Sign Up</button>
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- 2. SIGN UP FORM PANEL (Left Side in Sign Up state) -->
+                    <div class="auth-form-panel form-panel-signup" id="signupFormPanel">
+                        <div class="form-header-row">
+                            <div class="form-category-tag">
+                                <span class="audio-waveform-icon">
+                                    <i></i><i></i><i></i><i></i>
+                                </span>
+                                <span>Create Account</span>
+                            </div>
+                        </div>
+
+                        <div class="form-hero-block">
+                            <h2 class="form-title">Create Your Account</h2>
+                            <p class="form-subtext">Join us and start your journey towards a happier, healthier you.</p>
+                        </div>
+
+                        <div class="form-action-body">
+                            <!-- Preferred Name input field for Sign Up -->
+                            <div class="auth-field-group">
+                                <label for="signupPreferredNameInput" class="auth-field-label">Preferred Name / Username</label>
+                                <div class="auth-field-input-wrap">
+                                    <svg class="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                                    <input type="text" id="signupPreferredNameInput" class="auth-input-element" placeholder="e.g. Logesh" maxlength="30" autocomplete="off" />
+                                </div>
+                                <span class="auth-field-hint">Arogya will greet you and personalize conversations with this name.</span>
+                            </div>
+
+                            <!-- Google Sign-Up Container -->
+                            <div class="google-auth-box">
+                                <div id="gsiSignupButtonContainer" class="gsi-render-area"></div>
+                                <div class="auth-guarantee-note">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                                    <span>1-Click Sign Up with your verified Google account</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-footer-block">
+                            <p class="switch-link-text">
+                                Already have an account? 
+                                <button type="button" class="btn-slider-switch" id="sliderGoToLoginBtn">Login</button>
+                            </p>
+                        </div>
+                    </div>
                 </div>
-                <button id="closeLoginGateBtn" class="crisis-close-btn hidden" title="Close Modal">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-            </div>
 
-            <div class="auth-modal-body">
-                <h3 class="auth-modal-title">Sign In with Google</h3>
-                <p class="auth-modal-desc">
-                    Log in with your Gmail account to access your personal reflection conversations, speech acoustic biomarkers, and longitudinal clinical memory.
-                </p>
+                <!-- Dark Welcome Sliding Overlay Panel (Smooth horizontal sliding window) -->
+                <div class="auth-dark-slider" id="authDarkSlider">
+                    <!-- Left Overlay Content (Displayed during Login mode) -->
+                    <div class="dark-overlay-content dark-content-login" id="darkContentLogin">
+                        <div class="dark-brand-row">
+                            <div class="dark-brand-badge">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                            </div>
+                            <div class="dark-brand-meta">
+                                <span class="dark-brand-title">CompanionAI</span>
+                                <span class="dark-brand-tag">Always Here. Always Listening.</span>
+                            </div>
+                        </div>
 
-                <!-- Official Google Identity Services Button Container -->
-                <div class="gsi-button-stage">
-                    <div id="gsiButtonContainer"></div>
-                    <div class="gsi-privacy-note">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                        <span>100% Verified by Google. Your chats &amp; voice metrics are strictly isolated to your account.</span>
+                        <div class="dark-hero-text">
+                            <h1 class="dark-hero-heading">You're not alone</h1>
+                            <p class="dark-hero-sub">A friendly AI companion, ready to listen, support and brighten your day.</p>
+                        </div>
+
+                        <div class="dark-art-frame">
+                            <img src="/static/assets/companion_robot_elderly.jpg" alt="Companion with elderly person" class="dark-art-image" />
+                        </div>
+
+                        <div class="dark-pill-row">
+                            <div class="dark-pill-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                <span>Talk Freely</span>
+                            </div>
+                            <div class="dark-pill-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                                <span>Feel Supported</span>
+                            </div>
+                            <div class="dark-pill-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>
+                                <span>Better Days</span>
+                            </div>
+                            <div class="dark-pill-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+                                <span>You Matter</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Overlay Content (Displayed during Sign Up mode) -->
+                    <div class="dark-overlay-content dark-content-signup" id="darkContentSignup">
+                        <div class="dark-brand-row">
+                            <div class="dark-brand-badge">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                            </div>
+                            <div class="dark-brand-meta">
+                                <span class="dark-brand-title">CompanionAI</span>
+                                <span class="dark-brand-tag">Always Here. Always Listening.</span>
+                            </div>
+                        </div>
+
+                        <div class="dark-hero-text">
+                            <p class="dark-quote-text">“Small conversations can make a big difference.”</p>
+                        </div>
+
+                        <div class="dark-art-frame">
+                            <img src="/static/assets/companion_robot_chatting.jpg" alt="Companion chatting warmly" class="dark-art-image" />
+                        </div>
+
+                        <div class="dark-pill-row">
+                            <div class="dark-pill-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                                <span>Chat Anytime</span>
+                            </div>
+                            <div class="dark-pill-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+                                <span>Feel Less Lonely</span>
+                            </div>
+                            <div class="dark-pill-item">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                                <span>Safe &amp; Private</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

@@ -174,10 +174,10 @@ You converse with the user through spoken audio. Your core principles:
    - If the user speaks Tanglish, reply warmly in natural conversational Tanglish or Indian English.
    - Speak like an attentive, wise friend. Never give generic boilerplate.
 
-2. LONG-TERM CLINICAL CONTINUITY & ENTITY MEMORY:
-   - USER IDENTITY: The user's name is Logeshwaran (or Logesh). Always know who they are. Address them warmly as Logesh when appropriate.
-   - COMPANION CONTINUITY: You have access to their persistent clinical profile (college student preparing for semester exams, software projects, placement interviews), recurring stressors (semester exams, deadline overwhelm, sleep fatigue), and past conversation summaries.
-   - Treat each interaction as part of an ongoing shared relationship. If the user mentions stress, workload, or fatigue, naturally connect it to their ongoing context (e.g., asking if this is related to their semester exams or project deadlines, or recalling coping strategies like box breathing or music).
+2. LONG-TERM CLINICAL CONTINUITY & STRICT MEMORY GROUNDING:
+   - USER IDENTITY: Refer to the user by their preferred name provided in the session profile context.
+   - STRICT EMPIRICAL CONTINUITY: You have access to the user's authentic clinical profile and past conversational memory in the prompt. ONLY reference stressors, challenges, or coping strategies that appear in their actual history.
+   - ZERO UNRELATED HALLUCINATIONS: If the user has no recorded history or has not explicitly mentioned exams, jobs, or specific life events, DO NOT invent or assume them. Greet and converse with new users with a warm, open, supportive presence.
    - If the user asks "do you remember me?", "what is my name?", or references past sessions, confirm and answer accurately using their profile and past session history.
 
 3. REAL HUMAN CONVERSATIONAL DEPTH & SPOKEN FLOW:
@@ -234,9 +234,9 @@ def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "p
     profile = anchor.get("profile") or get_user_clinical_profile(user_id)
     name = profile.get("user_name") or "Friend"
     short_name = name.split()[0] if name else "Friend"
-    key_context = profile.get("key_context", "Navigating daily deadlines, routines, and personal wellbeing")
-    stressors = profile.get("recurring_stressors", ["Daily workload and project deadlines"])
-    stressor_sample = stressors[0] if stressors else "workload"
+    key_context = profile.get("key_context", "Member seeking conversational companionship and emotional support")
+    stressors = profile.get("recurring_stressors", [])
+    stressor_sample = stressors[0] if stressors else ""
 
     has_history = anchor.get("has_history", False)
     past_title = anchor.get("title", "")
@@ -245,28 +245,29 @@ def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "p
 
     if client:
         try:
-            if has_history:
+            if has_history and (past_title or past_summary or recent_remarks):
                 prompt = f"""
 You are Arogya, a deeply empathetic, caring voice companion speaking to your friend {short_name} ({name}).
-Profile & Context:
-- User: {name} (Call him {short_name} or {name})
+Profile & Real Context:
+- User: {name} (Address them as {short_name})
 - Known Context: {key_context}
-- Recurring Stressors: {', '.join(stressors)}
+- Real Recorded Stressors: {', '.join(stressors) if stressors else 'None recorded yet'}
 - Past Session Title: {past_title}
 - Past Session Summary: {past_summary}
-- Recent remarks from user: {' | '.join(recent_remarks) if recent_remarks else 'None recorded'}
+- Recent remarks spoken by user: {' | '.join(recent_remarks) if recent_remarks else 'None recorded'}
 
-Task: Generate a genuine, caring welcome-back greeting in 1-2 natural spoken sentences (maximum 30 words).
-Directly recall and ask about what they faced previously (e.g., semester exams, workload deadlines, or sleep).
-Make it feel like a real human friend checking back in after a few days.
+Task: Generate a genuine, caring welcome-back greeting in 1-2 natural spoken sentences (maximum 28 words).
+Naturally check back in based STRICTLY on what they actually shared in their previous session.
+DO NOT invent exams, job interviews, or problems they never mentioned.
 Do NOT sound robotic or formal. Speak directly as spoken text with no markdown, asterisks, or quotes.
 """
             else:
                 prompt = f"""
-You are Arogya, a warm, caring voice companion speaking to {short_name} ({name}).
-Profile: {key_context}. Known challenges: {', '.join(stressors)}.
-Generate a warm, friendly first-welcome greeting in 1-2 natural spoken sentences (maximum 28 words).
-Address him as {short_name}, acknowledge his exam or project preparations warmly, and invite him to take a breath and share how he is feeling.
+You are Arogya, a warm, friendly voice companion welcoming {short_name}.
+This is their very first conversation with you.
+Task: Generate a warm, reassuring first-welcome greeting in 1-2 natural spoken sentences (maximum 22 words).
+Welcome {short_name} warmly, mention that you're here to listen and keep them company, and gently ask how they are feeling today.
+DO NOT assume or invent exams, deadlines, or life situations. Keep it simple, welcoming, and open-ended.
 Do NOT sound robotic. Speak directly as spoken text with no markdown, asterisks, or quotes.
 """
             resp = client.models.generate_content(
@@ -282,11 +283,13 @@ Do NOT sound robotic. Speak directly as spoken text with no markdown, asterisks,
         except Exception as e:
             print(f"[!] Dynamic memory greeting error: {e}")
 
-    # Fallback to high-quality personalized memory greeting
-    if has_history:
-        fallback = f"Hello {short_name}! It is wonderful to hear from you again. Last time we spoke about feeling overwhelmed with your {stressor_sample.lower()}. Did you manage to catch some rest, or are deadlines still pressing?"
+    # Fallback to high-quality personalized memory greeting (Zero hallucination)
+    if has_history and past_title:
+        fallback = f"Hello {short_name}! It is wonderful to hear from you again. How have you been feeling since our last conversation about {past_title.lower()}?"
+    elif has_history and stressor_sample:
+        fallback = f"Hello {short_name}! It is wonderful to hear from you again. How have you been feeling since we last spoke?"
     else:
-        fallback = f"Hello {short_name}, welcome back. I know preparing for semester exams and projects can feel heavy. Take a gentle breath with me... how are you truly feeling right now?"
+        fallback = f"Hello {short_name}, welcome to Arogya! I am here to listen, support, and keep you company whenever you need a friendly space. How are you feeling today?"
     return normalize_text_for_speech(fallback)
 
 
