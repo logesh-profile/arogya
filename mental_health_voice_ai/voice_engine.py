@@ -2,10 +2,15 @@ import os
 import sys
 import uuid
 import asyncio
-import torch
 import soundfile as sf
-from faster_whisper import WhisperModel
-from f5_tts.api import F5TTS
+
+# Dynamic optional imports for cloud deployment / low-memory environments
+try:
+    import torch
+    HAS_TORCH = True
+except ImportError:
+    torch = None
+    HAS_TORCH = False
 
 # Ensure UTF-8 on Windows
 if sys.platform == "win32":
@@ -34,14 +39,15 @@ f5tts_instance = None
 def get_whisper_model():
     global whisper_model
     if whisper_model is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        compute_type = "float16" if device == "cuda" else "int8"
         try:
+            from faster_whisper import WhisperModel
+            device = "cuda" if (HAS_TORCH and torch and torch.cuda.is_available()) else "cpu"
+            compute_type = "float16" if device == "cuda" else "int8"
             print(f"[*] Initializing faster-whisper on {device} ({compute_type})...")
             whisper_model = WhisperModel("base", device=device, compute_type=compute_type)
         except Exception as e:
-            print(f"[!] Falling back to CPU whisper: {e}")
-            whisper_model = WhisperModel("base", device="cpu", compute_type="int8")
+            print(f"[!] Whisper model initialization notice: {e}")
+            whisper_model = None
     return whisper_model
 
 def transcribe_audio(audio_path: str) -> str:
@@ -90,14 +96,19 @@ def transcribe_audio(audio_path: str) -> str:
 
 def get_f5tts():
     """
-    Loads F5TTS instance on RTX 3050 GPU for authentic reference voice cloning.
+    Loads F5TTS instance on GPU for authentic reference voice cloning if available.
     """
     global f5tts_instance
     if f5tts_instance is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"[*] Initializing F5-TTS Neural Voice on {device} for exact cloned voice...")
-        f5tts_instance = F5TTS(model="F5TTS_v1_Base", device=device)
-        print("[✓] F5-TTS initialized and ready.")
+        try:
+            from f5_tts.api import F5TTS
+            device = "cuda" if (HAS_TORCH and torch and torch.cuda.is_available()) else "cpu"
+            print(f"[*] Initializing F5-TTS Neural Voice on {device}...")
+            f5tts_instance = F5TTS(model="F5TTS_v1_Base", device=device)
+            print("[✓] F5-TTS initialized and ready.")
+        except Exception as e:
+            print(f"[!] F5-TTS unavailable on this server ({e}). Using Fast Neural voice.")
+            f5tts_instance = None
     return f5tts_instance
 
 def synthesize_cloned_speech(text: str, wellness_score: int = 75, dominant_state: str = "Calm") -> str:
@@ -164,12 +175,14 @@ async def synthesize_speech(text: str, mode: str = "cloned", wellness_score: int
     - 'fast': Instant sub-second Indian neural voice (~0.4s) with adaptive rate & pitch
     - 'cloned': Authentic reference cloned voice on RTX 3050 GPU (~1.9s) with adaptive speed
     """
-    if mode == "fast":
-        try:
-            return await synthesize_fast_speech(text, wellness_score=wellness_score, dominant_state=dominant_state)
-        except Exception as e:
-            print(f"[!] Fast speech failed: {e}, falling back to cloned")
+    if mode == "cloned":
+        f5tts = get_f5tts()
+        if f5tts is not None and os.path.exists(REF_AUDIO):
+            try:
+                loop = asyncio.get_event_loop()
+                return await loop.run_in_executor(None, synthesize_cloned_speech, text, wellness_score, dominant_state)
+            except Exception as e:
+                print(f"[!] Cloned speech synthesis failed: {e}, falling back to Fast Neural voice")
     
-    loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, synthesize_cloned_speech, text, wellness_score, dominant_state)
+    return await synthesize_fast_speech(text, wellness_score=wellness_score, dominant_state=dominant_state)
 

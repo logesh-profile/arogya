@@ -1,4 +1,4 @@
-# Core Framework & Web Server
+# Web Framework & Server
 fastapi>=0.110.0
 uvicorn>=0.28.0
 python-multipart>=0.0.9
@@ -7,17 +7,15 @@ pydantic>=2.6.0
 
 # AI & LLM Reasoning
 google-genai>=0.1.0
+google-auth>=2.28.0
+requests>=2.31.0
 
-# Speech Synthesis & Voice Cloning
-f5-tts>=0.1.0
+# Speech Synthesis & Fast Neural Voice
 edge-tts>=6.1.9
-torchaudio>=2.1.0
-torch>=2.1.0
 
-# Audio DSP & Feature Extraction
+# Audio DSP, Formatting & Feature Extraction
 librosa>=0.10.1
 soundfile>=0.12.1
 numpy>=1.26.0
-
-# Hardware & mmWave Sensor Telemetry
-pyserial>=3.5
+imageio-ffmpeg>=0.4.9
+faster-whisper>=1.0.0

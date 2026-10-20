@@ -79,6 +79,24 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
 
+def get_ffmpeg_executable() -> Optional[str]:
+    """Cross-platform FFmpeg resolver: checks system PATH, imageio-ffmpeg package, or local Windows root."""
+    # 1. System PATH (Render/Linux, Ubuntu, Mac, or Windows PATH)
+    sys_ffmpeg = shutil.which("ffmpeg")
+    if sys_ffmpeg:
+        return sys_ffmpeg
+    # 2. imageio-ffmpeg auto-downloaded wheel binary
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        pass
+    # 3. Local bundled Windows executable
+    local_ffmpeg = os.path.join(os.path.dirname(BASE_DIR), "ffmpeg.exe")
+    if os.path.exists(local_ffmpeg):
+        return local_ffmpeg
+    return None
+
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/audio", StaticFiles(directory=CACHE_DIR), name="audio")
 
@@ -348,10 +366,10 @@ async def transcribe_only(file: UploadFile = File(...)):
 
     clean_filename = f"clean_tr_{uuid.uuid4().hex[:8]}.wav"
     clean_path = os.path.join(CACHE_DIR, clean_filename)
-    ffmpeg_exe = os.path.join(os.path.dirname(BASE_DIR), "ffmpeg.exe")
+    ffmpeg_exe = get_ffmpeg_executable()
 
     active_audio_path = raw_path
-    if os.path.exists(ffmpeg_exe):
+    if ffmpeg_exe and os.path.exists(ffmpeg_exe):
         import subprocess
         try:
             cmd = [ffmpeg_exe, "-y", "-i", raw_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", clean_path]
@@ -404,9 +422,9 @@ async def process_voice_chat(
     # 2. Normalize to 16kHz Mono PCM WAV via FFmpeg
     clean_filename = f"user_speech_{uuid.uuid4().hex[:8]}.wav"
     clean_path = os.path.join(CACHE_DIR, clean_filename)
-    ffmpeg_exe = os.path.join(os.path.dirname(BASE_DIR), "ffmpeg.exe")
+    ffmpeg_exe = get_ffmpeg_executable()
     
-    if os.path.exists(ffmpeg_exe):
+    if ffmpeg_exe and os.path.exists(ffmpeg_exe):
         import subprocess
         try:
             cmd = [ffmpeg_exe, "-y", "-i", raw_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", clean_path]
@@ -787,5 +805,7 @@ async def standalone_synthesize(
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("PORT", 8000))
+    host = os.environ.get("HOST", "0.0.0.0")
+    uvicorn.run("app:app", host=host, port=port, reload=False)
 
