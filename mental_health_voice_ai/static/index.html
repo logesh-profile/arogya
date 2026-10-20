@@ -10,6 +10,13 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;1,6..72,300;1,6..72,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
+    <!-- PWA Manifest & Mobile Configuration -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#0a0a0c">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Arogya">
+    <link rel="apple-touch-icon" href="/static/assets/icon-192.png">
     <!-- Google Identity Services (GSI) OAuth 2.0 Web SDK -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
@@ -603,6 +610,16 @@
                             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
                         </svg>
                         <span class="theme-label" id="themeLabel">Dark</span>
+                    </button>
+
+                    <!-- PWA Standalone App Install Button -->
+                    <button id="installPwaBtn" class="btn-header-tool btn-install-pwa hidden" title="Install Arogya as Standalone App on Desktop or Mobile">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="7 10 12 15 17 10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        <span>Install App</span>
                     </button>
 
                     <div class="live-status-pill" id="liveStatusPill">

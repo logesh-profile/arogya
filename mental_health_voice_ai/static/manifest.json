@@ -1,0 +1,44 @@
+{
+  "name": "Arogya • AI Mental Health & Voice Companion",
+  "short_name": "Arogya",
+  "description": "Speech-to-Speech Emotional Wellbeing Companion with Grounded Self-Reported Evidence and Long-Term Memory.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0c",
+  "theme_color": "#0a0a0c",
+  "orientation": "any",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["health", "lifestyle", "medical"],
+  "icons": [
+    {
+      "src": "/static/assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Live Voice Dialogue",
+      "short_name": "Live Voice",
+      "description": "Talk continuously with Arogya in real-time",
+      "url": "/?mode=voice",
+      "icons": [{ "src": "/static/assets/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Wellness Analytics",
+      "short_name": "Analytics",
+      "description": "Review clinical wellness trajectory and trends",
+      "url": "/analytics",
+      "icons": [{ "src": "/static/assets/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

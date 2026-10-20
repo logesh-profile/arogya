@@ -22,6 +22,10 @@ from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
 from dotenv import load_dotenv
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 # Local imports
 from database import (
     init_db,
@@ -134,6 +138,18 @@ def index():
 @app.get("/login")
 def login_page():
     return FileResponse(os.path.join(STATIC_DIR, "login.html"))
+
+@app.get("/manifest.json")
+def pwa_manifest():
+    return FileResponse(os.path.join(STATIC_DIR, "manifest.json"), media_type="application/manifest+json")
+
+@app.get("/sw.js")
+def service_worker():
+    return FileResponse(
+        os.path.join(STATIC_DIR, "sw.js"),
+        media_type="application/javascript",
+        headers={"Service-Worker-Allowed": "/"}
+    )
 
 @app.get("/analytics")
 def analytics_page():
@@ -465,8 +481,15 @@ async def process_voice_chat(
 
     reply_text = eval_result.get("reply_text", "I'm listening and I'm right here with you.")
 
-    # 8. Synthesize Spoken Response
-    ai_audio_url = await synthesize_speech(reply_text, mode=voice_mode)
+    # 8. Synthesize Spoken Response (Emotion-Adaptive Cadence)
+    user_wellness = eval_result.get("overall_wellness", 75)
+    user_state = eval_result.get("dominant_state", "Calm")
+    ai_audio_url = await synthesize_speech(
+        reply_text, 
+        mode=voice_mode, 
+        wellness_score=user_wellness if user_wellness is not None else 75, 
+        dominant_state=user_state
+    )
 
     # 9. Save Assistant Message
     save_message(
@@ -559,7 +582,14 @@ async def process_text_chat(
     ai_audio_url = None
     if voice_mode and voice_mode != "none":
         try:
-            ai_audio_url = await synthesize_speech(reply_text, mode=voice_mode)
+            user_wellness = eval_result.get("overall_wellness", 75)
+            user_state = eval_result.get("dominant_state", "Calm")
+            ai_audio_url = await synthesize_speech(
+                reply_text, 
+                mode=voice_mode, 
+                wellness_score=user_wellness if user_wellness is not None else 75, 
+                dominant_state=user_state
+            )
         except Exception as e:
             print(f"[!] Speech synthesis notice: {e}")
 

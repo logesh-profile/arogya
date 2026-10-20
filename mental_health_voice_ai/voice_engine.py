@@ -100,15 +100,24 @@ def get_f5tts():
         print("[✓] F5-TTS initialized and ready.")
     return f5tts_instance
 
-def synthesize_cloned_speech(text: str) -> str:
+def synthesize_cloned_speech(text: str, wellness_score: int = 75, dominant_state: str = "Calm") -> str:
     """
     Synthesizes speech using the user's exact reference cloned voice (F5-TTS).
     Matches generate_custom_speech.py parameters exactly for identical tone, accent & pitch.
-    Optimized nfe_step=8 for lightning-fast voice synthesis (~1.9s on RTX 3050).
+    Optimized nfe_step=16 for high-fidelity voice cloning on RTX 3050.
+    Dynamically modulates speed: slower and more grounded during distress/exhaustion.
     """
     f5tts = get_f5tts()
     out_filename = f"reply_cloned_{uuid.uuid4().hex[:8]}.wav"
     out_path = os.path.join(CACHE_DIR, out_filename)
+
+    # Emotion-adaptive cloned speed
+    if wellness_score < 55 or dominant_state in ["Overwhelmed", "Exhausted", "Crisis Alert"]:
+        adaptive_speed = 0.88  # Soothing, slower, grounded
+    elif wellness_score < 68 or dominant_state in ["Lonely", "Reflective"]:
+        adaptive_speed = 0.94  # Gentle, attentive cadence
+    else:
+        adaptive_speed = 1.0   # Standard conversational speed
 
     f5tts.infer(
         ref_file=REF_AUDIO,
@@ -116,36 +125,51 @@ def synthesize_cloned_speech(text: str) -> str:
         gen_text=text,
         file_wave=out_path,
         remove_silence=False,
-        speed=1.0,
+        speed=adaptive_speed,
         nfe_step=16,
         cfg_strength=2.0
     )
     return f"/audio/{out_filename}"
 
-async def synthesize_fast_speech(text: str) -> str:
+async def synthesize_fast_speech(text: str, wellness_score: int = 75, dominant_state: str = "Calm") -> str:
     """
     Ultra-fast neural speech synthesis via edge-tts (sub-second latency ~0.4s).
     Uses Indian English neural voice (en-IN-NeerjaNeural).
+    Dynamically modulates prosodic rate and pitch based on user emotional state:
+    - Distress / low wellness: -12% rate, -4Hz pitch (vagus nerve grounding cadence)
+    - Loneliness / mild strain: -6% rate, -2Hz pitch (warm intimate presence)
+    - Balanced / calm: +4% rate, +0Hz pitch (fluid conversational rhythm)
     """
     import edge_tts
     out_filename = f"reply_fast_{uuid.uuid4().hex[:8]}.mp3"
     out_path = os.path.join(CACHE_DIR, out_filename)
-    communicate = edge_tts.Communicate(text, voice="en-IN-NeerjaNeural", rate="+6%")
+
+    if wellness_score < 55 or dominant_state in ["Overwhelmed", "Exhausted", "Crisis Alert"]:
+        rate = "-12%"
+        pitch = "-4Hz"
+    elif wellness_score < 68 or dominant_state in ["Lonely", "Reflective"]:
+        rate = "-6%"
+        pitch = "-2Hz"
+    else:
+        rate = "+4%"
+        pitch = "+0Hz"
+
+    communicate = edge_tts.Communicate(text, voice="en-IN-NeerjaNeural", rate=rate, pitch=pitch)
     await communicate.save(out_path)
     return f"/audio/{out_filename}"
 
-async def synthesize_speech(text: str, mode: str = "cloned") -> str:
+async def synthesize_speech(text: str, mode: str = "cloned", wellness_score: int = 75, dominant_state: str = "Calm") -> str:
     """
-    Synthesizes speech based on mode:
-    - 'fast': Instant sub-second Indian neural voice (~0.4s)
-    - 'cloned': Authentic reference cloned voice on RTX 3050 GPU (~1.9s)
+    Synthesizes speech with emotion-adaptive prosodic cadence based on mode and clinical indicators:
+    - 'fast': Instant sub-second Indian neural voice (~0.4s) with adaptive rate & pitch
+    - 'cloned': Authentic reference cloned voice on RTX 3050 GPU (~1.9s) with adaptive speed
     """
     if mode == "fast":
         try:
-            return await synthesize_fast_speech(text)
+            return await synthesize_fast_speech(text, wellness_score=wellness_score, dominant_state=dominant_state)
         except Exception as e:
             print(f"[!] Fast speech failed: {e}, falling back to cloned")
     
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, synthesize_cloned_speech, text)
+    return await loop.run_in_executor(None, synthesize_cloned_speech, text, wellness_score, dominant_state)
 

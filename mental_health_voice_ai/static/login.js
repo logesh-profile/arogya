@@ -193,3 +193,11 @@ function showToast(message, autoHide = true) {
         }, 4000);
     }
 }
+
+// Register PWA Service Worker
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+    });
+}
+

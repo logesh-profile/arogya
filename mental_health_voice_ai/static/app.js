@@ -879,7 +879,7 @@ function resetMicMeter() {
     }
 }
 
-// --- SPECTACULAR SOUND & TONE AUDIO VISUALIZER ---
+// --- SPECTACULAR SOUND & TONE AUDIO VISUALIZER (OPTIMIZED 60 FPS CAP) ---
 function startVisualizer(stream) {
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -903,14 +903,34 @@ function startVisualizer(stream) {
     const inlineCanvas = document.getElementById("inlineWaveCanvas");
     const inlineCtx = inlineCanvas ? inlineCanvas.getContext("2d") : null;
 
-    let rotationAngle = 0;
+    // Cache DOM references once to avoid layout thrashing across animation frames
+    const ribbonTonePill = document.getElementById("voiceTonePill");
+    const modalToneBadge = document.getElementById("modalToneBadge");
+    const inlineToneBadge = document.getElementById("inlineVoiceToneText");
+    const inlineGlow = document.getElementById("inlineOrbGlow");
+    const centerBadge = document.getElementById("voiceOrbCenterBadge");
+    const inlineVoiceStage = document.getElementById("inlineVoiceStage");
+    const modalStateText = document.getElementById("modalVoiceStateText");
+    const orbWrap = document.getElementById("voiceOrbWrapper");
 
-    function render() {
+    let rotationAngle = 0;
+    let lastRenderTime = 0;
+    let lastDomUpdateTime = 0;
+
+    function render(timestamp) {
         if (!isRecording && (!audioPlayer || audioPlayer.paused)) {
             drawIdleWaveform();
             return;
         }
         animFrameId = requestAnimationFrame(render);
+
+        // Hardware Delta-Time Cap: Restrict loop to ~60 FPS (16ms) to prevent high-refresh GPU stalls
+        if (timestamp) {
+            const elapsed = timestamp - lastRenderTime;
+            if (elapsed < 16.0) return;
+            lastRenderTime = timestamp;
+        }
+
         analyser.getByteFrequencyData(freqData);
         analyser.getByteTimeDomainData(timeData);
 
@@ -938,9 +958,9 @@ function startVisualizer(stream) {
         }
 
         // Determine Tone & Chromatic Color Palette
-        let toneLabel = "Natural";
+        let toneLabel = "Calm & Steady";
         let toneClass = "tone-calm";
-        let toneColor = "#38bdf8"; // Luminous Cyan
+        let toneColor = "#38bdf8"; // Cyan
         let glowColor = "rgba(56, 189, 248, 0.45)";
         let secondaryColor = "#2dd4bf"; // Teal
 
@@ -964,31 +984,38 @@ function startVisualizer(stream) {
             secondaryColor = "#2dd4bf"; // Teal
         }
 
-        // Update Tone Badges across Ribbon, Modal, and Inline Stage
-        const ribbonTonePill = document.getElementById("voiceTonePill");
-        if (ribbonTonePill) {
-            ribbonTonePill.classList.remove("hidden");
-            ribbonTonePill.className = `voice-tone-pill ${toneClass}`;
-            ribbonTonePill.textContent = toneLabel;
-        }
-        const modalToneBadge = document.getElementById("modalToneBadge");
-        if (modalToneBadge) {
-            modalToneBadge.className = `voice-modal-tone-badge ${toneClass}`;
-            modalToneBadge.textContent = toneLabel;
-        }
-        const inlineToneBadge = document.getElementById("inlineVoiceToneText");
-        if (inlineToneBadge) {
-            inlineToneBadge.textContent = toneLabel;
-            inlineToneBadge.style.color = toneColor;
-            inlineToneBadge.style.borderColor = toneColor + "55";
-        }
-        const inlineGlow = document.getElementById("inlineOrbGlow");
-        if (inlineGlow) {
-            inlineGlow.style.background = `radial-gradient(circle, ${glowColor} 0%, transparent 70%)`;
-        }
+        // Throttled DOM Telemetry Updates (10 FPS / 100ms throttle to prevent layout recalculations)
+        const now = performance.now();
+        if (now - lastDomUpdateTime > 100) {
+            lastDomUpdateTime = now;
 
-        if (micMeterFill) micMeterFill.style.width = `${percent}%`;
-        if (micMeterStatus) micMeterStatus.textContent = percent > 5 ? `${percent}%` : "Quiet";
+            if (ribbonTonePill) {
+                ribbonTonePill.classList.remove("hidden");
+                ribbonTonePill.className = `voice-tone-pill ${toneClass}`;
+                ribbonTonePill.textContent = toneLabel;
+            }
+            if (modalToneBadge) {
+                modalToneBadge.className = `voice-modal-tone-badge ${toneClass}`;
+                modalToneBadge.textContent = toneLabel;
+            }
+            if (inlineToneBadge) {
+                inlineToneBadge.textContent = toneLabel;
+                inlineToneBadge.style.color = toneColor;
+                inlineToneBadge.style.borderColor = toneColor + "55";
+            }
+            if (inlineGlow) {
+                inlineGlow.style.background = `radial-gradient(circle, ${glowColor} 0%, transparent 70%)`;
+            }
+
+            if (micMeterFill) micMeterFill.style.width = `${percent}%`;
+            if (micMeterStatus) micMeterStatus.textContent = percent > 5 ? `${percent}%` : "Quiet";
+
+            if (centerBadge && isVoiceModalActive) {
+                const scaleVal = 1 + (percent / 200);
+                centerBadge.style.transform = `scale(${scaleVal})`;
+                centerBadge.style.boxShadow = `0 0 ${16 + percent * 0.7}px ${toneColor}88`;
+            }
+        }
 
         // 3. ChatGPT-Style Barge-In / Interruption Detection
         if (audioPlayer && !audioPlayer.paused && audioPlayer.currentTime > 0) {
@@ -998,9 +1025,7 @@ function startVisualizer(stream) {
                 audioPlayer.currentTime = 0;
                 setLiveStatus("Listening...", "listening");
                 orbCaption.textContent = "You spoke — Arogya paused to listen to you";
-                const modalStateText = document.getElementById("modalVoiceStateText");
                 if (modalStateText) modalStateText.textContent = "Arogya paused • Listening to you...";
-                const orbWrap = document.getElementById("voiceOrbWrapper");
                 if (orbWrap) {
                     orbWrap.classList.remove("speaking");
                     orbWrap.classList.add("listening");
@@ -1042,7 +1067,8 @@ function startVisualizer(stream) {
         }
 
         // 5. Render Ribbon Canvas Waveform (Sound & Tone Responsive)
-        if (canvasCtx && waveformCanvas) {
+        // Guarded: only render if waveformCanvas is attached and visible
+        if (canvasCtx && waveformCanvas && waveformCanvas.offsetParent !== null) {
             canvasCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
             const cy = waveformCanvas.height / 2;
             const w = waveformCanvas.width;
@@ -1050,8 +1076,6 @@ function startVisualizer(stream) {
             canvasCtx.beginPath();
             canvasCtx.lineWidth = 2.5;
             canvasCtx.strokeStyle = toneColor;
-            canvasCtx.shadowBlur = 10;
-            canvasCtx.shadowColor = glowColor;
 
             const sliceWidth = w / bufferLength;
             let x = 0;
@@ -1066,11 +1090,11 @@ function startVisualizer(stream) {
                 x += sliceWidth;
             }
             canvasCtx.stroke();
-            canvasCtx.shadowBlur = 0;
         }
 
         // 6. Render Full-Screen ChatGPT Voice Orb (Spectacular Liquid Aura + Breathing Harmonic Rings)
-        if (orbCtx && orbCanvas) {
+        // Guarded: only render when Voice Modal is ACTIVE to save 90% GPU rasterization
+        if (isVoiceModalActive && orbCtx && orbCanvas) {
             orbCtx.clearRect(0, 0, orbCanvas.width, orbCanvas.height);
             const cx = orbCanvas.width / 2;
             const cy = orbCanvas.height / 2;
@@ -1133,18 +1157,11 @@ function startVisualizer(stream) {
             }
 
             orbCtx.globalAlpha = 1.0;
-
-            // Reactive Center Badge Pulsing & Glow
-            const centerBadge = document.getElementById("voiceOrbCenterBadge");
-            if (centerBadge) {
-                const scaleVal = 1 + (percent / 200);
-                centerBadge.style.transform = `scale(${scaleVal})`;
-                centerBadge.style.boxShadow = `0 0 ${16 + percent * 0.7}px ${toneColor}88`;
-            }
         }
 
         // 7. Render Inline Audio Canvas (Active in Chat Stream)
-        if (inlineCtx && inlineCanvas) {
+        // Guarded: only render when modal is NOT active AND inline voice stage is visible
+        if (!isVoiceModalActive && inlineCtx && inlineCanvas && inlineVoiceStage && !inlineVoiceStage.classList.contains("hidden")) {
             inlineCtx.clearRect(0, 0, inlineCanvas.width, inlineCanvas.height);
             const w = inlineCanvas.width;
             const h = inlineCanvas.height;
@@ -1707,6 +1724,10 @@ function stopRecording() {
 
         setLiveStatus("Processing...", "listening");
         orbCaption.textContent = "Processing speech...";
+        if (animFrameId) {
+            cancelAnimationFrame(animFrameId);
+            animFrameId = null;
+        }
         drawIdleWaveform();
         resetMicMeter();
 
@@ -2154,4 +2175,51 @@ function stopBreathing() {
         breathingInterval = null;
     }
 }
+
+// --- PROGRESSIVE WEB APP (PWA) REGISTRATION & INSTALL LOGIC ---
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+            .then((registration) => {
+                console.log('[*] Arogya Service Worker registered with scope:', registration.scope);
+            })
+            .catch((err) => {
+                console.warn('[!] Arogya Service Worker registration error:', err);
+            });
+    });
+}
+
+let deferredPwaPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPwaPrompt = e;
+    console.log('[*] Arogya PWA: Native install prompt captured');
+    const installBtn = document.getElementById('installPwaBtn');
+    if (installBtn) {
+        installBtn.classList.remove('hidden');
+    }
+});
+
+const installPwaBtn = document.getElementById('installPwaBtn');
+if (installPwaBtn) {
+    installPwaBtn.addEventListener('click', async () => {
+        if (deferredPwaPrompt) {
+            deferredPwaPrompt.prompt();
+            const { outcome } = await deferredPwaPrompt.userChoice;
+            console.log('[*] Arogya PWA install user outcome:', outcome);
+            if (outcome === 'accepted') {
+                installPwaBtn.classList.add('hidden');
+            }
+            deferredPwaPrompt = null;
+        } else {
+            alert("To install Arogya:\n• On Chrome/Edge: Click the install icon in the address bar.\n• On iOS Safari: Tap Share -> 'Add to Home Screen'.\n• On Android: Tap menu -> 'Install App'.");
+        }
+    });
+}
+
+window.addEventListener('appinstalled', () => {
+    console.log('[*] Arogya successfully installed as Standalone App');
+    const installBtn = document.getElementById('installPwaBtn');
+    if (installBtn) installBtn.classList.add('hidden');
+});
 

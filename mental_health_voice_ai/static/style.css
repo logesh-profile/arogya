@@ -1496,6 +1496,18 @@ html, body {
     background: rgba(255, 255, 255, 0.05);
 }
 
+.btn-install-pwa {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.08) 0%, rgba(129, 140, 248, 0.08) 100%);
+    border-color: rgba(56, 189, 248, 0.35);
+    color: #38bdf8;
+}
+
+.btn-install-pwa:hover {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.16) 0%, rgba(129, 140, 248, 0.16) 100%);
+    border-color: #38bdf8;
+    color: #ffffff;
+}
+
 .btn-sidebar-analytics {
     display: flex;
     align-items: center;
