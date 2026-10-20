@@ -1912,13 +1912,22 @@ html, body {
     height: 7px;
     border-radius: 50%;
     background: #10b981;
-    box-shadow: 0 0 8px #10b981;
+    box-shadow: 0 0 7px rgba(16, 185, 129, 0.85);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-voice-mode-pulse:hover .voice-mode-pulse-dot {
+    transform: scale(1.25);
+    box-shadow: 0 0 10px rgba(16, 185, 129, 1);
+}
+
+.btn-voice-mode-pulse.active .voice-mode-pulse-dot {
     animation: voiceLivePulse 1.4s infinite alternate;
 }
 
 @keyframes voiceLivePulse {
-    0% { transform: scale(0.8); opacity: 0.7; }
-    100% { transform: scale(1.3); opacity: 1; }
+    0% { transform: scale(0.85); opacity: 0.7; }
+    100% { transform: scale(1.25); opacity: 1; }
 }
 
 /* Tone Pill indicator in Ribbon */
@@ -2167,6 +2176,10 @@ html, body {
     height: 7px;
     border-radius: 50%;
     background: var(--text-primary);
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.6);
+}
+
+.chatgpt-voice-modal:not(.hidden) .voice-pulsing-dot {
     animation: livePulse 1s infinite alternate;
 }
 
