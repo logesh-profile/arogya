@@ -44,7 +44,7 @@ from database import (
     get_user_clinical_profile,
     update_user_clinical_profile,
     upsert_google_user,
-    upsert_demo_user,
+    update_user_preferred_name,
     create_auth_session,
     get_user_by_session_token,
     revoke_auth_session,
@@ -91,20 +91,8 @@ def get_current_user(request: Request) -> Optional[dict]:
         return get_user_by_session_token(token)
     return None
 
-def get_effective_user(request: Request) -> dict:
-    user = get_current_user(request)
-    if user:
-        return user
-    primary = get_user_by_id("primary_user")
-    if primary:
-        return primary
-    return {
-        "id": "primary_user",
-        "name": "Logeshwaran",
-        "given_name": "Logeshwaran",
-        "email": "logeshwaran@example.com",
-        "picture": ""
-    }
+def get_effective_user(request: Request) -> Optional[dict]:
+    return get_current_user(request)
 
 def prune_audio_cache(max_age_hours: int = 84):
     """Deletes temporary audio cache files older than max_age_hours (default 84 hours)."""
@@ -144,10 +132,19 @@ def analytics_page():
 @app.get("/api/analytics/summary")
 def get_analytics(request: Request):
     user = get_effective_user(request)
+    if not user:
+        return {
+            "total_sessions": 0,
+            "overall_wellness": 75,
+            "dominant_emotion": "Calm",
+            "trend_points": [],
+            "symptom_averages": {},
+            "clinical_profile": {}
+        }
     return get_analytics_summary(user_id=user["id"])
 
 # ---------------------------------------------------------------------------
-# AUTHENTICATION ROUTES (GOOGLE OAUTH 2.0 & MULTI-USER DEMO SWITCHER)
+# AUTHENTICATION ROUTES (PRODUCTION GOOGLE OAUTH 2.0 & SESSION PERSISTENCE)
 # ---------------------------------------------------------------------------
 @app.get("/api/auth/config")
 def get_auth_config():
@@ -160,9 +157,16 @@ def get_auth_config():
 @app.get("/api/auth/me")
 def get_auth_me(request: Request):
     user = get_current_user(request)
+    if not user:
+        return {
+            "authenticated": False,
+            "user": None,
+            "needs_onboarding": False
+        }
     return {
-        "authenticated": bool(user),
-        "user": user or get_user_by_id("primary_user")
+        "authenticated": True,
+        "user": user,
+        "needs_onboarding": not bool(user.get("onboarding_completed"))
     }
 
 @app.post("/api/auth/google")
@@ -199,30 +203,32 @@ async def auth_google(request: Request, response: Response):
             samesite="lax",
             secure=False
         )
-        return {"status": "success", "user": user}
+        return {
+            "status": "success",
+            "user": user,
+            "needs_onboarding": not bool(user.get("onboarding_completed"))
+        }
     except Exception as e:
         print(f"[!] Google token verification failed: {e}")
         raise HTTPException(status_code=401, detail=f"Authentication verification error: {str(e)}")
 
-@app.post("/api/auth/demo")
-async def auth_demo(request: Request, response: Response):
-    """Instant 1-click test login allowing switching between Logeshwaran and Dr. Sarah Chen."""
+@app.post("/api/auth/update-name")
+async def auth_update_name(request: Request):
+    """One-time display name setup after initial Google login."""
+    user = get_current_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required")
     try:
         data = await request.json()
     except Exception:
-        data = {}
-    account_type = data.get("account", "logeshwaran")
-    user = upsert_demo_user(account_type)
-    session_token = create_auth_session(user["id"])
-    response.set_cookie(
-        key="arogya_session",
-        value=session_token,
-        max_age=30 * 86400,
-        httponly=True,
-        samesite="lax",
-        secure=False
-    )
-    return {"status": "success", "user": user}
+        raise HTTPException(status_code=400, detail="Invalid request payload")
+    
+    preferred_name = data.get("preferred_name", "").strip()
+    if not preferred_name:
+        raise HTTPException(status_code=400, detail="Preferred name cannot be empty")
+    
+    updated_user = update_user_preferred_name(user["id"], preferred_name)
+    return {"status": "success", "user": updated_user}
 
 @app.post("/api/auth/logout")
 def auth_logout(request: Request, response: Response):
@@ -232,17 +238,22 @@ def auth_logout(request: Request, response: Response):
     response.delete_cookie(key="arogya_session")
     return {"status": "logged_out"}
 
+
 # ---------------------------------------------------------------------------
 # SESSIONS & CLINICAL CONVERSATIONS (USER ISOLATED)
 # ---------------------------------------------------------------------------
 @app.get("/api/sessions")
 def list_sessions(request: Request):
     user = get_effective_user(request)
+    if not user:
+        return []
     return get_all_sessions(user_id=user["id"])
 
 @app.post("/api/sessions")
 def new_session(request: Request):
     user = get_effective_user(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Please sign in with Google to create a session")
     session_id = f"sess_{uuid.uuid4().hex[:10]}"
     title = "New Reflection"
     sess = create_session(session_id, title, user_id=user["id"])

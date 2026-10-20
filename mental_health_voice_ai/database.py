@@ -104,6 +104,12 @@ def init_db():
         cursor.execute("UPDATE sessions SET user_id = 'primary_user' WHERE user_id IS NULL OR user_id = ''")
     except Exception: pass
     try:
+        cursor.execute("ALTER TABLE users ADD COLUMN preferred_name TEXT")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN onboarding_completed INTEGER DEFAULT 0")
+    except Exception: pass
+    try:
         cursor.execute("ALTER TABLE mental_health_records ADD COLUMN confidence REAL DEFAULT 0.5")
     except Exception: pass
     try:
@@ -182,12 +188,24 @@ def init_db():
 # ---------------------------------------------------------------------------
 # USER MANAGEMENT & GOOGLE AUTHENTICATION HELPERS
 # ---------------------------------------------------------------------------
+def _enrich_user_dict(row) -> Optional[Dict[str, Any]]:
+    if not row:
+        return None
+    user = dict(row)
+    pref = user.get("preferred_name")
+    given = user.get("given_name")
+    full = user.get("name")
+    user["display_name"] = pref or given or full or "User"
+    user["onboarding_completed"] = bool(user.get("onboarding_completed", 0))
+    return user
+
 def upsert_google_user(google_id: str, email: str, name: str, given_name: str = "", picture: str = "") -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
     now = datetime.now().isoformat()
     cursor.execute("SELECT * FROM users WHERE google_id = ? OR (email = ? AND email != '')", (google_id, email))
     row = cursor.fetchone()
+    is_new = False
     if row:
         user_id = row["id"]
         cursor.execute("""
@@ -196,15 +214,18 @@ def upsert_google_user(google_id: str, email: str, name: str, given_name: str = 
             WHERE id = ?
         """, (google_id, email, name, given_name or name, picture, now, user_id))
     else:
+        is_new = True
         user_id = f"usr_{uuid.uuid4().hex[:12]}"
+        pref_name = given_name or name or "User"
         cursor.execute("""
-            INSERT INTO users (id, google_id, email, name, given_name, picture, created_at, last_login)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, google_id, email, name, given_name or name, picture, now, now))
+            INSERT INTO users (id, google_id, email, name, given_name, preferred_name, picture, onboarding_completed, created_at, last_login)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        """, (user_id, google_id, email, name, given_name or name, pref_name, picture, now, now))
 
     # Ensure individual clinical memory profile exists for this user_id
-    cursor.execute("SELECT user_id FROM user_clinical_profile WHERE user_id = ?", (user_id,))
-    if not cursor.fetchone():
+    cursor.execute("SELECT user_id, user_name FROM user_clinical_profile WHERE user_id = ?", (user_id,))
+    prof_row = cursor.fetchone()
+    if not prof_row:
         display_name = given_name or name or "Friend"
         cursor.execute("""
             INSERT INTO user_clinical_profile (user_id, user_name, key_context, recurring_stressors, effective_coping, baseline_wellness, last_updated)
@@ -221,57 +242,32 @@ def upsert_google_user(google_id: str, email: str, name: str, given_name: str = 
 
     conn.commit()
     cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-    user_data = dict(cursor.fetchone())
+    user_data = _enrich_user_dict(cursor.fetchone())
     conn.close()
+    if user_data:
+        user_data["is_new_user"] = is_new
     return user_data
 
-def upsert_demo_user(account_type: str = "logeshwaran") -> Dict[str, Any]:
-    """Provides instant 1-click test accounts so multi-user isolation can be tested locally."""
+def update_user_preferred_name(user_id: str, preferred_name: str) -> Dict[str, Any]:
+    """Updates user preferred name during 1-time onboarding and syncs clinical memory profile."""
     conn = get_connection()
     cursor = conn.cursor()
-    now = datetime.now().isoformat()
-    if account_type == "sarah":
-        user_id = "usr_sarah_researcher"
-        google_id = "demo_google_sarah"
-        email = "sarah.chen@university.edu"
-        name = "Dr. Sarah Chen"
-        given_name = "Sarah"
-        picture = "https://images.unsplash.com/photo-1594824813583-a447c284ee1b?w=150&auto=format&fit=crop&q=80"
-        context = "Clinical researcher exploring mindful breathing, academic workload, and evening sleep continuity"
-        stressors = ["Research grant deadlines", "Publication reviews", "Irregular sleep schedule"]
-        coping = ["4-7-8 vagus breathing", "Herbal tea before sleep", "Spoken reflections"]
-    else:
-        user_id = "primary_user"
-        google_id = "primary_user_google"
-        email = "logeshwaran@example.com"
-        name = "Logeshwaran"
-        given_name = "Logeshwaran"
-        picture = ""
-        context = "College student preparing for semester exams, software projects, and campus placement interviews"
-        stressors = ["Semester exams and academic pressure", "Office workload and project deadlines", "Sleep deprivation and fatigue", "Campus placement anxiety"]
-        coping = ["Guided box breathing (4-4-4-4)", "Taking short walks", "Reflective spoken pauses", "Listening to calming music"]
-
-    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-    if not cursor.fetchone():
-        cursor.execute("""
-            INSERT INTO users (id, google_id, email, name, given_name, picture, created_at, last_login)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, google_id, email, name, given_name, picture, now, now))
-    else:
-        cursor.execute("UPDATE users SET last_login = ? WHERE id = ?", (now, user_id))
-
-    cursor.execute("SELECT user_id FROM user_clinical_profile WHERE user_id = ?", (user_id,))
-    if not cursor.fetchone():
-        cursor.execute("""
-            INSERT INTO user_clinical_profile (user_id, user_name, key_context, recurring_stressors, effective_coping, baseline_wellness, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (user_id, given_name, context, json.dumps(stressors), json.dumps(coping), 75.0, now))
-
+    clean_name = preferred_name.strip() if preferred_name else "Friend"
+    cursor.execute("""
+        UPDATE users 
+        SET preferred_name = ?, onboarding_completed = 1
+        WHERE id = ?
+    """, (clean_name, user_id))
+    cursor.execute("""
+        UPDATE user_clinical_profile 
+        SET user_name = ?
+        WHERE user_id = ?
+    """, (clean_name, user_id))
     conn.commit()
     cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-    user_data = dict(cursor.fetchone())
+    user_data = _enrich_user_dict(cursor.fetchone())
     conn.close()
-    return user_data
+    return user_data or {}
 
 def create_auth_session(user_id: str, expires_days: int = 30) -> str:
     conn = get_connection()
@@ -300,7 +296,7 @@ def get_user_by_session_token(token: str) -> Optional[Dict[str, Any]]:
     """, (token, now))
     row = cursor.fetchone()
     conn.close()
-    return dict(row) if row else None
+    return _enrich_user_dict(row)
 
 def revoke_auth_session(token: str) -> bool:
     if not token:
@@ -318,7 +314,7 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
     cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
     row = cursor.fetchone()
     conn.close()
-    return dict(row) if row else None
+    return _enrich_user_dict(row)
 
 # ---------------------------------------------------------------------------
 # SESSION PERSISTENCE & MULTI-USER ISOLATION

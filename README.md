@@ -58,10 +58,12 @@ Existing solutions suffer from three fatal flaws:
 - Independent safety filter detecting acute crisis or self-harm ideation without corrupting numerical scores.
 - Immediate direct integration with **Tele-MANAS (14416)**, **KIRAN (1800-599-0019)**, and **Vandrevala Foundation**.
 
-### 10. Google OAuth 2.0 Authentication & Multi-User Data Isolation
+### 10. Real Google OAuth 2.0 Authentication & User Isolation
 - **100% Free Google Sign-In:** Leverages Google Identity Services (GSI) web SDK with zero third-party subscription fees or quotas.
-- **Strict User Privacy Isolation:** User reflections, voice prosody recordings, mental health records, and clinical memory profiles are keyed to each individual user ID.
-- **Seamless Local Demo Mode:** Supports 1-click test profiles (`Logeshwaran` and `Dr. Sarah Chen`) for rapid local evaluation without requiring an immediate Google Cloud console configuration.
+- **Top-Left Corner Profile Flyout:** Clicking the authenticated user pill in the top-left corner opens a pop-like flyout card showing Google-verified badge, avatar, preferred name, and email.
+- **Google Account Switcher:** Built-in "Switch Account" action triggers Google's native account chooser (`disableAutoSelect` + One Tap / Button prompt) to select from any Google accounts logged into the browser.
+- **One-Time Preferred Name Onboarding:** New users are prompted once upon initial Google sign-in to enter their desired display name, which is personalized into Arogya's long-term conversational memory.
+- **Strict User Privacy Isolation:** User reflections, sessions, voice prosody recordings, mental health metrics, and clinical memory profiles are securely partitioned by user ID in SQLite.
 
 ---
 
@@ -126,7 +128,7 @@ pip install -r requirements.txt
 Create a `.env` file inside `mental_health_voice_ai/`:
 ```bash
 GEMINI_API_KEY=your_gemini_api_key_here
-GOOGLE_CLIENT_ID=your_google_oauth_client_id_here.apps.googleusercontent.com  # Optional for production Google Sign-In
+GOOGLE_CLIENT_ID=69205169774-un0j1m41flrjvjm3ha6gvsg07f99nqu3.apps.googleusercontent.com
 ```
 
 ### 4. Launch Arogya
@@ -143,9 +145,9 @@ Open **`http://localhost:8000`** in Chrome or Edge.
 | :--- | :--- | :--- |
 | `/` | `GET` | Main companion conversational interface |
 | `/analytics` | `GET` | Dedicated separate longitudinal analytics portal |
-| `/api/auth/me` | `GET` | Active authenticated user profile and session state |
+| `/api/auth/me` | `GET` | Active authenticated user profile and onboarding status |
 | `/api/auth/google` | `POST` | Authenticate via Google OAuth 2.0 credential token |
-| `/api/auth/demo` | `POST` | Switch between local demo profiles (Logeshwaran / Dr. Sarah Chen) |
+| `/api/auth/update-name` | `POST` | 1-time display name onboarding for new accounts |
 | `/api/auth/logout` | `POST` | Terminate session and clear authentication cookie |
 | `/api/chat/voice` | `POST` | Core speech-to-speech loop with evidence scoring & prosody |
 | `/api/chat/text` | `POST` | Rapid text chat with grounded evidence & titling |

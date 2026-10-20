@@ -14,18 +14,21 @@ async function loadCurrentUser() {
         const res = await fetch("/api/auth/me");
         if (res.ok) {
             const data = await res.json();
-            if (data.user) {
+            if (data.authenticated && data.user) {
                 const nameLabel = document.getElementById("userNameLabel");
                 const avatarFallback = document.getElementById("userAvatarFallback");
                 const avatarImg = document.getElementById("userAvatarImg");
-                const disp = data.user.given_name || data.user.name || "Logeshwaran";
+                const disp = data.user.display_name || data.user.preferred_name || data.user.given_name || data.user.name || "User";
                 if (nameLabel) nameLabel.textContent = disp;
-                if (avatarFallback) avatarFallback.textContent = (data.user.name || disp)[0].toUpperCase();
+                if (avatarFallback) avatarFallback.textContent = disp[0].toUpperCase();
                 if (data.user.picture && avatarImg) {
                     avatarImg.src = data.user.picture;
                     avatarImg.classList.remove("hidden");
                     if (avatarFallback) avatarFallback.classList.add("hidden");
                 }
+            } else {
+                const nameLabel = document.getElementById("userNameLabel");
+                if (nameLabel) nameLabel.textContent = "Sign In";
             }
         }
     } catch (e) {

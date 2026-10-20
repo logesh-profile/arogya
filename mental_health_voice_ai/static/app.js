@@ -98,17 +98,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     await initMicDeviceSelector();
     await initAuth();
 
-    await loadSessions();
-    // Always start a fresh new chat session on entry
-    await startNewSession(true);
+    if (currentUser) {
+        await loadSessions();
+        await startNewSession(true);
+    } else {
+        openLoginGate(false);
+    }
 });
 
 // ==========================================================================
-// GOOGLE OAUTH 2.0 & MULTI-USER AUTHENTICATION CONTROLLER
+// PRODUCTION GOOGLE OAUTH 2.0 & MULTI-USER DATA ISOLATION CONTROLLER
 // ==========================================================================
 async function initAuth() {
     try {
-        // 1. Fetch server auth configuration
+        // 1. Fetch server auth configuration (live Google Client ID)
         const cfgRes = await fetch("/api/auth/config");
         if (cfgRes.ok) {
             const cfg = await cfgRes.json();
@@ -116,18 +119,29 @@ async function initAuth() {
             isGoogleConfigured = cfg.is_configured || false;
         }
 
-        // 2. Fetch authenticated state
+        // 2. Fetch active session state from backend
         const meRes = await fetch("/api/auth/me");
         if (meRes.ok) {
             const meData = await meRes.json();
-            currentUser = meData.user;
-            updateAuthUI(meData.authenticated, meData.user);
+            if (meData.authenticated && meData.user) {
+                currentUser = meData.user;
+                updateAuthUI(true, meData.user);
+                if (meData.needs_onboarding) {
+                    openOnboardingModal(meData.user);
+                }
+            } else {
+                currentUser = null;
+                updateAuthUI(false, null);
+            }
+        } else {
+            currentUser = null;
+            updateAuthUI(false, null);
         }
 
-        // 3. Setup GSI (Google Identity Services) button if configured
+        // 3. Setup Google Identity Services (GSI)
         setupGoogleIdentity();
 
-        // 4. Bind UI Click Handlers
+        // 4. Bind auth UI events
         setupAuthEvents();
     } catch (e) {
         console.warn("Auth initialization notice:", e);
@@ -135,66 +149,104 @@ async function initAuth() {
 }
 
 function updateAuthUI(isAuthenticated, user) {
-    const signInBtn = document.getElementById("authSignInBtn");
-    const userMenuWrap = document.getElementById("userProfileDropdown");
-    const nameLabel = document.getElementById("userNameLabel");
-    const cardUserName = document.getElementById("cardUserName");
-    const cardUserEmail = document.getElementById("cardUserEmail");
-    const userAvatarImg = document.getElementById("userAvatarImg");
-    const userAvatarFallback = document.getElementById("userAvatarFallback");
+    const cornerSignInBtn = document.getElementById("authSignInBtn");
+    const cornerPillWrap = document.getElementById("userProfileDropdown");
+    const cornerUserName = document.getElementById("userNameLabel");
+    const cornerAvatarImg = document.getElementById("userAvatarImg");
+    const cornerAvatarFallback = document.getElementById("userAvatarFallback");
+
+    const popupUserName = document.getElementById("popupUserName");
+    const popupUserEmail = document.getElementById("popupUserEmail");
+    const popupUserAvatar = document.getElementById("popupUserAvatar");
+    const popupUserAvatarFallback = document.getElementById("popupUserAvatarFallback");
+
     const sidebarUserName = document.getElementById("sidebarUserName");
     const sidebarUserAvatar = document.getElementById("sidebarUserAvatar");
+    const sidebarUserEmail = document.getElementById("sidebarUserEmail");
 
-    const displayName = (user && (user.given_name || user.name)) ? (user.given_name || user.name) : "Logeshwaran";
-    const fullName = (user && user.name) ? user.name : "Logeshwaran";
-    const email = (user && user.email) ? user.email : "logeshwaran@example.com";
-    const picture = (user && user.picture) ? user.picture : "";
-    const initial = fullName ? fullName[0].toUpperCase() : "L";
+    if (isAuthenticated && user) {
+        const displayName = user.display_name || user.preferred_name || user.given_name || user.name || "User";
+        const email = user.email || "";
+        const picture = user.picture || "";
+        const initial = displayName ? displayName[0].toUpperCase() : "U";
 
-    if (nameLabel) nameLabel.textContent = displayName;
-    if (cardUserName) cardUserName.textContent = fullName;
-    if (cardUserEmail) cardUserEmail.textContent = email;
-    if (sidebarUserName) sidebarUserName.textContent = displayName;
-    if (userAvatarFallback) userAvatarFallback.textContent = initial;
-    if (sidebarUserAvatar) sidebarUserAvatar.textContent = initial;
+        // Top-left corner pill
+        if (cornerSignInBtn) cornerSignInBtn.classList.add("hidden");
+        if (cornerPillWrap) cornerPillWrap.classList.remove("hidden");
+        if (cornerUserName) cornerUserName.textContent = displayName;
 
-    if (picture) {
-        if (userAvatarImg) {
-            userAvatarImg.src = picture;
-            userAvatarImg.classList.remove("hidden");
+        if (picture) {
+            if (cornerAvatarImg) {
+                cornerAvatarImg.src = picture;
+                cornerAvatarImg.style.display = "block";
+                cornerAvatarImg.classList.remove("hidden");
+            }
+            if (cornerAvatarFallback) {
+                cornerAvatarFallback.style.display = "none";
+                cornerAvatarFallback.classList.add("hidden");
+            }
+
+            if (popupUserAvatar) {
+                popupUserAvatar.src = picture;
+                popupUserAvatar.style.display = "block";
+                popupUserAvatar.classList.remove("hidden");
+            }
+            if (popupUserAvatarFallback) {
+                popupUserAvatarFallback.style.display = "none";
+                popupUserAvatarFallback.classList.add("hidden");
+            }
+        } else {
+            if (cornerAvatarImg) {
+                cornerAvatarImg.style.display = "none";
+                cornerAvatarImg.classList.add("hidden");
+            }
+            if (cornerAvatarFallback) {
+                cornerAvatarFallback.textContent = initial;
+                cornerAvatarFallback.style.display = "inline-flex";
+                cornerAvatarFallback.classList.remove("hidden");
+            }
+
+            if (popupUserAvatar) {
+                popupUserAvatar.style.display = "none";
+                popupUserAvatar.classList.add("hidden");
+            }
+            if (popupUserAvatarFallback) {
+                popupUserAvatarFallback.textContent = initial;
+                popupUserAvatarFallback.style.display = "flex";
+                popupUserAvatarFallback.classList.remove("hidden");
+            }
         }
-        if (userAvatarFallback) userAvatarFallback.classList.add("hidden");
-    } else {
-        if (userAvatarImg) userAvatarImg.classList.add("hidden");
-        if (userAvatarFallback) userAvatarFallback.classList.remove("hidden");
-    }
 
-    if (isAuthenticated) {
-        if (signInBtn) signInBtn.classList.add("hidden");
-        if (userMenuWrap) userMenuWrap.classList.remove("hidden");
-    } else {
-        if (signInBtn) signInBtn.classList.remove("hidden");
-        if (userMenuWrap) userMenuWrap.classList.remove("hidden");
-    }
+        // Top-left popup card
+        if (popupUserName) popupUserName.textContent = displayName;
+        if (popupUserEmail) popupUserEmail.textContent = email;
 
-    // Highlight active demo account button in modal
-    const logeshBtn = document.getElementById("demoLoginLogeshBtn");
-    const sarahBtn = document.getElementById("demoLoginSarahBtn");
-    if (logeshBtn) logeshBtn.classList.toggle("active", user && (user.id === "primary_user" || user.name === "Logeshwaran"));
-    if (sarahBtn) sarahBtn.classList.toggle("active", user && (user.id === "usr_sarah_researcher" || (user.name && user.name.includes("Sarah"))));
+        // Sidebar card
+        if (sidebarUserName) sidebarUserName.textContent = displayName;
+        if (sidebarUserAvatar) sidebarUserAvatar.textContent = initial;
+        if (sidebarUserEmail) sidebarUserEmail.textContent = email ? email : "Active Private Space";
+    } else {
+        // Logged out
+        if (cornerSignInBtn) cornerSignInBtn.classList.remove("hidden");
+        if (cornerPillWrap) cornerPillWrap.classList.add("hidden");
+        if (sidebarUserName) sidebarUserName.textContent = "Guest";
+        if (sidebarUserAvatar) sidebarUserAvatar.textContent = "G";
+        if (sidebarUserEmail) sidebarUserEmail.textContent = "Sign in to persist chats";
+    }
 }
 
 function setupGoogleIdentity() {
     const gsiContainer = document.getElementById("gsiButtonContainer");
-    const gsiNotice = document.getElementById("gsiUnconfiguredNotice");
 
     if (isGoogleConfigured && googleClientId && window.google && google.accounts) {
         try {
             google.accounts.id.initialize({
                 client_id: googleClientId,
                 callback: handleGoogleCredentialResponse,
-                auto_select: false
+                auto_select: false,
+                cancel_on_tap_outside: false
             });
+
             if (gsiContainer) {
                 gsiContainer.innerHTML = "";
                 google.accounts.id.renderButton(gsiContainer, {
@@ -203,16 +255,18 @@ function setupGoogleIdentity() {
                     type: "standard",
                     shape: "pill",
                     width: 280,
-                    text: "signin_with"
+                    text: "signin_with",
+                    logo_alignment: "left"
                 });
             }
-            if (gsiNotice) gsiNotice.classList.add("hidden");
+
+            // Trigger Google 1-Tap prompt if user is not signed in
+            if (!currentUser) {
+                google.accounts.id.prompt();
+            }
         } catch (err) {
-            console.warn("Google Identity render notice:", err);
-            if (gsiNotice) gsiNotice.classList.remove("hidden");
+            console.warn("Google Identity initialization notice:", err);
         }
-    } else {
-        if (gsiNotice) gsiNotice.classList.remove("hidden");
     }
 }
 
@@ -232,119 +286,190 @@ async function handleGoogleCredentialResponse(response) {
         const data = await res.json();
         currentUser = data.user;
         updateAuthUI(true, data.user);
-        closeAuthModal();
-        await loadSessions();
-        await startNewSession(true);
+        closeLoginGate();
+
+        if (data.needs_onboarding) {
+            // First time user: open 1-time name setup
+            openOnboardingModal(data.user);
+        } else {
+            // Returning user: immediately load previously saved chats
+            await loadSessions();
+            await startNewSession(true);
+        }
     } catch (e) {
         console.error("Google sign-in error:", e);
     }
 }
 
-function setupAuthEvents() {
-    const signInBtn = document.getElementById("authSignInBtn");
-    const userProfileBtn = document.getElementById("userProfileBtn");
-    const userDropdownCard = document.getElementById("userDropdownCard");
-    const closeAuthModalBtn = document.getElementById("closeAuthModalBtn");
-    const authModal = document.getElementById("authModal");
-    const cardSignOutBtn = document.getElementById("cardSignOutBtn");
-    const cardSwitchAccountBtn = document.getElementById("cardSwitchAccountBtn");
-    const sidebarAuthBtn = document.getElementById("sidebarAuthBtn");
+function openLoginGate(canClose = false) {
+    const modal = document.getElementById("loginGateModal");
+    const closeBtn = document.getElementById("closeLoginGateBtn");
+    if (modal) {
+        modal.classList.remove("hidden");
+        if (closeBtn) {
+            if (canClose) {
+                closeBtn.classList.remove("hidden");
+            } else {
+                closeBtn.classList.add("hidden");
+            }
+        }
+        setupGoogleIdentity();
+    }
+}
 
-    if (signInBtn) {
-        signInBtn.addEventListener("click", openAuthModal);
+function closeLoginGate() {
+    const modal = document.getElementById("loginGateModal");
+    if (modal) modal.classList.add("hidden");
+}
+
+function openOnboardingModal(user) {
+    const modal = document.getElementById("onboardingNameModal");
+    const avatarImg = document.getElementById("onboardingUserAvatar");
+    const nameInput = document.getElementById("onboardingNameInput");
+
+    if (modal) {
+        modal.classList.remove("hidden");
+        if (avatarImg && user && user.picture) {
+            avatarImg.src = user.picture;
+            avatarImg.classList.remove("hidden");
+        }
+        if (nameInput) {
+            nameInput.value = (user && (user.preferred_name || user.given_name || user.name)) || "";
+            setTimeout(() => nameInput.focus(), 150);
+        }
     }
-    if (sidebarAuthBtn) {
-        sidebarAuthBtn.addEventListener("click", openAuthModal);
+}
+
+function closeOnboardingModal() {
+    const modal = document.getElementById("onboardingNameModal");
+    if (modal) modal.classList.add("hidden");
+}
+
+async function handleOnboardingSubmit(e) {
+    if (e) e.preventDefault();
+    const nameInput = document.getElementById("onboardingNameInput");
+    if (!nameInput) return;
+    const preferredName = nameInput.value.trim();
+    if (!preferredName) {
+        alert("Please enter a name so Arogya can address you personally.");
+        return;
     }
-    if (cardSwitchAccountBtn) {
-        cardSwitchAccountBtn.addEventListener("click", () => {
-            if (userDropdownCard) userDropdownCard.classList.add("hidden");
-            openAuthModal();
+
+    try {
+        const res = await fetch("/api/auth/update-name", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ preferred_name: preferredName })
         });
+        if (res.ok) {
+            const data = await res.json();
+            currentUser = data.user;
+            updateAuthUI(true, data.user);
+            closeOnboardingModal();
+            await loadSessions();
+            await startNewSession(true);
+        } else {
+            const err = await res.json();
+            alert("Update name notice: " + (err.detail || "Could not save name"));
+        }
+    } catch (err) {
+        console.error("Onboarding submission error:", err);
+    }
+}
+
+function setupAuthEvents() {
+    const cornerSignInBtn = document.getElementById("authSignInBtn");
+    const userProfileBtn = document.getElementById("userProfileBtn");
+    const userProfilePopup = document.getElementById("userProfilePopup");
+    const switchAccountBtn = document.getElementById("switchAccountBtn");
+    const signOutBtn = document.getElementById("signOutBtn");
+    const closeLoginGateBtn = document.getElementById("closeLoginGateBtn");
+    const sidebarAuthBtn = document.getElementById("sidebarAuthBtn");
+    const onboardingForm = document.getElementById("onboardingNameForm");
+
+    // Top-left sign in button
+    if (cornerSignInBtn) {
+        cornerSignInBtn.addEventListener("click", () => openLoginGate(false));
     }
 
-    if (userProfileBtn && userDropdownCard) {
+    // Top-left user pill click -> toggle pop-like window
+    if (userProfileBtn && userProfilePopup) {
         userProfileBtn.addEventListener("click", (e) => {
             e.stopPropagation();
-            userDropdownCard.classList.toggle("hidden");
+            userProfilePopup.classList.toggle("hidden");
+            userProfileBtn.classList.toggle("active", !userProfilePopup.classList.contains("hidden"));
         });
 
+        // Close pop-like window when clicking outside
         document.addEventListener("click", (e) => {
-            if (!userDropdownCard.contains(e.target) && e.target !== userProfileBtn) {
-                userDropdownCard.classList.add("hidden");
+            if (!userProfilePopup.contains(e.target) && !userProfileBtn.contains(e.target)) {
+                userProfilePopup.classList.add("hidden");
+                userProfileBtn.classList.remove("active");
             }
         });
     }
 
-    if (closeAuthModalBtn) {
-        closeAuthModalBtn.addEventListener("click", closeAuthModal);
-    }
-    if (authModal) {
-        authModal.addEventListener("click", (e) => {
-            if (e.target === authModal) closeAuthModal();
+    // Switch Account button in pop-like window
+    if (switchAccountBtn) {
+        switchAccountBtn.addEventListener("click", () => {
+            if (userProfilePopup) userProfilePopup.classList.add("hidden");
+            if (userProfileBtn) userProfileBtn.classList.remove("active");
+
+            // Disable auto-select so Google displays account chooser prompt
+            if (window.google && google.accounts && google.accounts.id) {
+                google.accounts.id.disableAutoSelect();
+            }
+
+            // Open login gate with close button enabled
+            openLoginGate(true);
+
+            // Re-trigger Google Identity prompt
+            if (window.google && google.accounts && google.accounts.id) {
+                google.accounts.id.prompt();
+            }
         });
     }
 
-    // Sign out button
-    if (cardSignOutBtn) {
-        cardSignOutBtn.addEventListener("click", async () => {
-            if (userDropdownCard) userDropdownCard.classList.add("hidden");
+    // Sign Out button in pop-like window
+    if (signOutBtn) {
+        signOutBtn.addEventListener("click", async () => {
+            if (userProfilePopup) userProfilePopup.classList.add("hidden");
+            if (userProfileBtn) userProfileBtn.classList.remove("active");
+
             try {
                 await fetch("/api/auth/logout", { method: "POST" });
                 currentUser = null;
-                updateAuthUI(false, { name: "Logeshwaran", email: "logeshwaran@example.com" });
-                await loadSessions();
-                await startNewSession(true);
+                updateAuthUI(false, null);
+                if (sessionsList) sessionsList.innerHTML = `<div style="font-size:11.5px; color:var(--text-muted); padding:10px;">Sign in to view saved conversations.</div>`;
+                if (sessionCountTag) sessionCountTag.textContent = "0";
+                chatStream.innerHTML = "";
+                openLoginGate(false);
             } catch (e) {
                 console.warn("Logout notice:", e);
             }
         });
     }
 
-    // Demo account quick switchers
-    const demoLogesh = document.getElementById("demoLoginLogeshBtn");
-    const demoSarah = document.getElementById("demoLoginSarahBtn");
-
-    if (demoLogesh) {
-        demoLogesh.addEventListener("click", () => switchDemoAccount("logeshwaran"));
-    }
-    if (demoSarah) {
-        demoSarah.addEventListener("click", () => switchDemoAccount("sarah"));
-    }
-}
-
-async function switchDemoAccount(accountType) {
-    try {
-        const res = await fetch("/api/auth/demo", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ account: accountType })
+    // Sidebar auth button
+    if (sidebarAuthBtn) {
+        sidebarAuthBtn.addEventListener("click", () => {
+            if (currentUser) {
+                if (userProfilePopup) userProfilePopup.classList.toggle("hidden");
+            } else {
+                openLoginGate(false);
+            }
         });
-        if (res.ok) {
-            const data = await res.json();
-            currentUser = data.user;
-            updateAuthUI(true, data.user);
-            closeAuthModal();
-            // Reload user's isolated sessions and start fresh active dialogue
-            await loadSessions();
-            await startNewSession(true);
-        }
-    } catch (e) {
-        console.error("Demo account switch error:", e);
     }
-}
 
-function openAuthModal() {
-    const modal = document.getElementById("authModal");
-    if (modal) {
-        modal.classList.remove("hidden");
-        setupGoogleIdentity();
+    // Close button on login gate (only available during Switch Account)
+    if (closeLoginGateBtn) {
+        closeLoginGateBtn.addEventListener("click", closeLoginGate);
     }
-}
 
-function closeAuthModal() {
-    const modal = document.getElementById("authModal");
-    if (modal) modal.classList.add("hidden");
+    // 1-Time Onboarding Form Submit
+    if (onboardingForm) {
+        onboardingForm.addEventListener("submit", handleOnboardingSubmit);
+    }
 }
 
 // --- THEME ENGINE (BLACK & WHITE: LIGHT / DARK) ---

@@ -31,3 +31,4 @@ __pycache__/
 # Databases & Local Logs
 *.log
 *.sqlite3-journal
+scratch/
