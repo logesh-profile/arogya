@@ -285,7 +285,7 @@ function populateProfile(profile, strengths) {
 
     const ctxEl = document.getElementById("profileContext");
     if (ctxEl) {
-        ctxEl.textContent = profile.key_context || "Student navigating academic deadlines, career placements, and daily personal routines.";
+        ctxEl.textContent = profile.key_context || "Member seeking conversational companionship and emotional support.";
     }
 
     const stressCloud = document.getElementById("stressorsTagCloud");

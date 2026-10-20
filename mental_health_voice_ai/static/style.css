@@ -1624,7 +1624,7 @@ html, body {
     bottom: 0;
     background: rgba(9, 9, 11, 0.88);
     backdrop-filter: blur(20px);
-    z-index: 1000;
+    z-index: 2500;
     display: flex;
     align-items: center;
     justify-content: center;

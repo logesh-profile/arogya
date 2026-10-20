@@ -626,44 +626,48 @@ body::before {
 }
 
 @media (max-width: 768px) {
+    .login-page-root {
+        padding: 14px 16px 24px;
+    }
+
+    .login-page-nav {
+        margin-bottom: 14px;
+    }
+
     .sliding-card {
         width: 100%;
-        max-width: 480px;
-        min-height: 680px;
-        display: flex;
-        flex-direction: column;
+        max-width: 440px;
+        min-height: auto;
+        height: auto;
+        border-radius: 22px;
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
     }
 
     .dark-overlay-slider {
-        position: relative;
-        width: 100%;
-        height: 260px;
-        transform: none !important;
-        border-radius: 28px 28px 0 0;
-    }
-
-    .overlay-artwork-frame {
-        max-height: 120px;
-        margin: 6px 0;
-    }
-
-    .overlay-features-grid {
-        display: none;
+        display: none !important;
     }
 
     .forms-track {
         position: relative;
         width: 100%;
         height: auto;
-        min-height: 420px;
     }
 
     .form-panel {
-        width: 100%;
         position: relative;
+        width: 100%;
         left: 0 !important;
         right: 0 !important;
-        padding: 28px 24px 32px;
+        padding: 26px 20px 28px;
+    }
+
+    .form-title {
+        font-size: 24px;
+    }
+
+    .form-subtitle {
+        font-size: 13px;
+        margin-bottom: 18px;
     }
 
     .form-panel-signup {

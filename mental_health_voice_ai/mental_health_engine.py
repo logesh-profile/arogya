@@ -185,11 +185,14 @@ You converse with the user through spoken audio. Your core principles:
    - Reflect back what they expressed, validate their emotions, offer caring perspective, connect with their ongoing journey, and keep the dialogue alive with a natural conversational flow.
 
 4. GROUNDED EVIDENCE SCORING (STRICT EMPIRICAL CRITERIA):
-   Evaluate the user's explicit current statement across 4 specific emotional dimensions (score 0 to 3):
+   Evaluate the user's explicit current statement across 7 specific emotional and companion dimensions (score 0 to 3):
    - "stress_tension": (0 = not mentioned, 1 = mild pressure, 2 = moderate stress, 3 = severe overwhelming pressure)
    - "worry_apprehension": (0 = not mentioned, 1 = slight concern, 2 = noticeable worry, 3 = acute fear or panic)
    - "fatigue_exhaustion": (0 = not mentioned, 1 = mild tiredness, 2 = notable exhaustion, 3 = completely drained)
    - "emotional_heaviness": (0 = not mentioned, 1 = slight low mood, 2 = moderate sadness or discouragement, 3 = deep heavy burden)
+   - "loneliness_isolation": (0 = not mentioned, 1 = feeling alone or missing companionship, 2 = notable isolation/longing for presence, 3 = acute painful solitude)
+   - "sleep_restlessness": (0 = not mentioned, 1 = light sleep disruption, 2 = frequent insomnia or restless nights, 3 = severe chronic sleeplessness)
+   - "rumination_overwhelm": (0 = not mentioned, 1 = mild looping thoughts, 2 = persistent racing thoughts, 3 = paralyzed by cognitive overwhelm)
 
    CRITICAL GROUNDING RULE:
    For each item, you MUST provide an exact verbatim quote from the user's transcript as evidence.
@@ -199,13 +202,16 @@ You converse with the user through spoken audio. Your core principles:
 You MUST output strictly valid JSON matching this exact structure:
 {
   "reply_text": "Spoken reply (thorough, comprehensive, and warm 3-5 sentences in natural English or Tanglish, validating their feelings, addressing everything they said, and speaking to the end)",
-  "conversation_title": "2-4 words accurately summarizing the topic in title case (e.g. Exam Stress, Project Deadlines, Daily Reflection)",
-  "dominant_state": "1-2 words summarizing their state (e.g. Overwhelmed, Exhausted, Calm, Reflective, Hopeful)",
+  "conversation_title": "2-4 words accurately summarizing the topic in title case (e.g. Exam Stress, Daily Reflection, Seeking Connection)",
+  "dominant_state": "1-2 words summarizing their state (e.g. Overwhelmed, Exhausted, Calm, Reflective, Hopeful, Lonely)",
   "evidence": {
     "stress_tension": {"score": 0, "quote": ""},
     "worry_apprehension": {"score": 0, "quote": ""},
     "fatigue_exhaustion": {"score": 0, "quote": ""},
-    "emotional_heaviness": {"score": 0, "quote": ""}
+    "emotional_heaviness": {"score": 0, "quote": ""},
+    "loneliness_isolation": {"score": 0, "quote": ""},
+    "sleep_restlessness": {"score": 0, "quote": ""},
+    "rumination_overwhelm": {"score": 0, "quote": ""}
   },
   "profile_updates": {
     "user_name": "Logeshwaran or any confirmed name if explicitly given, else null",
@@ -305,7 +311,7 @@ def compute_deterministic_wellness(
 ) -> Dict[str, Any]:
     """
     Deterministic score calculation:
-    - text_sym: sum of 4 items (max 12 points) / 12.0 -> range [0.0, 1.0]
+    - text_sym: sum of 7 items (max 21 points) / 21.0 -> range [0.0, 1.0]
     - wellness: 100 * (1 - (0.6*text_sym + 0.15*voice_z + 0.25*trend_z))
     """
     scores = []
@@ -315,7 +321,10 @@ def compute_deterministic_wellness(
         "stress_tension": "Stress & Pressure",
         "worry_apprehension": "Worry & Apprehension",
         "fatigue_exhaustion": "Fatigue & Low Energy",
-        "emotional_heaviness": "Emotional Heaviness"
+        "emotional_heaviness": "Emotional Heaviness",
+        "loneliness_isolation": "Loneliness & Isolation",
+        "sleep_restlessness": "Sleep & Restlessness",
+        "rumination_overwhelm": "Overthinking & Overwhelm"
     }
 
     for key, label in dim_labels.items():
@@ -337,7 +346,7 @@ def compute_deterministic_wellness(
         })
 
     total_symptom_pts = sum(scores)
-    max_pts = 12.0
+    max_pts = float(len(dim_labels) * 3)  # 21.0
     text_sym = total_symptom_pts / max_pts  # 0.0 to 1.0
 
     s = 0.6 * text_sym
@@ -354,7 +363,7 @@ def compute_deterministic_wellness(
         "confidence": confidence,
         "text_symptom_ratio": round(text_sym, 2),
         "total_points": total_symptom_pts,
-        "max_points": 12,
+        "max_points": int(max_pts),
         "reasons": reasons
     }
 
@@ -501,7 +510,10 @@ Produce the requested JSON:
                     "stress_tension": {"score": 0, "quote": ""},
                     "worry_apprehension": {"score": 0, "quote": ""},
                     "fatigue_exhaustion": {"score": 0, "quote": ""},
-                    "emotional_heaviness": {"score": 0, "quote": ""}
+                    "emotional_heaviness": {"score": 0, "quote": ""},
+                    "loneliness_isolation": {"score": 0, "quote": ""},
+                    "sleep_restlessness": {"score": 0, "quote": ""},
+                    "rumination_overwhelm": {"score": 0, "quote": ""}
                 },
                 "observed_resilience": "Open self-expression",
                 "summary_snippet": f"User shared: '{current_transcript[:50]}...'"
@@ -516,11 +528,22 @@ Produce the requested JSON:
         n_sessions=n_sessions
     )
 
-    # 4. Somatic Grounding Detection (Auto-suggest breathing if stress/worry >= 2)
+    # 4. Somatic Grounding Detection (Automatically triggers if wellness < 60% or acute distress detected)
     stress_pt = evidence.get("stress_tension", {}).get("score", 0)
     worry_pt = evidence.get("worry_apprehension", {}).get("score", 0)
-    suggest_grounding = (stress_pt >= 2 or worry_pt >= 2)
-    grounding_mode = "box" if stress_pt >= 2 else "478"
+    overwhelm_pt = evidence.get("rumination_overwhelm", {}).get("score", 0)
+    lonely_pt = evidence.get("loneliness_isolation", {}).get("score", 0)
+    heavy_pt = evidence.get("emotional_heaviness", {}).get("score", 0)
+    
+    suggest_grounding = bool(
+        calc["overall_wellness"] < 60 or 
+        stress_pt >= 2 or 
+        worry_pt >= 2 or 
+        overwhelm_pt >= 2 or
+        (heavy_pt >= 2 and calc["overall_wellness"] < 65) or
+        (lonely_pt >= 2 and calc["overall_wellness"] < 65)
+    )
+    grounding_mode = "box" if (stress_pt >= 2 or overwhelm_pt >= 2) else "478"
 
     # 5. Persistent Longitudinal Profile Extraction
     profile_updates = data.get("profile_updates", {})

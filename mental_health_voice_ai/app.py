@@ -91,8 +91,14 @@ def get_current_user(request: Request) -> Optional[dict]:
         return get_user_by_session_token(token)
     return None
 
-def get_effective_user(request: Request) -> Optional[dict]:
-    return get_current_user(request)
+def get_effective_user(request: Request) -> dict:
+    user = get_current_user(request)
+    if user:
+        return user
+    primary = get_user_by_id("primary_user")
+    if primary:
+        return primary
+    return {"id": "primary_user", "name": "User", "display_name": "Friend", "email": ""}
 
 def prune_audio_cache(max_age_hours: int = 84):
     """Deletes temporary audio cache files older than max_age_hours (default 84 hours)."""

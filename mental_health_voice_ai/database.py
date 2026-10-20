@@ -641,7 +641,10 @@ def get_aggregated_mental_health_insights(session_id: Optional[str] = None, user
         "stress_tension": {"label": "Stress & Pressure", "scores": [], "quotes": []},
         "worry_apprehension": {"label": "Worry & Apprehension", "scores": [], "quotes": []},
         "fatigue_exhaustion": {"label": "Fatigue & Low Energy", "scores": [], "quotes": []},
-        "emotional_heaviness": {"label": "Emotional Heaviness", "scores": [], "quotes": []}
+        "emotional_heaviness": {"label": "Emotional Heaviness", "scores": [], "quotes": []},
+        "loneliness_isolation": {"label": "Loneliness & Isolation", "scores": [], "quotes": []},
+        "sleep_restlessness": {"label": "Sleep & Restlessness", "scores": [], "quotes": []},
+        "rumination_overwhelm": {"label": "Overthinking & Overwhelm", "scores": [], "quotes": []}
     }
 
     dominant_states = []
@@ -777,9 +780,9 @@ def get_user_clinical_profile(user_id: str = "primary_user") -> Dict[str, Any]:
         return {
             "user_id": user_id,
             "user_name": "Friend",
-            "key_context": "Student navigating academic deadlines, career placements, and daily personal routines",
-            "recurring_stressors": ["Academic deadlines and performance pressure", "Sleep and energy regulation", "Balancing technical projects"],
-            "effective_coping": ["Guided box breathing (4-4-4-4)", "Taking short screen-free walks", "Reflective spoken dialogue"],
+            "key_context": "Member seeking conversational companionship and emotional support",
+            "recurring_stressors": [],
+            "effective_coping": ["Guided box breathing (4-4-4-4)", "Gentle mindful reflection", "Empathetic companion dialogue"],
             "baseline_wellness": 75.0,
             "last_updated": datetime.now().isoformat()
         }
@@ -990,7 +993,10 @@ def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
         "stress_tension": {"label": "Stress & Pressure", "scores": [], "quotes": []},
         "worry_apprehension": {"label": "Worry & Apprehension", "scores": [], "quotes": []},
         "fatigue_exhaustion": {"label": "Fatigue & Low Energy", "scores": [], "quotes": []},
-        "emotional_heaviness": {"label": "Emotional Heaviness", "scores": [], "quotes": []}
+        "emotional_heaviness": {"label": "Emotional Heaviness", "scores": [], "quotes": []},
+        "loneliness_isolation": {"label": "Loneliness & Isolation", "scores": [], "quotes": []},
+        "sleep_restlessness": {"label": "Sleep & Restlessness", "scores": [], "quotes": []},
+        "rumination_overwhelm": {"label": "Overthinking & Overwhelm", "scores": [], "quotes": []}
     }
 
     timeline_points = []

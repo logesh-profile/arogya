@@ -1008,22 +1008,35 @@ function startVisualizer(stream) {
             }
         }
 
-        // 4. Conversational Voice Activity Detection (VAD)
+        // 4. Conversational Voice Activity Detection (VAD) & Natural Pause Pacing
         if ((isHandsFree || isVoiceModalActive) && isRecording) {
-            if (percent > 12) {
-                vadHasSpoken = true;
+            const hasRecognizedWords = Boolean(recognizedTranscript.trim().length > 0 || (textInput && textInput.value.trim().length > 0));
+            
+            // Require sustained vocal energy (> 14% for at least 6-8 frames) OR recognized speech words
+            if (percent > 13) {
+                vadVoicedFrameCount = (typeof vadVoicedFrameCount !== "undefined" ? vadVoicedFrameCount : 0) + 1;
+                if (vadVoicedFrameCount >= 6 || hasRecognizedWords) {
+                    vadHasSpoken = true;
+                }
                 if (vadSilenceTimer) {
                     clearTimeout(vadSilenceTimer);
                     vadSilenceTimer = null;
                 }
-            } else if (vadHasSpoken && percent <= 10) {
-                if (!vadSilenceTimer) {
-                    vadSilenceTimer = setTimeout(() => {
-                        if ((isHandsFree || isVoiceModalActive) && isRecording && vadHasSpoken) {
-                            vadHasSpoken = false;
-                            stopRecording();
-                        }
-                    }, 1400); // 1.4s natural pause
+            } else if (percent <= 10) {
+                if (typeof vadVoicedFrameCount !== "undefined") {
+                    vadVoicedFrameCount = Math.max(0, vadVoicedFrameCount - 1);
+                }
+                if (vadHasSpoken) {
+                    if (!vadSilenceTimer) {
+                        // Natural 2.2s conversational pause window allows thoughtful, slow-cadence speech without premature cutoffs
+                        vadSilenceTimer = setTimeout(() => {
+                            if ((isHandsFree || isVoiceModalActive) && isRecording && vadHasSpoken) {
+                                vadHasSpoken = false;
+                                vadVoicedFrameCount = 0;
+                                stopRecording();
+                            }
+                        }, 2200);
+                    }
                 }
             }
         }
@@ -1559,15 +1572,15 @@ async function startRecording() {
                 deviceId: { exact: selectedMicId },
                 channelCount: 1,
                 sampleRate: 16000,
-                echoCancellation: false,
-                noiseSuppression: false,
+                echoCancellation: true,
+                noiseSuppression: true,
                 autoGainControl: true
               }
             : {
                 channelCount: 1,
                 sampleRate: 16000,
-                echoCancellation: false,
-                noiseSuppression: false,
+                echoCancellation: true,
+                noiseSuppression: true,
                 autoGainControl: true
               };
 
@@ -1792,15 +1805,15 @@ async function handleTextSubmit() {
             }
         }
 
-        // Point 3: AUTOMATIC GROUNDING WHEN MENTAL SCORE < 60%
+        // Point 3: AUTOMATIC GROUNDING WHEN MENTAL HEALTH SCORE DROPS BELOW THRESHOLD
         const wellness = (data.evaluation && data.evaluation.overall_wellness !== undefined) ? data.evaluation.overall_wellness : data.overall_wellness;
-        if (wellness !== null && wellness < 60) {
-            console.log(`[!] Low mental wellness score detected (${wellness}% < 60%). Automatically triggering guided grounding breathwork.`);
+        const shouldAutoGround = (wellness !== null && wellness < 65) || Boolean(data.suggest_grounding);
+
+        if (shouldAutoGround) {
+            console.log(`[!] Low mental wellness score / emotional strain detected (${wellness}%). Automatically opening guided grounding breathwork modal.`);
             setTimeout(() => {
-                openGroundingModal("box", true, wellness);
-            }, 800);
-        } else if (data.suggest_grounding) {
-            showGroundingInvite(data.grounding_mode || "box");
+                openGroundingModal(data.grounding_mode || "box", true, wellness);
+            }, 850);
         }
 
         await loadSessions();
@@ -1993,18 +2006,28 @@ function openGroundingModal(mode = "box", isAutomatic = false, wellnessScore = n
     const modal = document.getElementById("groundingModal");
     if (modal) modal.classList.remove("hidden");
 
+    // Pause recording during breathwork so mic doesn't record heavy breathing
+    if (isRecording) {
+        stopRecording();
+    }
+
     const autoBanner = document.getElementById("automaticGroundingBanner");
     if (autoBanner) {
         if (isAutomatic) {
             autoBanner.classList.remove("hidden");
             const desc = autoBanner.querySelector(".auto-desc");
             if (desc && wellnessScore !== null) {
-                desc.textContent = `Arogya noticed elevated emotional strain (${wellnessScore}% wellness score). Automatically guiding your breath to regulate autonomic equilibrium.`;
+                desc.textContent = `Arogya noticed your mental health wellness dropped to ${wellnessScore}% (elevated emotional strain). Guiding your breath automatically to restore autonomic calm and equilibrium.`;
+            } else if (desc) {
+                desc.textContent = "Arogya noticed elevated emotional strain. Guiding your breath automatically to restore calm and equilibrium.";
             }
         } else {
             autoBanner.classList.add("hidden");
         }
     }
+
+    // Play soothing gentle 432Hz entry chime
+    playGroundingChime(432);
     setBreathingMode(mode);
 }
 
@@ -2014,6 +2037,17 @@ function closeGroundingModal() {
     const autoBanner = document.getElementById("automaticGroundingBanner");
     if (autoBanner) autoBanner.classList.add("hidden");
     stopBreathing();
+
+    // If user was in Live Voice Mode, resume listening comfortably
+    if (isVoiceModalActive && !isRecording && (!audioPlayer || audioPlayer.paused)) {
+        const modalState = document.getElementById("modalVoiceStateText");
+        if (modalState) modalState.textContent = "Arogya is listening... speak freely";
+        setTimeout(() => {
+            if (isVoiceModalActive && !isRecording) {
+                startRecording();
+            }
+        }, 600);
+    }
 }
 
 function setBreathingMode(mode) {

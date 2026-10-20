@@ -583,11 +583,40 @@
 @media (max-width: 640px) {
     .analytics-header {
         padding: 12px 14px;
-        gap: 10px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .analytics-header-left {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+
+    .btn-back-companion {
+        align-self: flex-start;
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+
+    .analytics-header-right {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
     }
 
     .analytics-page-title {
-        font-size: 1.18rem;
+        font-size: 1.15rem;
+    }
+
+    .analytics-subtitle {
+        font-size: 0.72rem;
     }
 
     .header-divider {
