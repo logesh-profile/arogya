@@ -627,7 +627,7 @@ body::before {
 
 @media (max-width: 768px) {
     .login-page-root {
-        padding: 14px 16px 24px;
+        padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
     }
 
     .login-page-nav {
@@ -684,3 +684,40 @@ body::before {
         transform: none;
     }
 }
+
+@media (max-width: 480px) {
+    .sliding-card {
+        border-radius: 18px;
+    }
+
+    .form-panel {
+        padding: 22px 16px 24px;
+    }
+
+    .form-title {
+        font-size: 22px;
+    }
+
+    .form-subtitle {
+        font-size: 12.5px;
+    }
+}
+
+@media (max-width: 360px) {
+    .form-panel {
+        padding: 18px 12px 20px;
+    }
+
+    .form-title {
+        font-size: 20px;
+    }
+
+    .btn-nav-back span {
+        display: none;
+    }
+
+    .btn-nav-back {
+        padding: 7px 10px;
+    }
+}
+
