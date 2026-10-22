@@ -241,6 +241,12 @@ function updateAuthUI(isAuthenticated, user) {
         if (sidebarUserName) sidebarUserName.textContent = displayName;
         if (sidebarUserAvatar) sidebarUserAvatar.textContent = initial;
         if (sidebarUserEmail) sidebarUserEmail.textContent = email ? email : "Active Private Space";
+
+        // Welcome Hero Card
+        const welcomeGreeting = document.getElementById("welcomeUserGreeting");
+        if (welcomeGreeting) {
+            welcomeGreeting.textContent = `Welcome back, ${displayName}`;
+        }
     } else {
         document.body.classList.remove("user-authenticated");
         if (cornerSignInBtn) {
@@ -1342,7 +1348,7 @@ async function startNewSession(triggerGreeting = true) {
         const newSess = await res.json();
         currentSessionId = newSess.session_id;
         if (currentSessionTitle) currentSessionTitle.textContent = newSess.title;
-        chatStream.innerHTML = "";
+        renderWelcomeCard();
         resetScorecard();
         await loadSessions();
 
@@ -1410,11 +1416,11 @@ async function loadSessionData(sessionId) {
         const data = await res.json();
 
         if (currentSessionTitle) currentSessionTitle.textContent = data.session.title || "Emotional Wellness Reflection";
-        chatStream.innerHTML = "";
-
         if (data.messages && data.messages.length > 0) {
+            chatStream.innerHTML = "";
             renderMessageHistory(data.messages);
         } else {
+            renderWelcomeCard();
             await fetchInitialGreeting();
         }
 
@@ -1462,11 +1468,54 @@ async function fetchInitialGreeting() {
 
 // --- CONVERSATIONAL RENDERING ENGINE ---
 // Strict User Typography:
+// Quick Starter Handler for Onboarding Card
+window.handleQuickStarter = function(promptText) {
+    if (textInput) {
+        textInput.value = promptText;
+        handleTextSubmit();
+    }
+};
+
+function renderWelcomeCard() {
+    if (!chatStream) return;
+    const displayName = (currentUser && (currentUser.display_name || currentUser.preferred_name || currentUser.given_name || currentUser.name)) || "";
+    const greetingText = displayName ? `Welcome, ${escapeHtml(displayName)}` : "Welcome to Arogya";
+    chatStream.innerHTML = `
+        <div class="chat-welcome-card" id="chatWelcomeCard">
+            <div class="welcome-symbol-halo">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+            </div>
+            <div class="welcome-badge">
+                <span class="welcome-pulse-dot"></span>
+                <span>Arogya • Safe &amp; Confidential Space</span>
+            </div>
+            <h2 class="welcome-greeting-title" id="welcomeUserGreeting">${greetingText}</h2>
+            <p class="welcome-greeting-desc">
+                Take a slow, gentle breath. I am your companion, here to listen, support, and reflect with you without judgment.
+            </p>
+            <div class="welcome-action-suggestions">
+                <button type="button" class="btn-quick-starter" onclick="handleQuickStarter('I\\'ve been feeling a bit overwhelmed and stressed today.')">
+                    <span>💭 I'm feeling overwhelmed today</span>
+                </button>
+                <button type="button" class="btn-quick-starter" onclick="handleQuickStarter('Can you guide me through a calming breathing exercise?')">
+                    <span>🌿 Can you guide my breathing?</span>
+                </button>
+                <button type="button" class="btn-quick-starter" onclick="handleQuickStarter('I just have a lot on my mind right now.')">
+                    <span>✨ I have a lot on my mind right now</span>
+                </button>
+            </div>
+            <span class="welcome-prompt-tip">Tap the microphone below to speak, or tap <strong>Live Voice</strong> for continuous dialogue</span>
+        </div>
+    `;
+}
+
 // - Arogya Captions: Newsreader (300 Large & Light, Warm Human Voice)
 // - Spoken Words: Newsreader Italic (Quieter Subline)
 function appendExchangeToUI(captionText, userSpokenWords, audioUrl, autoplay = false) {
     const pendingCard = document.getElementById("pendingUserCard");
     if (pendingCard) pendingCard.remove();
+    const welcomeCard = document.getElementById("chatWelcomeCard");
+    if (welcomeCard) welcomeCard.remove();
 
     const exchange = document.createElement("div");
     exchange.className = "conversation-exchange";
@@ -1507,6 +1556,8 @@ function appendExchangeToUI(captionText, userSpokenWords, audioUrl, autoplay = f
 function appendPendingUserToUI(text) {
     const existing = document.getElementById("pendingUserCard");
     if (existing) existing.remove();
+    const welcomeCard = document.getElementById("chatWelcomeCard");
+    if (welcomeCard) welcomeCard.remove();
 
     const card = document.createElement("div");
     card.id = "pendingUserCard";

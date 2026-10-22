@@ -650,7 +650,32 @@
 
             <!-- Chat Stream (Captions & Spoken Words Hero Stage) -->
             <div class="chat-stream" id="chatStream">
-                <!-- Dynamically populated with Newsreader caption cards -->
+                <!-- Initial Serene Welcome State (Prevents blank void & guides user) -->
+                <div class="chat-welcome-card" id="chatWelcomeCard">
+                    <div class="welcome-symbol-halo">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                    </div>
+                    <div class="welcome-badge">
+                        <span class="welcome-pulse-dot"></span>
+                        <span>Arogya • Safe &amp; Confidential Space</span>
+                    </div>
+                    <h2 class="welcome-greeting-title" id="welcomeUserGreeting">Welcome to Arogya</h2>
+                    <p class="welcome-greeting-desc">
+                        Take a slow, gentle breath. I am your companion, here to listen, support, and reflect with you without judgment.
+                    </p>
+                    <div class="welcome-action-suggestions">
+                        <button type="button" class="btn-quick-starter" onclick="handleQuickStarter('I\'ve been feeling a bit overwhelmed and stressed today.')">
+                            <span>💭 I'm feeling overwhelmed today</span>
+                        </button>
+                        <button type="button" class="btn-quick-starter" onclick="handleQuickStarter('Can you guide me through a calming breathing exercise?')">
+                            <span>🌿 Can you guide my breathing?</span>
+                        </button>
+                        <button type="button" class="btn-quick-starter" onclick="handleQuickStarter('I just have a lot on my mind right now.')">
+                            <span>✨ I have a lot on my mind right now</span>
+                        </button>
+                    </div>
+                    <span class="welcome-prompt-tip">Tap the microphone below to speak, or tap <strong>Live Voice</strong> for continuous speech</span>
+                </div>
             </div>
 
             <!-- Tension Detected Subtle Grounding Pill -->
