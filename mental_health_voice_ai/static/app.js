@@ -930,11 +930,15 @@ function startVisualizer(stream) {
         }
         animFrameId = requestAnimationFrame(render);
 
-        // Hardware Delta-Time Cap: Restrict loop to ~60 FPS (16ms) to prevent high-refresh GPU stalls
+        // Strict Hardware Frame Rate Limiter: Strictly hard-capped to <= 60 FPS (16.67ms frame time)
+        // Ensures smooth, buttery rendering while preventing GPU overheating, battery drain, and thermal throttling on all low-end devices
+        const TARGET_FPS = 60;
+        const MIN_FRAME_INTERVAL = 1000 / TARGET_FPS; // 16.667ms
         if (timestamp) {
+            if (!lastRenderTime) lastRenderTime = timestamp;
             const elapsed = timestamp - lastRenderTime;
-            if (elapsed < 16.0) return;
-            lastRenderTime = timestamp;
+            if (elapsed < MIN_FRAME_INTERVAL) return;
+            lastRenderTime = timestamp - (elapsed % MIN_FRAME_INTERVAL);
         }
 
         analyser.getByteFrequencyData(freqData);
@@ -963,7 +967,7 @@ function startVisualizer(stream) {
             voiceToneCentroid = Math.round((centroidBin / bufferLength) * nyquist);
         }
 
-        // Determine Tone & Chromatic Color Palette
+        // Determine Tone & Chromatic Color Palette (Descriptive labels without confusing Hz numbers)
         let toneLabel = "Calm & Steady";
         let toneClass = "tone-calm";
         let toneColor = "#38bdf8"; // Cyan
@@ -971,19 +975,19 @@ function startVisualizer(stream) {
         let secondaryColor = "#2dd4bf"; // Teal
 
         if (voiceToneCentroid < 160) {
-            toneLabel = `Deep & Grounded • ${voiceToneCentroid} Hz`;
+            toneLabel = "Deep & Grounded";
             toneClass = "tone-deep";
             toneColor = "#818cf8"; // Indigo
             glowColor = "rgba(129, 140, 248, 0.5)";
             secondaryColor = "#c084fc"; // Violet
         } else if (voiceToneCentroid > 280) {
-            toneLabel = `Expressive & High • ${voiceToneCentroid} Hz`;
+            toneLabel = "Expressive & High";
             toneClass = "tone-elevated";
             toneColor = "#fb923c"; // Amber
             glowColor = "rgba(251, 146, 60, 0.55)";
             secondaryColor = "#f43f5e"; // Rose
         } else {
-            toneLabel = `Calm & Steady • ${voiceToneCentroid} Hz`;
+            toneLabel = "Calm & Steady";
             toneClass = "tone-calm";
             toneColor = "#38bdf8"; // Cyan
             glowColor = "rgba(56, 189, 248, 0.45)";
