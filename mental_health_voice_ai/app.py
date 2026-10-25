@@ -436,7 +436,8 @@ async def process_voice_chat(
     else:
         active_audio_path = raw_path
 
-    # 3. Determine Transcript (Prioritize user's reviewed/client transcript, fallback to Whisper)
+    # 3. Determine Transcript & Acoustic Features Concurrently
+    # STT runs on RTX 3050 GPU (CUDA FP16), DSP runs on CPU in thread pool
     transcript = ""
     if client_transcript and len(client_transcript.strip()) > 1:
         c_text = client_transcript.strip()
@@ -444,23 +445,22 @@ async def process_voice_chat(
         if not (all(w == "you" for w in words) or c_text.lower() in ["you", "thank you", "[gentle sigh]"]):
             transcript = c_text
 
-    # If client transcript was empty, use Whisper on clean audio
-    if not transcript:
-        try:
-            whisper_text = transcribe_audio(active_audio_path)
-            if whisper_text:
-                transcript = whisper_text
-        except Exception as e:
-            print(f"[!] Whisper error: {e}")
+    loop = asyncio.get_event_loop()
+    if transcript:
+        # Client transcript provided; extract acoustics in background thread
+        acoustic_features = await loop.run_in_executor(None, extract_acoustic_features, active_audio_path)
+    else:
+        # Run Whisper GPU STT and Librosa CPU DSP concurrently
+        whisper_task = loop.run_in_executor(None, transcribe_audio, active_audio_path)
+        dsp_task = loop.run_in_executor(None, extract_acoustic_features, active_audio_path)
+        whisper_text, acoustic_features = await asyncio.gather(whisper_task, dsp_task)
+        if whisper_text:
+            transcript = whisper_text
 
     if not transcript:
         transcript = "I wanted to take a moment to reflect on my feelings."
 
-
-    # 4. Acoustic biomarker extraction (Code-only DSP via librosa.pyin)
-    acoustic_features = extract_acoustic_features(active_audio_path)
-
-    # 5. Session History & Baseline Statistical Context
+    # 4. Session History & Baseline Statistical Context
     session_messages = get_session_messages(session_id)
     historical_context = get_historical_context(session_id, user_id=user["id"])
     n_sessions = get_session_count(user_id=user["id"])
@@ -476,7 +476,7 @@ async def process_voice_chat(
     if latest_rec and latest_rec.get("overall_wellness") is not None and baseline.get("wellness_std"):
         trend_z = (latest_rec["overall_wellness"] - baseline["wellness_mean"]) / baseline["wellness_std"]
 
-    # 6. Save User Message
+    # 5. Save User Message
     save_message(
         session_id=session_id,
         role="user",
@@ -485,7 +485,7 @@ async def process_voice_chat(
         speech_metrics=acoustic_features
     )
 
-    # 7. Evidence-Grounded Evaluation & Empathetic Response (temp=0.0)
+    # 6. Evidence-Grounded Evaluation & Empathetic Response (temp=0.0)
     eval_result = analyze_and_respond(
         current_transcript=transcript,
         acoustic_features=acoustic_features,
@@ -498,18 +498,22 @@ async def process_voice_chat(
     )
 
     reply_text = eval_result.get("reply_text", "I'm listening and I'm right here with you.")
+    spoken_text = eval_result.get("spoken_text")
+    language_mode = eval_result.get("language_mode", "tanglish")
 
-    # 8. Synthesize Spoken Response (Emotion-Adaptive Cadence)
+    # 7. Synthesize Spoken Response (Emotion-Adaptive Cadence & Native Voice Routing)
     user_wellness = eval_result.get("overall_wellness", 75)
     user_state = eval_result.get("dominant_state", "Calm")
     ai_audio_url = await synthesize_speech(
-        reply_text, 
+        text=reply_text, 
         mode=voice_mode, 
         wellness_score=user_wellness if user_wellness is not None else 75, 
-        dominant_state=user_state
+        dominant_state=user_state,
+        language_mode=language_mode,
+        spoken_text=spoken_text
     )
 
-    # 9. Save Assistant Message
+    # 8. Save Assistant Message (Stores canonical colloquial text for chat history)
     save_message(
         session_id=session_id,
         role="assistant",
@@ -517,15 +521,15 @@ async def process_voice_chat(
         audio_path=ai_audio_url
     )
 
-    # 10. Update Database Record with Grounded Evidence
+    # 9. Update Database Record with Grounded Evidence
     eval_result["session_id"] = session_id
     eval_result["voice_semitone_std"] = semitone_std
     save_mental_health_record(eval_result)
 
-    # 11. Compute Cumulative Session Average & Compiled Insights
+    # 10. Compute Cumulative Session Average & Compiled Insights
     aggregated = get_aggregated_mental_health_insights(session_id, user_id=user["id"])
 
-    # 12. Instant Auto-titling based on First Message
+    # 11. Instant Auto-titling based on First Message
     current_sess = get_session(session_id, user_id=user["id"]) or get_session(session_id)
     new_title = None
     default_prefixes = ["Check-in", "New Reflection", "Emotional Wellness Reflection", "New Assessment", "Daily Reflection"]
@@ -550,6 +554,8 @@ async def process_voice_chat(
         "evaluation": aggregated,
         "suggest_grounding": eval_result.get("suggest_grounding", False),
         "grounding_mode": eval_result.get("grounding_mode", "box"),
+        "language_mode": language_mode,
+        "speech_register": eval_result.get("speech_register", "warm_tanglish"),
         "new_title": new_title
     }
 
@@ -596,6 +602,9 @@ async def process_text_chat(
     )
 
     reply_text = eval_result.get("reply_text", "I hear you, and thank you for sharing that with me.")
+    spoken_text = eval_result.get("spoken_text")
+    language_mode = eval_result.get("language_mode", "tanglish")
+    speech_register = eval_result.get("speech_register", "warm_tanglish")
     
     ai_audio_url = None
     if voice_mode and voice_mode != "none":
@@ -603,10 +612,12 @@ async def process_text_chat(
             user_wellness = eval_result.get("overall_wellness", 75)
             user_state = eval_result.get("dominant_state", "Calm")
             ai_audio_url = await synthesize_speech(
-                reply_text, 
+                text=reply_text, 
                 mode=voice_mode, 
                 wellness_score=user_wellness if user_wellness is not None else 75, 
-                dominant_state=user_state
+                dominant_state=user_state,
+                language_mode=language_mode,
+                spoken_text=spoken_text
             )
         except Exception as e:
             print(f"[!] Speech synthesis notice: {e}")
@@ -642,6 +653,8 @@ async def process_text_chat(
         "evaluation": aggregated,
         "suggest_grounding": eval_result.get("suggest_grounding", False),
         "grounding_mode": eval_result.get("grounding_mode", "box"),
+        "language_mode": language_mode,
+        "speech_register": speech_register,
         "new_title": new_title
     }
 

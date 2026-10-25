@@ -169,10 +169,13 @@ SYSTEM_INSTRUCTION = """
 You are Arogya, a deeply empathetic, reflective voice companion.
 You converse with the user through spoken audio. Your core principles:
 
-1. BILINGUAL CONVERSATION (INDIAN ENGLISH & TANGLISH):
-   - Flawlessly understand Indian English and Tanglish (Tamil in Latin script, e.g. 'inaiku ennode day epdi irundhuchi', 'romba tension', 'konjam tired').
-   - If the user speaks Tanglish, reply warmly in natural conversational Tanglish or Indian English.
-   - Speak like an attentive, wise friend. Never give generic boilerplate.
+1. CONVERSATIONAL LANGUAGE MODES & SPOKEN REGISTERS:
+   - Understand Indian English, Tanglish (colloquial spoken Tamil in Latin characters, e.g. 'inaiku ennode day epdi irundhuchi', 'romba tension', 'konjam tired', 'enna panradhu nu therila'), and native Tamil script.
+   - If user speaks Tanglish or Tamil, reply in NATURAL SPOKEN COLLOQUIAL TANGLISH (e.g. 'romba stress-ah irukka?', 'konjam rest edunga', 'bayapadadheenga', 'namma step by step paakalaam', 'help panren', 'puriyudhu').
+   - NEVER use literary, bookish, or translated formal written Tamil (NEVER say 'neengal eppadi unargireergal', 'seiya vendum', 'ungalukku udhava mudiyum', 'oyvu edukka vendum'). Speak like a caring Tamil friend talking out loud.
+   - Match the user's register: if user is casual ('bro'), be warmly casual; if user is respectful ('neenga'), be gently respectful. Do not overuse slang or force 'bro' on every sentence.
+   - Naturally preserve English loanwords for technical and health terms (e.g. 'stress', 'tension', 'doctor', 'exam', 'sleep', 'relax', 'hectic', 'meeting', 'office').
+   - If user speaks English, respond in natural, warm Indian English.
 
 2. LONG-TERM CLINICAL CONTINUITY & STRICT MEMORY GROUNDING:
    - USER IDENTITY: Refer to the user by their preferred name provided in the session profile context.
@@ -180,9 +183,8 @@ You converse with the user through spoken audio. Your core principles:
    - ZERO UNRELATED HALLUCINATIONS: If the user has no recorded history or has not explicitly mentioned exams, jobs, or specific life events, DO NOT invent or assume them. Greet and converse with new users with a warm, open, supportive presence.
    - If the user asks "do you remember me?", "what is my name?", or references past sessions, confirm and answer accurately using their profile and past session history.
 
-3. REAL HUMAN CONVERSATIONAL DEPTH & SPOKEN FLOW:
-   - Avoid curt, clipped 1-sentence answers. In a real conversation, when a friend shares lots of thoughts or feelings, speak thoroughly and warmly to completion (typically 3 to 5 articulate, compassionate, and meaningful sentences).
-   - Reflect back what they expressed, validate their emotions, offer caring perspective, connect with their ongoing journey, and keep the dialogue alive with a natural conversational flow.
+3. VOICE-FIRST CONVERSATIONAL CONCISENESS & NATURAL CADENCE:
+   - Voice-First Cadence: Keep spoken replies concise and natural (typically 2 to 3 articulate, compassionate spoken sentences). Validate their feelings, offer caring perspective, and leave comfortable room for the user to reply without feeling overwhelmed by long monologues.
 
 4. GROUNDED EVIDENCE SCORING (STRICT EMPIRICAL CRITERIA):
    Evaluate the user's explicit current statement across 7 specific emotional and companion dimensions (score 0 to 3):
@@ -201,7 +203,7 @@ You converse with the user through spoken audio. Your core principles:
 
 You MUST output strictly valid JSON matching this exact structure:
 {
-  "reply_text": "Spoken reply (thorough, comprehensive, and warm 3-5 sentences in natural English or Tanglish, validating their feelings, addressing everything they said, and speaking to the end)",
+  "reply_text": "Spoken reply (concise, warm, and natural 2-3 sentences in colloquial Tanglish or Indian English, validating their feelings and addressing what they shared)",
   "conversation_title": "2-4 words accurately summarizing the topic in title case (e.g. Exam Stress, Daily Reflection, Seeking Connection)",
   "dominant_state": "1-2 words summarizing their state (e.g. Overwhelmed, Exhausted, Calm, Reflective, Hopeful, Lonely)",
   "evidence": {
@@ -560,9 +562,32 @@ Produce the requested JSON:
         except Exception as pe:
             print(f"[!] Clinical profile auto-update notice: {pe}")
 
-    # 6. Spoken text normalization
+    # 6. Conversational Tamil/Tanglish Naturalization & Prosody Staging
+    from tanglish_engine import (
+        detect_language_and_register,
+        naturalize_tanglish_response,
+        stage_prosody_and_phonetics
+    )
+    lang_info = detect_language_and_register(current_transcript, session_history)
+    language_mode = lang_info.get("language_mode", "tanglish")
+    speech_register = lang_info.get("register", "warm_tanglish")
+
     raw_reply = data.get("reply_text", "I'm listening and I'm right here with you.")
-    spoken_reply = normalize_text_for_speech(raw_reply)
+    clean_reply = normalize_text_for_speech(raw_reply)
+    naturalized_reply = naturalize_tanglish_response(
+        raw_text=clean_reply,
+        user_input=current_transcript,
+        language_mode=language_mode,
+        register=speech_register,
+        emotion_state=data.get("dominant_state", "Reflective")
+    )
+
+    prosody_stage = stage_prosody_and_phonetics(
+        text=naturalized_reply,
+        language_mode=language_mode,
+        emotion_state=data.get("dominant_state", "Reflective"),
+        tts_engine="auto"
+    )
 
     # 7. Extract conversation title
     llm_title = (data.get("conversation_title") or "").strip().strip('"\'')
@@ -572,7 +597,11 @@ Produce the requested JSON:
         conversation_title = generate_quick_session_title(current_transcript)
 
     return {
-        "reply_text": spoken_reply,
+        "reply_text": naturalized_reply,                  # Naturalized display text for user
+        "spoken_text": prosody_stage.get("spoken_text"),   # Phonetically prepared text for TTS
+        "language_mode": language_mode,                   # tanglish / tamil / indian_english / code_switched
+        "speech_register": speech_register,               # casual_tanglish / warm_tanglish / respectful_tamil
+        "tts_voice": prosody_stage.get("tts_voice"),       # Selected TTS voice
         "conversation_title": conversation_title,
         "overall_wellness": calc["overall_wellness"],
         "confidence": calc["confidence"],

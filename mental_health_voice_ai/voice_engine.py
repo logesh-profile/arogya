@@ -1,7 +1,9 @@
 import os
 import sys
 import uuid
+import re
 import asyncio
+from typing import Optional
 import soundfile as sf
 
 # Dynamic optional imports for cloud deployment / low-memory environments
@@ -142,47 +144,86 @@ def synthesize_cloned_speech(text: str, wellness_score: int = 75, dominant_state
     )
     return f"/audio/{out_filename}"
 
-async def synthesize_fast_speech(text: str, wellness_score: int = 75, dominant_state: str = "Calm") -> str:
+async def synthesize_fast_speech(
+    text: str,
+    wellness_score: int = 75,
+    dominant_state: str = "Calm",
+    voice: Optional[str] = None,
+    language_mode: str = "tanglish"
+) -> str:
     """
-    Ultra-fast neural speech synthesis via edge-tts (sub-second latency ~0.4s).
-    Uses Indian English neural voice (en-IN-NeerjaNeural).
+    Sub-second neural speech synthesis via edge-tts (~0.4s).
+    Intelligently routes:
+    - Tamil / Tanglish / Code-Switched -> ta-IN-PallaviNeural (Native high-fidelity Tamil voice with natural cadence)
+    - Indian English -> en-IN-NeerjaNeural
     Dynamically modulates prosodic rate and pitch based on user emotional state:
-    - Distress / low wellness: -12% rate, -4Hz pitch (vagus nerve grounding cadence)
-    - Loneliness / mild strain: -6% rate, -2Hz pitch (warm intimate presence)
-    - Balanced / calm: +4% rate, +0Hz pitch (fluid conversational rhythm)
+    - Distress / low wellness: -10% rate, -3Hz pitch (vagus grounding cadence)
+    - Loneliness / mild strain: -5% rate, -1Hz pitch (warm intimate presence)
+    - Balanced / calm: +3% rate, +0Hz pitch (fluid conversational rhythm)
     """
     import edge_tts
     out_filename = f"reply_fast_{uuid.uuid4().hex[:8]}.mp3"
     out_path = os.path.join(CACHE_DIR, out_filename)
 
+    # Dynamic Prosodic Modulation
     if wellness_score < 55 or dominant_state in ["Overwhelmed", "Exhausted", "Crisis Alert"]:
-        rate = "-12%"
-        pitch = "-4Hz"
+        rate = "-10%"
+        pitch = "-3Hz"
     elif wellness_score < 68 or dominant_state in ["Lonely", "Reflective"]:
-        rate = "-6%"
-        pitch = "-2Hz"
+        rate = "-5%"
+        pitch = "-1Hz"
     else:
-        rate = "+4%"
+        rate = "+3%"
         pitch = "+0Hz"
 
-    communicate = edge_tts.Communicate(text, voice="en-IN-NeerjaNeural", rate=rate, pitch=pitch)
+    # Select Optimal Voice: ta-IN-PallaviNeural for Tamil/Tanglish, en-IN-NeerjaNeural for English
+    if not voice:
+        has_tamil_script = bool(re.search(r'[\u0B80-\u0BFF]', text))
+        if has_tamil_script or language_mode in ["tanglish", "tamil", "code_switched"]:
+            target_voice = "ta-IN-PallaviNeural"
+        else:
+            target_voice = "en-IN-NeerjaNeural"
+    else:
+        target_voice = voice
+
+    communicate = edge_tts.Communicate(text, voice=target_voice, rate=rate, pitch=pitch)
     await communicate.save(out_path)
     return f"/audio/{out_filename}"
 
-async def synthesize_speech(text: str, mode: str = "cloned", wellness_score: int = 75, dominant_state: str = "Calm") -> str:
+async def synthesize_speech(
+    text: str,
+    mode: str = "fast",
+    wellness_score: int = 75,
+    dominant_state: str = "Calm",
+    language_mode: str = "tanglish",
+    spoken_text: Optional[str] = None,
+    voice: Optional[str] = None
+) -> str:
     """
-    Synthesizes speech with emotion-adaptive prosodic cadence based on mode and clinical indicators:
-    - 'fast': Instant sub-second Indian neural voice (~0.4s) with adaptive rate & pitch
-    - 'cloned': Authentic reference cloned voice on RTX 3050 GPU (~1.9s) with adaptive speed
+    Unified speech synthesis router:
+    - 'fast': Native sub-second Tamil/English neural voice via edge-tts (0.35s - 0.45s)
+    - 'cloned': Authentic reference cloned voice on RTX 3050 GPU via F5-TTS
+    Uses 'spoken_text' (phonetically prepared with breath pauses & script representation)
+    while the chat UI displays the clean conversational Tanglish 'text'.
     """
+    active_text = spoken_text if (spoken_text and len(spoken_text.strip()) > 0) else text
+
     if mode == "cloned":
         f5tts = get_f5tts()
         if f5tts is not None and os.path.exists(REF_AUDIO):
             try:
                 loop = asyncio.get_event_loop()
-                return await loop.run_in_executor(None, synthesize_cloned_speech, text, wellness_score, dominant_state)
+                # For F5-TTS (diffusion zero-shot model), use clean Tanglish Latin text
+                cloned_text = text if not re.search(r'[\u0B80-\u0BFF]', text) else active_text
+                return await loop.run_in_executor(None, synthesize_cloned_speech, cloned_text, wellness_score, dominant_state)
             except Exception as e:
-                print(f"[!] Cloned speech synthesis failed: {e}, falling back to Fast Neural voice")
-    
-    return await synthesize_fast_speech(text, wellness_score=wellness_score, dominant_state=dominant_state)
+                print(f"[!] Cloned speech synthesis notice: {e}, routing to Fast Neural voice")
+
+    return await synthesize_fast_speech(
+        active_text,
+        wellness_score=wellness_score,
+        dominant_state=dominant_state,
+        voice=voice,
+        language_mode=language_mode
+    )
 

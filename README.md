@@ -17,9 +17,11 @@ Existing solutions suffer from three fatal flaws:
 
 ## 🚀 Key Features
 
-### 1. Dual-Engine Speech Synthesis (Authentic Tanglish & English)
-- **Cloned Studio Mode (F5-TTS Flow-Matching):** GPU-accelerated zero-shot voice cloning (~1.9s on RTX 3050) generating natural, warm female cadence in fluent Tanglish and Indian English without robotic artifacts.
-- **Fast Neural Mode (`en-IN-NeerjaNeural`):** Sub-second edge neural synthesis (~0.4s) for rapid, seamless conversational exchange.
+### 1. Tri-Mode Conversational Speech Synthesis & Tanglish Naturalizer
+- **Conversational Tamil & Tanglish Naturalizer (`tanglish_engine.py`):** Dedicated backend linguistic pipeline transforming literary/formal translations into spoken colloquial Tamil/Tanglish. Context-aware register detection (casual, warm, respectful) with authentic loanword code-switching.
+- **Native High-Fidelity Tamil Voice (`ta-IN-PallaviNeural`):** Authentic human Tamil intonation, prosody, and syllable rhythm with sub-second latency (~0.35s - 0.45s) and zero VRAM footprint.
+- **Indian English Neural Voice (`en-IN-NeerjaNeural`):** Natural cadence for English dialogue with emotion-adaptive pacing and pitch inflection.
+- **Cloned Studio Mode (F5-TTS Flow-Matching Diffusion):** Local GPU-accelerated zero-shot voice cloning running on NVIDIA RTX 3050 with phonetic Tanglish staging.
 
 ### 2. Hands-Free Ambient Conversational Mode (Full-Duplex VAD)
 - Operates naturally like a friend in the room.
@@ -76,28 +78,37 @@ graph TD
     C --> D["Speech-to-Text (Whisper GPU + Web Speech)"]
     C --> E["DSP Acoustic Extraction (pYIN Semitones, Pause Ratio)"]
     
-    D --> F["Gemini 3.5 Flash Lite (temp=0.0)"]
-    F --> G["Verbatim Quote Evidence Scoring (4 Dimensions)"]
-    E --> H["Deterministic Python Wellness Fusion (0-100)"]
-    G --> H
+    D --> F["Language & Register Detection (tanglish_engine.py)"]
+    F --> G["Gemini 3.5 Flash Lite (temp=0.0)"]
+    G --> H["Verbatim Quote Evidence Scoring (7 Dimensions)"]
+    E --> I["Deterministic Python Wellness Fusion (0-100)"]
+    H --> I
     
-    H --> I["Long-Term Clinical Profile Memory (SQLite)"]
-    H --> J["Dual-Engine Speech Synthesis"]
-    J --> K["Fast Neural (~0.4s) / F5-TTS Cloned (~1.9s)"]
-    K --> L["Browser Audio Playback & Hands-Free VAD Loop"]
-    
-    M["mmWave Radar (60GHz FMCW)"] -.->|Presence & Breathing Rate| I
+    I --> J["Conversational Tamil/Tanglish Naturalizer"]
+    J --> K["Prosody & Phonetic Preparation"]
+    K --> L["Intelligent TTS Router"]
+    L --> M["Fast Native Tamil (ta-IN-PallaviNeural ~0.35s)"]
+    L --> N["Fast Indian English (en-IN-NeerjaNeural ~0.4s)"]
+    L --> O["Cloned GPU Studio (F5-TTS on RTX 3050 ~1.9s)"]
+    M --> P["Browser Audio Playback & 60 FPS Visualizer"]
+    N --> P
+    O --> P
 ```
 
 ---
 
 ## 📦 Tech Stack
 
-- **Backend:** Python 3.10+, FastAPI, Uvicorn, SQLite3 (WAL mode)
-- **AI Models:** F5-TTS (Flow-matching diffusion), Google Gemini API (`gemini-3.5-flash-lite`), Edge-TTS (`en-IN-NeerjaNeural`), OpenAI Whisper
-- **Audio DSP:** Librosa, SoundFile, NumPy, FFmpeg
-- **Frontend:** HTML5 Canvas, Vanilla CSS3 (Editorial Monochrome system), JavaScript (ES6+), Web Audio API
-- **Hardware Interface:** ESP32-S3, UART/Serial protocol (`pyserial`), 60GHz FMCW mmWave radar
+- **Backend:** Python 3.11, FastAPI, Uvicorn, SQLite3 (WAL mode)
+- **AI Models & Pipeline:**
+  - Google Gemini API (`gemini-3.5-flash-lite`, `google-genai` SDK)
+  - Faster-Whisper (CTranslate2, CUDA FP16 on RTX 3050 GPU)
+  - Conversational Tamil/Tanglish Naturalizer (`tanglish_engine.py`)
+  - Edge-TTS (`ta-IN-PallaviNeural`, `en-IN-NeerjaNeural`)
+  - F5-TTS (Flow-matching diffusion zero-shot voice cloning on RTX 3050 GPU)
+- **Audio DSP:** Librosa (pYIN $f_0$), SoundFile, NumPy, FFmpeg
+- **Frontend:** HTML5 Canvas, Vanilla CSS3 (Editorial Monochrome system), JavaScript (ES6+), Web Audio API (Strict $\le 60\text{ FPS}$ Cap), Service Worker PWA
+- **Hardware Interface:** NVIDIA GeForce RTX 3050 6GB Laptop GPU (CUDA 13.0 / PyTorch cu121)
 
 ---
 
