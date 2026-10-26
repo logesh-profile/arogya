@@ -186,9 +186,13 @@ async def synthesize_fast_speech(
     else:
         target_voice = voice
 
-    communicate = edge_tts.Communicate(text, voice=target_voice, rate=rate, pitch=pitch)
-    await communicate.save(out_path)
-    return f"/audio/{out_filename}"
+    try:
+        communicate = edge_tts.Communicate(text, voice=target_voice, rate=rate, pitch=pitch)
+        await asyncio.wait_for(communicate.save(out_path), timeout=3.0)
+        return f"/audio/{out_filename}"
+    except Exception as e:
+        print(f"[!] Fast speech synthesis timeout or warning: {e}")
+        return None
 
 async def synthesize_speech(
     text: str,

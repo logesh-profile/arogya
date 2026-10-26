@@ -5,7 +5,7 @@ import json
 import numpy as np
 from typing import Dict, Any, Tuple, Optional, List
 import soundfile as sf
-import librosa
+# import librosa (lazy-loaded for speed)
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
@@ -109,6 +109,7 @@ def extract_acoustic_features(audio_path: str) -> Dict[str, Any]:
     - RMS energy & spectral centroid: vocal intensity and tonal brightness.
     """
     try:
+        import librosa
         y, sr = librosa.load(audio_path, sr=16000)
         duration = float(librosa.get_duration(y=y, sr=sr))
         if duration < 0.6:
@@ -742,6 +743,7 @@ Produce the requested JSON:
             system_instruction=SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
             temperature=0.0,
+            max_output_tokens=400,
             thinking_config=types.ThinkingConfig(thinking_budget=0)
         )
         try:
@@ -759,24 +761,24 @@ Produce the requested JSON:
                 config=fast_config
             )
             data = json.loads(response.text)
-        except Exception as e2:
-            print(f"[!] Fallback LLM error: {e2}")
-            data = {
-                "reply_text": "I hear you, and I am right here with you. Take a soft breath. Tell me what has been on your mind.",
-                "conversation_title": generate_quick_session_title(current_transcript),
-                "dominant_state": "Reflective",
-                "evidence": {
-                    "stress_tension": {"score": 0, "quote": ""},
-                    "worry_apprehension": {"score": 0, "quote": ""},
-                    "fatigue_exhaustion": {"score": 0, "quote": ""},
-                    "emotional_heaviness": {"score": 0, "quote": ""},
-                    "loneliness_isolation": {"score": 0, "quote": ""},
-                    "sleep_restlessness": {"score": 0, "quote": ""},
-                    "rumination_overwhelm": {"score": 0, "quote": ""}
-                },
-                "observed_resilience": "Open self-expression",
-                "summary_snippet": f"User shared: '{current_transcript[:50]}...'"
-            }
+    except Exception as e2:
+        print(f"[!] Fallback LLM error: {e2}")
+        data = {
+            "reply_text": "I hear you, and I am right here with you. Take a soft breath. Tell me what has been on your mind.",
+            "conversation_title": generate_quick_session_title(current_transcript),
+            "dominant_state": "Reflective",
+            "evidence": {
+                "stress_tension": {"score": 0, "quote": ""},
+                "worry_apprehension": {"score": 0, "quote": ""},
+                "fatigue_exhaustion": {"score": 0, "quote": ""},
+                "emotional_heaviness": {"score": 0, "quote": ""},
+                "loneliness_isolation": {"score": 0, "quote": ""},
+                "sleep_restlessness": {"score": 0, "quote": ""},
+                "rumination_overwhelm": {"score": 0, "quote": ""}
+            },
+            "observed_resilience": "Open self-expression",
+            "summary_snippet": f"User shared: '{current_transcript[:50]}...'"
+        }
 
     # 3. Deterministic Python scoring from the evidence
     evidence = data.get("evidence", {})
