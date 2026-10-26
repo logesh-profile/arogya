@@ -551,13 +551,20 @@ function initVoiceEngine() {
 
     const fastBtn = document.getElementById("engineFastBtn");
     const clonedBtn = document.getElementById("engineClonedBtn");
+    const headerFastBtn = document.getElementById("headerFastBtn");
+    const headerClonedBtn = document.getElementById("headerClonedBtn");
+    const modalFastBtn = document.getElementById("modalFastBtn");
+    const modalClonedBtn = document.getElementById("modalClonedBtn");
 
-    if (fastBtn) {
-        fastBtn.addEventListener("click", () => setVoiceMode("fast"));
-    }
-    if (clonedBtn) {
-        clonedBtn.addEventListener("click", () => setVoiceMode("cloned"));
-    }
+    const selectFast = () => setVoiceMode("fast");
+    const selectCloned = () => setVoiceMode("cloned");
+
+    if (fastBtn) fastBtn.addEventListener("click", selectFast);
+    if (clonedBtn) clonedBtn.addEventListener("click", selectCloned);
+    if (headerFastBtn) headerFastBtn.addEventListener("click", selectFast);
+    if (headerClonedBtn) headerClonedBtn.addEventListener("click", selectCloned);
+    if (modalFastBtn) modalFastBtn.addEventListener("click", selectFast);
+    if (modalClonedBtn) modalClonedBtn.addEventListener("click", selectCloned);
 }
 
 function setVoiceMode(mode) {
@@ -566,11 +573,20 @@ function setVoiceMode(mode) {
 
     const fastBtn = document.getElementById("engineFastBtn");
     const clonedBtn = document.getElementById("engineClonedBtn");
+    const headerFastBtn = document.getElementById("headerFastBtn");
+    const headerClonedBtn = document.getElementById("headerClonedBtn");
+    const modalFastBtn = document.getElementById("modalFastBtn");
+    const modalClonedBtn = document.getElementById("modalClonedBtn");
     const badge = document.getElementById("currentEngineBadge");
 
     if (fastBtn) fastBtn.classList.toggle("active", mode === "fast");
     if (clonedBtn) clonedBtn.classList.toggle("active", mode === "cloned");
-    if (badge) badge.textContent = mode === "fast" ? "INSTANT" : "CLONED";
+    if (headerFastBtn) headerFastBtn.classList.toggle("active", mode === "fast");
+    if (headerClonedBtn) headerClonedBtn.classList.toggle("active", mode === "cloned");
+    if (modalFastBtn) modalFastBtn.classList.toggle("active", mode === "fast");
+    if (modalClonedBtn) modalClonedBtn.classList.toggle("active", mode === "cloned");
+
+    if (badge) badge.textContent = mode === "fast" ? "INSTANT (~0.4s)" : "CLONED (~6s)";
 }
 
 // --- CONTROLS SETUP ---
@@ -623,7 +639,7 @@ function initControls() {
     }
 
     if (sendBtn) {
-        sendBtn.addEventListener("click", handleTextSubmit);
+        sendBtn.addEventListener("click", () => handleTextSubmit());
     }
 
     if (textInput) {
@@ -966,6 +982,7 @@ function startVisualizer(stream) {
     function render(timestamp) {
         if (!isRecording && (!audioPlayer || audioPlayer.paused)) {
             if (animFrameId) {
+                clearTimeout(animFrameId);
                 cancelAnimationFrame(animFrameId);
                 animFrameId = null;
             }
@@ -973,20 +990,23 @@ function startVisualizer(stream) {
             return;
         }
 
-        // Strict Hardware Frame Rate Limiter: Strictly hard-capped to <= 60 FPS (16.67ms frame time)
-        // Ensures smooth, buttery rendering while preventing GPU overheating, battery drain, and thermal throttling on all low-end devices
-        const TARGET_FPS = 60;
-        const MIN_FRAME_INTERVAL = 1000 / TARGET_FPS; // 16.667ms
+        // Strict 30 FPS Hardware Limiter decoupled from 144Hz monitors to prevent GPU overheating
+        const TARGET_FPS = 30;
+        const MIN_FRAME_INTERVAL = 1000 / TARGET_FPS; // 33.3ms
         if (timestamp) {
             if (!lastRenderTime) lastRenderTime = timestamp;
             const elapsed = timestamp - lastRenderTime;
             if (elapsed < MIN_FRAME_INTERVAL) {
-                animFrameId = requestAnimationFrame(render);
+                animFrameId = setTimeout(() => {
+                    requestAnimationFrame(render);
+                }, MIN_FRAME_INTERVAL - elapsed);
                 return;
             }
-            lastRenderTime = timestamp - (elapsed % MIN_FRAME_INTERVAL);
+            lastRenderTime = timestamp;
         }
-        animFrameId = requestAnimationFrame(render);
+        animFrameId = setTimeout(() => {
+            requestAnimationFrame(render);
+        }, MIN_FRAME_INTERVAL);
 
         analyser.getByteFrequencyData(freqData);
         analyser.getByteTimeDomainData(timeData);
@@ -1630,6 +1650,10 @@ function appendExchangeToUI(captionText, userSpokenWords, audioUrl, autoplay = f
 }
 
 function appendPendingUserToUI(text) {
+    let cleanText = text;
+    if (typeof cleanText !== "string" || cleanText.includes("[object") || cleanText.trim().length === 0) {
+        cleanText = (textInput && textInput.value && textInput.value.trim()) || "Reflecting...";
+    }
     const existing = document.getElementById("pendingUserCard");
     if (existing) existing.remove();
     const welcomeCard = document.getElementById("chatWelcomeCard");
@@ -1642,7 +1666,7 @@ function appendPendingUserToUI(text) {
         <div class="user-pending-card">
             <div class="user-spoken-subline">
                 <span class="user-echo-indicator">You:</span>
-                <span>"${escapeHtml(text)}"</span>
+                <span>"${escapeHtml(cleanText)}"</span>
             </div>
         </div>
     `;
@@ -1850,7 +1874,13 @@ function stopRecording() {
 
 // --- SUBMISSION: CHATGPT-SPEED RESPONSE & IMMEDIATE TITLING ---
 async function handleTextSubmit(overrideText = null) {
-    const text = overrideText !== null ? overrideText : (textInput ? textInput.value.trim() : "");
+    let text = "";
+    if (typeof overrideText === "string" && overrideText.trim().length > 0 && !overrideText.includes("[object")) {
+        text = overrideText.trim();
+    } else if (textInput && typeof textInput.value === "string" && textInput.value.trim().length > 0) {
+        text = textInput.value.trim();
+    }
+
     const audioToSend = lastRecordedBlob;
     lastRecordedBlob = null;
 

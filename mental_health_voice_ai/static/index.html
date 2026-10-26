@@ -328,6 +328,10 @@
                     </div>
                 </div>
                 <div class="voice-topbar-actions">
+                    <div class="modal-voice-switcher">
+                        <button id="modalFastBtn" class="modal-voice-btn active" title="Instant Fast Neural Voice (~0.4s)">⚡ Instant</button>
+                        <button id="modalClonedBtn" class="modal-voice-btn" title="Your Reference Cloned Voice via F5-TTS (~6s GPU Diffusion)">🎙️ Cloned</button>
+                    </div>
                     <span class="voice-modal-tone-badge" id="modalToneBadge">Tone: Natural</span>
                     <button id="modalMinimizeBtn" class="btn-voice-minimize" title="Return to Chat View">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/></svg>
@@ -561,6 +565,12 @@
                 </div>
 
                 <div class="header-right">
+                    <!-- Quick Voice Engine Switcher (Fast Neural vs Cloned Voice) -->
+                    <div class="header-voice-switcher" id="headerVoiceSwitcher">
+                        <button id="headerFastBtn" class="header-voice-btn active" title="Instant Sub-Second Neural Voice (~0.4s)">⚡ Instant</button>
+                        <button id="headerClonedBtn" class="header-voice-btn" title="Your Reference Cloned Voice via F5-TTS (~6s GPU Diffusion)">🎙️ Cloned</button>
+                    </div>
+
                     <!-- Live ChatGPT Voice Mode Button -->
                     <button id="openVoiceModeBtn" class="btn-header-tool btn-voice-mode-pulse" title="Start ChatGPT-style Continuous Voice Dialogue">
                         <span class="voice-mode-pulse-dot"></span>

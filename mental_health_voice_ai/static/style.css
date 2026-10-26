@@ -4283,6 +4283,56 @@ body:not(.user-authenticated) .btn-corner-signin {
     box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
 }
 
+/* --- QUICK VOICE ENGINE SWITCHERS (HEADER & MODAL) --- */
+.header-voice-switcher,
+.modal-voice-switcher {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bg-surface-elevated, #171717);
+    border: 1px solid var(--border-subtle, #262626);
+    border-radius: 9999px;
+    padding: 2px;
+    gap: 2px;
+}
+
+.header-voice-btn,
+.modal-voice-btn {
+    background: transparent;
+    border: none;
+    border-radius: 9999px;
+    padding: 4px 10px;
+    font-family: var(--font-ui, -apple-system, sans-serif);
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted, #737373);
+    cursor: pointer;
+    transition: all 0.16s ease;
+    white-space: nowrap;
+}
+
+.header-voice-btn:hover,
+.modal-voice-btn:hover {
+    color: var(--text-primary, #ffffff);
+}
+
+.header-voice-btn.active,
+.modal-voice-btn.active {
+    background: var(--accent-cyan, #38bdf8);
+    color: #000000;
+    font-weight: 700;
+    box-shadow: 0 1px 4px rgba(56, 189, 248, 0.3);
+}
+
+.modal-voice-switcher {
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.modal-voice-btn.active {
+    background: #38bdf8;
+    color: #000000;
+}
+
 
 
 

@@ -470,6 +470,48 @@ def esp32_status():
     bridge = get_esp32_bridge()
     return bridge.get_status()
 
+@app.get("/api/expression")
+@app.get("/expression")
+def get_esp32_expression():
+    """
+    ESP32 Wi-Fi Polling Endpoint: Returns the active FACS emotion and activity state.
+    """
+    bridge = get_esp32_bridge()
+    emo = getattr(bridge, "current_emotion", "calm")
+    act = getattr(bridge, "current_activity", "idle")
+    return {
+        "emotion": emo,
+        "activity": act,
+        "keyword": emo.upper(),
+        "last_update": time.time()
+    }
+
+@app.post("/api/expression")
+@app.post("/expression")
+async def set_esp32_expression(request: Request):
+    """
+    Sets the active FACS emotion and activity state for ESP32.
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    emo = data.get("emotion") or data.get("face") or "calm"
+    act = data.get("activity") or "idle"
+    bridge = get_esp32_bridge()
+    bridge.current_emotion = str(emo).strip().lower()
+    bridge.current_activity = str(act).strip().lower()
+    bridge.send(f"EMO:{bridge.current_emotion}")
+    if bridge.current_activity == "speaking":
+        bridge.send("SPK:1")
+    elif bridge.current_activity == "idle":
+        bridge.send("SPK:0")
+    return {
+        "status": "ok",
+        "emotion": bridge.current_emotion,
+        "activity": bridge.current_activity
+    }
+
 
 @app.post("/api/transcribe")
 async def transcribe_only(file: UploadFile = File(...)):
