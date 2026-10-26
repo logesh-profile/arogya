@@ -283,6 +283,7 @@ def select_tts_route(language_mode: str, voice_mode: str = "fast") -> str:
 
 def stage_prosody_and_phonetics(
     text: str,
+    spoken_script: Optional[str] = None,
     language_mode: str = "tanglish",
     emotion_state: str = "Calm",
     tts_engine: str = "auto"
@@ -308,15 +309,20 @@ def stage_prosody_and_phonetics(
     else:
         pause_marker = ". "
 
-    # Sentence boundary pacing
-    spaced_sentences = re.sub(r'([.?!])\s+', r'\1 ', clean_display)
-
     if tts_engine == "edge_tamil":
         # Native Tamil Voice: ta-IN-PallaviNeural
-        # Converts colloquial Tanglish to spoken Tamil script with preserved English loanwords!
-        spoken_script = transliterate_tanglish_to_spoken_tamil(clean_display)
+        # If Gemini generated authentic spoken Tamil script, use it directly!
+        if spoken_script and len(spoken_script.strip()) > 3:
+            raw_target = re.sub(r'[*_#`~\[\]]', '', spoken_script)
+            # Normalize suffixes like 'stress - ஆ' -> 'stress-ஆ'
+            raw_target = re.sub(r'\s*-\s*', '-', raw_target)
+            spoken_script_clean = raw_target.strip()
+        else:
+            # Fallback: Converts colloquial Tanglish to spoken Tamil script with preserved English loanwords
+            spoken_script_clean = transliterate_tanglish_to_spoken_tamil(clean_display)
+
         # Add natural intonation pauses for PallaviNeural
-        spoken_text = spoken_script.replace(". ", pause_marker).replace("! ", ". ")
+        spoken_text = spoken_script_clean.replace(". ", pause_marker).replace("! ", ". ")
         return {
             "display_text": clean_display,
             "spoken_text": spoken_text,
@@ -354,37 +360,61 @@ SPOKEN_LEXICON = {
     # Pronouns & People
     "naan": "நான்", "nan": "நான்", "enakku": "எனக்கு", "ennoda": "என்னோட", "enna": "என்ன",
     "neenga": "நீங்க", "neengal": "நீங்க", "ungalukku": "உங்களுக்கு", "ungaloda": "உங்களோட", "unga": "உங்க",
-    "namma": "நம்ம", "nammaloda": "நம்மளோட", "namakku": "நமக்கு",
-    "avan": "அவன்", "ava": "அவ", "avanga": "அவங்க", "ellarum": "எல்லாரும்", "bro": "ப்ரோ",
-    "thala": "தலை", "machan": "மச்சான்", "pa": "பா",
+    "ungakitta": "உங்ககிட்ட", "unkitta": "உன்கிட்ட", "enkitta": "என்கிட்ட", "namma": "நம்ம",
+    "nammaloda": "நம்மளோட", "namakku": "நமக்கு", "avan": "அவன்", "ava": "அவ", "avanga": "அவங்க",
+    "avangala": "அவங்கள", "ellarum": "எல்லாரும்", "yaarume": "யாருமே", "yarum": "யாரும்",
+    "bro": "ப்ரோ", "thala": "தலை", "machan": "மச்சான்", "pa": "பா", "sir": "சார்", "mam": "மேடம்",
+    "friend": "friend", "friends": "friends",
     
     # Question words & State
-    "enna aachu": "என்ன ஆச்சு", "enna aayiduchi": "என்ன ஆயிடுச்சு", "enna problem": "என்ன problem",
-    "eppadi": "எப்படி", "epdi": "எப்படி", "eppadi feel panreenga": "எப்படி feel பண்றீங்க",
+    "enna aachu": "என்ன ஆச்சு", "enna aayiduchi": "என்ன ஆயிடுச்சு", "enna aachu nu": "என்ன ஆச்சுன்னு",
+    "enna problem": "என்ன problem", "eppadi": "எப்படி", "epdi": "எப்படி",
+    "eppadi feel panreenga": "எப்படி feel பண்றீங்க", "epdi feel panreenga": "எப்படி feel பண்றீங்க",
     "eppadi irukkeenga": "எப்படி இருக்கீங்க", "epdi irukkeenga": "எப்படி இருக்கீங்க",
+    "epdi irukku": "எப்படி இருக்கு", "eppadi irukku": "எப்படி இருக்கு",
     "enga": "எங்க", "eppo": "எப்போ", "ippo": "இப்போ", "appo": "அப்போ", "yen": "ஏன்", "yaaru": "யாரு",
-    "edhuvum": "எதுவும்", "onnum": "ஒண்ணும்",
+    "edhuvum": "எதுவும்", "edhuvume": "எதுவுமே", "onnum": "ஒண்ணும்", "onnum illa": "ஒண்ணும் இல்ல",
+    "onnumey illa": "ஒண்ணுமே இல்ல", "ethum": "எதும்",
     
     # Emotional & Sensory
-    "romba": "ரொம்ப", "konjam": "கொஞ்சம்", "kavala": "கவலை", "bayama": "பயமா", "kashtama": "கஷ்டமா",
-    "bayapadadheenga": "பயப்படாதீங்க", "tension aagadheenga": "tension ஆகாதீங்க",
-    "manasu": "மனசு", "udambu": "உடம்பு", "moolai": "மூளை", "valikidhu": "வலிக்குது",
-    "thookam": "தூக்கம்", "nimmathi": "நிம்மதி", "sandhosham": "சந்தோஷம்",
+    "romba": "ரொம்ப", "konjam": "கொஞ்சம்", "kavala": "கவலை", "kavalapadadheenga": "கவலைப்படாதீங்க",
+    "bayama": "பயமா", "bayapadadheenga": "பயப்படாதீங்க", "kashtama": "கஷ்டமா", "kashtam": "கஷ்டம்",
+    "tension aagadheenga": "tension ஆகாதீங்க", "worry pannadheenga": "worry பண்ணாதீங்க",
+    "manasu": "மனசு", "manasula": "மனசுல", "udambu": "உடம்பு", "moolai": "மூளை",
+    "valikidhu": "வலிக்குது", "vali": "வலி", "thookam": "தூக்கம்", "nimmathi": "நிம்மதி",
+    "sandhosham": "சந்தோஷம்", "santhosam": "சந்தோஷம்", "santhosama": "சந்தோஷமா",
+    "mood": "mood", "bored": "bored", "bore adikkidhu": "bore அடிக்குது",
     
-    # Verbs & Connectors
-    "seri": "சரி", "sari": "சரி", "aama": "ஆமா", "illa": "இல்ல", "illai": "இல்லை",
-    "parava illa": "பரவா இல்ல", "paravalla": "பரவால்ல",
+    # Verbs: Do / Action
     "panren": "பண்றேன்", "pannunga": "பண்ணுங்க", "pannanum": "பண்ணனும்", "pannalaam": "பண்ணலாம்",
-    "panradhu": "பண்றது", "panna": "பண்ண", "panniten": "பண்ணிட்டேன்",
-    "irukku": "இருக்கு", "irukka": "இருக்கா", "irukken": "இருக்கேன்", "irundhuchi": "இருந்துச்சு", "irundha": "இருந்தா",
-    "sollunga": "சொல்லுங்க", "sollu": "சொல்லு", "solren": "சொல்றேன்",
-    "puriyudhu": "புரியுது", "puriyala": "புரியல", "purinjukitten": "புரிஞ்சுகிட்டேன்",
+    "panradhu": "பண்றது", "panna": "பண்ண", "panniten": "பண்ணிட்டேன்", "panreenga": "பண்றீங்க",
+    "pannirukkeenga": "பண்ணிருக்கீங்க", "seiya": "பண்ண", "seiyunga": "பண்ணுங்க",
+    
+    # Verbs: Be / Exist
+    "irukku": "இருக்கு", "irukka": "இருக்கா", "irukken": "இருக்கேன்", "irukkeenga": "இருக்கீங்க",
+    "irundhuchi": "இருந்துச்சு", "irundhadhu": "இருந்துச்சு", "irundha": "இருந்தா", "irundhom": "இருந்தோம்",
+    
+    # Verbs: Speak / Listen / Think
+    "sollunga": "சொல்லுங்க", "sollu": "சொல்லு", "solren": "சொல்றேன்", "sonna": "சொன்னா",
+    "sonnanga": "சொன்னாங்க", "solradhu": "சொல்றது", "pesurathula": "பேசுறதுல", "pesuradhu": "பேசுறது",
+    "pesalaam": "பேசலாம்", "pesa": "பேச", "pesunga": "பேசுங்க",
+    "kekkuren": "கேக்குறேன்", "kekkudhu": "கேக்குது", "kekren": "கேக்குறேன்", "kekkalaam": "கேக்கலாம்",
+    "puriyudhu": "புரியுது", "puriyala": "புரியல", "puriyum": "புரியும்", "purinjukitten": "புரிஞ்சுகிட்டேன்",
     "theriyum": "தெரியும்", "therila": "தெரியல", "theriyala": "தெரியல",
-    "venum": "வேணும்", "venam": "வேணாம்", "kekkuren": "கேக்குறேன்", "kekkudhu": "கேக்குது",
-    "edunga": "எடுங்க", "paakalaam": "பாக்கலாம்", "paathukalaam": "பாத்துக்கலாம்",
-    "pesalaam": "பேசலாம்", "vaanga": "வாங்க", "ponga": "போங்க", "apram": "அப்றம்",
-    "thaan": "தான்", "mattum": "மட்டும்", "kooda": "கூட", "madhiri": "மாதிரி", "pola": "போல",
-    "inaiku": "இன்னைக்கு", "naalaiku": "நாளைக்கு", "nalla": "நல்லா", "aiyo": "ஐயோ",
+    "thoonudhu": "தோணுது", "thonudhu": "தோணுது", "thonala": "தோணல", "nenaikiren": "நினைக்கிறேன்",
+    "nenachu": "நினைச்சு", "nenaikaadheenga": "நினைக்காதீங்க",
+    
+    # Connectors, Adverbs & Particles
+    "seri": "சரி", "sari": "சரி", "aama": "ஆமா", "illa": "இல்ல", "illai": "இல்லை", "illama": "இல்லாம",
+    "parava illa": "பரவா இல்ல", "paravalla": "பரவால்ல", "paravayilla": "பரவாயில்ல",
+    "venum": "வேணும்", "venam": "வேணாம்", "edunga": "எடுங்க", "eduthukonga": "எடுத்துக்கோங்க",
+    "paakalaam": "பாக்கலாம்", "paathukalaam": "பாத்துக்கலாம்", "paaru": "பாரு", "paarunga": "பாருங்க",
+    "vaanga": "வாங்க", "ponga": "போங்க", "apram": "அப்றம்", "aprom": "அப்றம்",
+    "thaan": "தான்", "mattum": "மட்டும்", "kooda": "கூட", "koodave": "கூடவே",
+    "madhiri": "மாதிரி", "pola": "போல", "aiyo": "ஐயோ",
+    "inaiku": "இன்னைக்கு", "innaiku": "இன்னைக்கு", "naalaiku": "நாளைக்கு", "nalla": "நல்லா",
+    "mudiyum": "முடியும்", "mudiyala": "முடியல", "mudiyuma": "முடியுமா",
+    "vanthuttingala": "வந்துட்டீங்களா", "vanthutan": "வந்துட்டேன்", "kelambalaam": "கெளம்பலாம்",
     "take it easy": "take it easy", "step by step": "step by step"
 }
 
@@ -404,15 +434,16 @@ def transliterate_tanglish_to_spoken_tamil(text: str) -> str:
         pattern = r'(?i)\b' + re.escape(tanglish_phrase) + r'\b'
         out = re.sub(pattern, tamil_val, out)
 
-    # Clean up hyphenated suffixes like 'stress-ah' -> 'stress-ஆ'
+    # Clean up hyphenated and spaced suffixes like 'stress-ah' or 'stress ah' -> 'stress-ஆ'
     suffix_map = {
-        r'-ah\b': '-ஆ',
-        r'-la\b': '-ல',
-        r'-ku\b': '-க்கு',
-        r'-oda\b': '-ஓட',
-        r'-nu\b': '-னு'
+        r'[- ]ah\b': '-ஆ',
+        r'[- ]la\b': '-ல',
+        r'[- ]ku\b': '-க்கு',
+        r'[- ]oda\b': '-ஓட',
+        r'[- ]nu\b': '-னு'
     }
     for suff_pat, suff_val in suffix_map.items():
         out = re.sub(r'(?i)' + suff_pat, suff_val, out)
 
     return out
+

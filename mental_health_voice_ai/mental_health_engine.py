@@ -166,16 +166,30 @@ def extract_acoustic_features(audio_path: str) -> Dict[str, Any]:
 # 4. EVIDENCE-GROUNDED SYMPTOM SCORING & CLINICAL CONTINUITY
 # ---------------------------------------------------------------------------
 SYSTEM_INSTRUCTION = """
-You are Arogya, a deeply empathetic, reflective voice companion.
+You are Arogya, a deeply empathetic, reflective voice companion and clinical triage assistant.
 You converse with the user through spoken audio. Your core principles:
 
-1. CONVERSATIONAL LANGUAGE MODES & SPOKEN REGISTERS:
-   - Understand Indian English, Tanglish (colloquial spoken Tamil in Latin characters, e.g. 'inaiku ennode day epdi irundhuchi', 'romba tension', 'konjam tired', 'enna panradhu nu therila'), and native Tamil script.
-   - If user speaks Tanglish or Tamil, reply in NATURAL SPOKEN COLLOQUIAL TANGLISH (e.g. 'romba stress-ah irukka?', 'konjam rest edunga', 'bayapadadheenga', 'namma step by step paakalaam', 'help panren', 'puriyudhu').
-   - NEVER use literary, bookish, or translated formal written Tamil (NEVER say 'neengal eppadi unargireergal', 'seiya vendum', 'ungalukku udhava mudiyum', 'oyvu edukka vendum'). Speak like a caring Tamil friend talking out loud.
-   - Match the user's register: if user is casual ('bro'), be warmly casual; if user is respectful ('neenga'), be gently respectful. Do not overuse slang or force 'bro' on every sentence.
-   - Naturally preserve English loanwords for technical and health terms (e.g. 'stress', 'tension', 'doctor', 'exam', 'sleep', 'relax', 'hectic', 'meeting', 'office').
-   - If user speaks English, respond in natural, warm Indian English.
+1. CONVERSATIONAL LANGUAGE MODES & DUAL-CHANNEL SPOKEN OUTPUT:
+   - You understand Indian English, Tanglish (colloquial spoken Tamil in Latin characters, e.g. 'inaiku ennode day epdi irundhuchi', 'romba tension', 'konjam tired', 'enna panradhu nu therila'), and native Tamil script.
+   - If user speaks Tanglish, Tamil, or Code-Switched:
+     * DUAL-CHANNEL OUTPUT IS MANDATORY:
+       a) "reply_text": Generate 100% NATURAL SPOKEN COLLOQUIAL TANGLISH for the chat display UI (e.g. 'Romba tired-ah irukka bro? Konjam rest edunga, namma pesalaam.').
+       b) "spoken_tamil_script": Generate the EXACT CONVERSATIONAL SPOKEN TAMIL (பேச்சுத் தமிழ்) representation in pure Tamil Unicode script for high-fidelity speech synthesis (e.g. 'ரொம்ப tired-ஆ இருக்கா ப்ரோ? கொஞ்சம் rest எடுங்க... நம்ம பேசலாம்.').
+     * PRESERVE COMMON ENGLISH LOANWORDS IN BOTH CHANNELS: Keep technical, medical, and common daily English words (stress, tension, doctor, appointment, exam, study, sleep, relax, office, work, project, tablets, feel, happy, tired, fine, okay, bro) naturally intact. In Tamil script, attach natural Tamil suffixes (e.g. 'stress-ஆ', 'doctor-கிட்ட', 'relax பண்ணுங்க', 'exam-னால', 'office-ல').
+     * NEVER EVER USE FORMAL, BOOKISH, OR GOOGLE-TRANSLATED LITERARY TAMIL:
+       - BAD (Bookish): "Neengal eppadi unargireergal?" / "நீங்கள் எவ்வாறு உணர்கிறீர்கள்?"
+       - GOOD Spoken: "Eppadi feel panreenga?" / "எப்படி feel பண்றீங்க?"
+       - BAD (Bookish): "Neengal oyvu edukka vendum" / "நீங்கள் ஓய்வு எடுக்க வேண்டும்"
+       - GOOD Spoken: "Konjam rest edunga, namma paathukalaam" / "கொஞ்சம் rest எடுங்க, நம்ம பாத்துக்கலாம்"
+       - BAD (Bookish): "Naan ungalukku udhava mudiyum" / "நான் உங்களுக்கு உதவ முடியும்"
+       - GOOD Spoken: "Naan help panren, enna problem nu sollunga" / "நான் help பண்றேன், என்ன problem-னு சொல்லுங்க"
+       - BAD (Bookish): "Ungalukku enna pirachanai ullathu?" / "உங்களுக்கு என்ன பிரச்சனை உள்ளது?"
+       - GOOD Spoken: "Enna problem irukku? Sollunga, kekkuren." / "என்ன problem இருக்கு? சொல்லுங்க, கேக்குறேன்."
+     * Use natural conversational markers: "enna aachu", "enna problem", "epdi irukku", "romba kashtama irukka", "seri", "parava illa", "konjam rest edunga", "paakalaam", "sollunga", "kekkuren", "puriyudhu", "naan irukken", "pesalaam", "take it easy".
+     * Match register: if user says 'bro', warmly match with casual brotherhood; if user speaks with polite 'neenga', match with gentle respect. Never force 'bro' on every sentence.
+   - If user speaks Indian English:
+     * "reply_text": Natural, warm Indian English (e.g. "I hear you, take it easy. Tell me what has been on your mind.").
+     * "spoken_tamil_script": null.
 
 2. LONG-TERM CLINICAL CONTINUITY & STRICT MEMORY GROUNDING:
    - USER IDENTITY: Refer to the user by their preferred name provided in the session profile context.
@@ -203,7 +217,8 @@ You converse with the user through spoken audio. Your core principles:
 
 You MUST output strictly valid JSON matching this exact structure:
 {
-  "reply_text": "Spoken reply (concise, warm, and natural 2-3 sentences in colloquial Tanglish or Indian English, validating their feelings and addressing what they shared)",
+  "reply_text": "Spoken reply (concise, warm, and natural 2-3 sentences in colloquial Tanglish or Indian English for the chat UI)",
+  "spoken_tamil_script": "If Tanglish or Tamil, provide authentic spoken Tamil script (பேச்சுத் தமிழ், e.g. 'ரொம்ப tired-ஆ இருக்கா ப்ரோ? கொஞ்சம் rest எடுங்க... இப்போ மனசு எப்படி இருக்குன்னு சொல்லுங்க, நான் கேக்குறேன்.') with English loanwords intact. If pure Indian English, set to null.",
   "conversation_title": "2-4 words accurately summarizing the topic in title case (e.g. Exam Stress, Daily Reflection, Seeking Connection)",
   "dominant_state": "1-2 words summarizing their state (e.g. Overwhelmed, Exhausted, Calm, Reflective, Hopeful, Lonely)",
   "evidence": {
@@ -230,11 +245,12 @@ You MUST output strictly valid JSON matching this exact structure:
 # ---------------------------------------------------------------------------
 # 4B. DYNAMIC MEMORY-ANCHORED GREETING GENERATOR
 # ---------------------------------------------------------------------------
-def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "primary_user") -> str:
+def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "primary_user") -> Dict[str, Any]:
     """
     Generates a deeply personal, memory-anchored spoken greeting that proactively recalls
     the user's name, their long-term clinical profile (stressors, deadlines, sleep schedule),
     and previous session reflections across days.
+    Adapts language naturally: if user previously spoke Tanglish/Tamil, greets in conversational Tanglish & spoken Tamil script.
     """
     from database import get_recent_session_memory_anchor, get_user_clinical_profile
 
@@ -251,8 +267,31 @@ def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "p
     past_summary = anchor.get("summary", "")
     recent_remarks = anchor.get("recent_remarks", [])
 
+    # Detect user language preference from past remarks
+    from tanglish_engine import detect_language_and_register, stage_prosody_and_phonetics
+    detected_lang = "tanglish"
+    all_past_text = " ".join(recent_remarks) if recent_remarks else ""
+    if all_past_text:
+        lang_res = detect_language_and_register(all_past_text)
+        detected_lang = lang_res.get("language_mode", "tanglish")
+
     if client:
         try:
+            if detected_lang in ["tanglish", "tamil", "code_switched"]:
+                lang_task = f"""
+Language: Spoken Conversational Tanglish (Tamil in Latin English letters).
+Produce JSON with two keys:
+"reply_text": 1-2 natural spoken colloquial Tanglish sentences (maximum 24 words, e.g. "Vanthuttingala {short_name}! Epdi irukkeenga inaiku?").
+"spoken_tamil_script": Authentic spoken Tamil in Tamil script (பேச்சுத் தமிழ், e.g. "வந்துட்டீங்களா {short_name}! எப்படி இருக்கீங்க இன்னைக்கு?").
+"""
+            else:
+                lang_task = f"""
+Language: Natural, warm Indian English.
+Produce JSON with two keys:
+"reply_text": 1-2 warm spoken English sentences (maximum 22 words).
+"spoken_tamil_script": null.
+"""
+
             if has_history and (past_title or past_summary or recent_remarks):
                 prompt = f"""
 You are Arogya, a deeply empathetic, caring voice companion speaking to your friend {short_name} ({name}).
@@ -264,41 +303,75 @@ Profile & Real Context:
 - Past Session Summary: {past_summary}
 - Recent remarks spoken by user: {' | '.join(recent_remarks) if recent_remarks else 'None recorded'}
 
-Task: Generate a genuine, caring welcome-back greeting in 1-2 natural spoken sentences (maximum 28 words).
+{lang_task}
 Naturally check back in based STRICTLY on what they actually shared in their previous session.
 DO NOT invent exams, job interviews, or problems they never mentioned.
-Do NOT sound robotic or formal. Speak directly as spoken text with no markdown, asterisks, or quotes.
+DO NOT sound robotic, bookish, or formal. Output strictly valid JSON.
 """
             else:
                 prompt = f"""
 You are Arogya, a warm, friendly voice companion welcoming {short_name}.
 This is their very first conversation with you.
-Task: Generate a warm, reassuring first-welcome greeting in 1-2 natural spoken sentences (maximum 22 words).
+{lang_task}
 Welcome {short_name} warmly, mention that you're here to listen and keep them company, and gently ask how they are feeling today.
 DO NOT assume or invent exams, deadlines, or life situations. Keep it simple, welcoming, and open-ended.
-Do NOT sound robotic. Speak directly as spoken text with no markdown, asterisks, or quotes.
+DO NOT sound robotic, bookish, or formal. Output strictly valid JSON.
 """
             resp = client.models.generate_content(
                 model="gemini-3.5-flash-lite",
                 contents=prompt,
                 config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
                     temperature=0.3,
                 )
             )
-            raw = (resp.text or "").strip().strip('"\'')
-            if raw and len(raw) > 10:
-                return normalize_text_for_speech(raw)
+            gdata = json.loads(resp.text)
+            reply = gdata.get("reply_text", "").strip()
+            spoken_script = gdata.get("spoken_tamil_script")
+            if reply and len(reply) > 5:
+                prosody = stage_prosody_and_phonetics(
+                    text=reply,
+                    spoken_script=spoken_script,
+                    language_mode=detected_lang,
+                    emotion_state="Calm"
+                )
+                return {
+                    "reply_text": reply,
+                    "spoken_text": prosody.get("spoken_text", reply),
+                    "language_mode": detected_lang,
+                    "tts_voice": prosody.get("tts_voice", "ta-IN-PallaviNeural")
+                }
         except Exception as e:
             print(f"[!] Dynamic memory greeting error: {e}")
 
     # Fallback to high-quality personalized memory greeting (Zero hallucination)
-    if has_history and past_title:
-        fallback = f"Hello {short_name}! It is wonderful to hear from you again. How have you been feeling since our last conversation about {past_title.lower()}?"
-    elif has_history and stressor_sample:
-        fallback = f"Hello {short_name}! It is wonderful to hear from you again. How have you been feeling since we last spoke?"
+    if detected_lang in ["tanglish", "tamil", "code_switched"]:
+        if has_history:
+            fallback = f"Vanthuttingala {short_name}! Epdi irukkeenga inaiku? Sollunga, kekkuren."
+            fallback_spoken = f"வந்துட்டீங்களா {short_name}! எப்படி இருக்கீங்க இன்னைக்கு? சொல்லுங்க, கேக்குறேன்."
+        else:
+            fallback = f"Vanakkam {short_name}! Welcome to Arogya. Epdi irukkeenga inaiku? Sollunga, naan koodave irukken."
+            fallback_spoken = f"வணக்கம் {short_name}! Welcome to Arogya. எப்படி இருக்கீங்க இன்னைக்கு? சொல்லுங்க, நான் கூடவே இருக்கேன்."
     else:
-        fallback = f"Hello {short_name}, welcome to Arogya! I am here to listen, support, and keep you company whenever you need a friendly space. How are you feeling today?"
-    return normalize_text_for_speech(fallback)
+        if has_history and past_title:
+            fallback = f"Hello {short_name}! It is wonderful to hear from you again. How have you been feeling since our last conversation about {past_title.lower()}?"
+        else:
+            fallback = f"Hello {short_name}, welcome to Arogya! I am right here with you. How are you feeling today?"
+        fallback_spoken = fallback
+
+    prosody = stage_prosody_and_phonetics(
+        text=fallback,
+        spoken_script=fallback_spoken if detected_lang in ["tanglish", "tamil", "code_switched"] else None,
+        language_mode=detected_lang,
+        emotion_state="Calm"
+    )
+    return {
+        "reply_text": fallback,
+        "spoken_text": prosody.get("spoken_text", fallback),
+        "language_mode": detected_lang,
+        "tts_voice": prosody.get("tts_voice", "ta-IN-PallaviNeural" if detected_lang != "indian_english" else "en-IN-NeerjaNeural")
+    }
+
 
 
 
@@ -582,8 +655,10 @@ Produce the requested JSON:
         emotion_state=data.get("dominant_state", "Reflective")
     )
 
+    spoken_tamil_script = data.get("spoken_tamil_script")
     prosody_stage = stage_prosody_and_phonetics(
         text=naturalized_reply,
+        spoken_script=spoken_tamil_script,
         language_mode=language_mode,
         emotion_state=data.get("dominant_state", "Reflective"),
         tts_engine="auto"

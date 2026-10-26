@@ -17,9 +17,12 @@ Existing solutions suffer from three fatal flaws:
 
 ## 🚀 Key Features
 
-### 1. Tri-Mode Conversational Speech Synthesis & Tanglish Naturalizer
-- **Conversational Tamil & Tanglish Naturalizer (`tanglish_engine.py`):** Dedicated backend linguistic pipeline transforming literary/formal translations into spoken colloquial Tamil/Tanglish. Context-aware register detection (casual, warm, respectful) with authentic loanword code-switching.
-- **Native High-Fidelity Tamil Voice (`ta-IN-PallaviNeural`):** Authentic human Tamil intonation, prosody, and syllable rhythm with sub-second latency (~0.35s - 0.45s) and zero VRAM footprint.
+### 1. Dual-Channel Conversational Tamil & Tanglish Speech Naturalizer
+- **Dual-Channel Generation Pipeline:** Decouples chat UI presentation from speech synthesis:
+  - **Channel 1 (UI Display):** Clean, warm conversational Tanglish in Latin script (e.g. *"Romba tired-ah irukka bro? Konjam rest edunga, namma pesalaam."*).
+  - **Channel 2 (TTS Speech):** Authentic spoken colloquial Tamil (*பேச்சுத் தமிழ்*) in Tamil script with preserved English loanwords (e.g. *"ரொம்ப tired-ஆ இருக்கா ப்ரோ? கொஞ்சம் rest எடுங்க... நம்ம பேசலாம்."*).
+- **Zero Diglossia Artifacts:** Eliminates awkward textbook/Google-translated Tamil (*"நீங்கள் ஓய்வு எடுக்க வேண்டும்"*) in favor of natural conversational spoken phrases (*"கொஞ்சம் rest எடுங்க"*, *"என்ன ஆச்சு"*, *"நான் help பண்றேன்"*, *"சொல்லுங்க கேக்குறேன்"*).
+- **Native High-Fidelity Tamil Voice (`ta-IN-PallaviNeural`):** Authentic human Indian Tamil intonation, prosody, and retroflex consonant articulation (`ழ`, `ற`, `ள`, `ண`) with sub-second latency (~0.35s - 0.45s) and 0 MB VRAM footprint.
 - **Indian English Neural Voice (`en-IN-NeerjaNeural`):** Natural cadence for English dialogue with emotion-adaptive pacing and pitch inflection.
 - **Cloned Studio Mode (F5-TTS Flow-Matching Diffusion):** Local GPU-accelerated zero-shot voice cloning running on NVIDIA RTX 3050 with phonetic Tanglish staging.
 

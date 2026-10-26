@@ -342,8 +342,22 @@ async def get_initial_greeting(request: Request, session_id: Optional[str] = Non
     Dynamic memory-anchored greeting: Proactively connects with authenticated user's name and past clinical journey.
     """
     user = get_effective_user(request)
-    greeting_text = generate_memory_greeting(session_id, user_id=user["id"])
-    audio_url = await synthesize_speech(greeting_text, mode=voice_mode)
+    greeting_info = generate_memory_greeting(session_id, user_id=user["id"])
+    if isinstance(greeting_info, dict):
+        greeting_text = greeting_info.get("reply_text", "")
+        spoken_text = greeting_info.get("spoken_text", greeting_text)
+        lang_mode = greeting_info.get("language_mode", "tanglish")
+    else:
+        greeting_text = str(greeting_info)
+        spoken_text = greeting_text
+        lang_mode = "tanglish"
+
+    audio_url = await synthesize_speech(
+        text=greeting_text,
+        mode=voice_mode,
+        language_mode=lang_mode,
+        spoken_text=spoken_text
+    )
 
     # Save to session if session_id provided
     if session_id:
@@ -399,7 +413,7 @@ async def process_voice_chat(
     request: Request,
     file: UploadFile = File(...),
     session_id: str = Form(...),
-    voice_mode: str = Form("cloned"),
+    voice_mode: str = Form("fast"),
     client_transcript: Optional[str] = Form(None)
 ):
     """
