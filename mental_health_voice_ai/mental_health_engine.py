@@ -416,7 +416,7 @@ def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "p
     """
     from database import get_recent_session_memory_anchor, get_user_clinical_profile
 
-    anchor = get_recent_session_memory_anchor(user_id=user_id)
+    anchor = get_recent_session_memory_anchor(user_id=user_id, exclude_session_id=session_id)
     profile = anchor.get("profile") or get_user_clinical_profile(user_id)
     name = profile.get("user_name") or "Friend"
     short_name = name.split()[0] if name else "Friend"
@@ -427,12 +427,14 @@ def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "p
     has_history = anchor.get("has_history", False)
     past_title = anchor.get("title", "")
     past_summary = anchor.get("summary", "")
+    core_topic = anchor.get("core_topic", "")
+    latest_remark = anchor.get("latest_remark", "")
     recent_remarks = anchor.get("recent_remarks", [])
 
     # Detect user language preference from past remarks
     from tanglish_engine import detect_language_and_register, stage_prosody_and_phonetics
     detected_lang = "tanglish"
-    all_past_text = " ".join(recent_remarks) if recent_remarks else ""
+    all_past_text = " ".join(recent_remarks) if recent_remarks else core_topic
     if all_past_text:
         lang_res = detect_language_and_register(all_past_text)
         detected_lang = lang_res.get("language_mode", "tanglish")
@@ -443,32 +445,34 @@ def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "p
                 lang_task = f"""
 Language: Spoken Conversational Tanglish (Tamil in Latin English letters).
 Produce JSON with two keys:
-"reply_text": 1-2 natural spoken colloquial Tanglish sentences (maximum 24 words, e.g. "Vanthuttingala {short_name}! Epdi irukkeenga inaiku?").
-"spoken_tamil_script": Authentic spoken Tamil in Tamil script (பேச்சுத் தமிழ், e.g. "வந்துட்டீங்களா {short_name}! எப்படி இருக்கீங்க இன்னைக்கு?").
+"reply_text": 1-2 natural spoken colloquial Tanglish sentences (maximum 26 words, e.g. "Vanthuttingala {short_name}! Last time pesunome, athu epdi pochu? Ippo nallaa irukkeengala?").
+"spoken_tamil_script": Authentic spoken Tamil in Tamil script (பேச்சுத் தமிழ், e.g. "வந்துட்டீங்களா {short_name}! போன தடவை பேசினோமே, அது எப்படி போச்சு? இப்போ நல்லா இருக்கீங்களா?").
 """
             else:
                 lang_task = f"""
 Language: Natural, warm Indian English.
 Produce JSON with two keys:
-"reply_text": 1-2 warm spoken English sentences (maximum 22 words).
+"reply_text": 1-2 warm spoken English sentences (maximum 24 words).
 "spoken_tamil_script": null.
 """
 
-            if has_history and (past_title or past_summary or recent_remarks):
+            if has_history and (core_topic or past_title or recent_remarks):
                 prompt = f"""
 You are Arogya, a deeply empathetic, caring voice companion speaking to your friend {short_name} ({name}).
 Profile & Real Context:
-- User: {name} (Address them as {short_name})
+- User: {name} (Address them warmly as {short_name})
 - Known Context: {key_context}
 - Real Recorded Stressors: {', '.join(stressors) if stressors else 'None recorded yet'}
-- Past Session Title: {past_title}
-- Past Session Summary: {past_summary}
-- Recent remarks spoken by user: {' | '.join(recent_remarks) if recent_remarks else 'None recorded'}
+- Previous Topic / Concern: {core_topic or past_title}
+- Previous Session Summary: {past_summary}
+- Recent remarks spoken by user: {' | '.join(recent_remarks) if recent_remarks else core_topic}
 
 {lang_task}
-Naturally check back in based STRICTLY on what they actually shared in their previous session.
+IMPORTANT CONVERSATIONAL MEMORY DIRECTIVE:
+The user is starting a new conversation. Greet them warmly by name, and proactively follow up on what they shared in their last conversation.
+Specifically ask how it went / how it turned out / or if they feel better or good since they mentioned "{core_topic or past_title}" last time.
 DO NOT invent exams, job interviews, or problems they never mentioned.
-DO NOT sound robotic, bookish, or formal. Output strictly valid JSON.
+DO NOT sound robotic, formal, or like a questionnaire. Keep it warm, gentle, and caring. Output strictly valid JSON.
 """
             else:
                 prompt = f"""
@@ -508,14 +512,21 @@ DO NOT sound robotic, bookish, or formal. Output strictly valid JSON.
 
     # Fallback to high-quality personalized memory greeting (Zero hallucination)
     if detected_lang in ["tanglish", "tamil", "code_switched"]:
-        if has_history:
+        if has_history and core_topic:
+            short_top = core_topic[:35]
+            fallback = f"Vanthuttingala {short_name}! Last time '{short_top}' pathi pesunome, athu epdi pochu? Ippo nallaa irukkeengala?"
+            fallback_spoken = f"வந்துட்டீங்களா {short_name}! போன தடவை பேசினோமே, அது எப்படி போச்சு? இப்போ நல்லா இருக்கீங்களா?"
+        elif has_history:
             fallback = f"Vanthuttingala {short_name}! Epdi irukkeenga inaiku? Sollunga, kekkuren."
             fallback_spoken = f"வந்துட்டீங்களா {short_name}! எப்படி இருக்கீங்க இன்னைக்கு? சொல்லுங்க, கேக்குறேன்."
         else:
             fallback = f"Vanakkam {short_name}! Welcome to Arogya. Epdi irukkeenga inaiku? Sollunga, naan koodave irukken."
             fallback_spoken = f"வணக்கம் {short_name}! Welcome to Arogya. எப்படி இருக்கீங்க இன்னைக்கு? சொல்லுங்க, நான் கூடவே இருக்கேன்."
     else:
-        if has_history and past_title:
+        if has_history and core_topic:
+            short_top = core_topic[:45]
+            fallback = f"Welcome back {short_name}! How did things go regarding {short_top} that you mentioned last time? Do you feel good today?"
+        elif has_history and past_title:
             fallback = f"Hello {short_name}! It is wonderful to hear from you again. How have you been feeling since our last conversation about {past_title.lower()}?"
         else:
             fallback = f"Hello {short_name}, welcome to Arogya! I am right here with you. How are you feeling today?"

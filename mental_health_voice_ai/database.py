@@ -269,6 +269,55 @@ def update_user_preferred_name(user_id: str, preferred_name: str) -> Dict[str, A
     conn.close()
     return user_data or {}
 
+def switch_or_create_local_user(username: str) -> Dict[str, Any]:
+    """
+    Creates or logs in a local named user profile for multi-account testing and offline usage.
+    Establishes complete memory and chat history isolation per user profile.
+    """
+    clean_name = username.strip() if username else "Friend"
+    safe_slug = "".join(c.lower() if c.isalnum() else "_" for c in clean_name).strip("_")
+    if not safe_slug:
+        safe_slug = "user"
+    user_id = f"usr_{safe_slug}"
+
+    now = datetime.now().isoformat()
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    existing = cursor.fetchone()
+
+    if not existing:
+        cursor.execute("""
+            INSERT INTO users (id, google_id, email, name, given_name, preferred_name, picture, onboarding_completed, created_at, last_login)
+            VALUES (?, NULL, ?, ?, ?, ?, '', 1, ?, ?)
+        """, (user_id, f"{safe_slug}@local.ai", clean_name, clean_name.split()[0], clean_name, now, now))
+    else:
+        cursor.execute("UPDATE users SET last_login = ? WHERE id = ?", (now, user_id))
+
+    conn.commit()
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+    user_dict = _enrich_user_dict(cursor.fetchone())
+    conn.close()
+
+    # Ensure clinical profile exists with correct name
+    update_user_clinical_profile(user_id=user_id, user_name=clean_name)
+
+    # Create new session token
+    session_token = create_auth_session(user_id=user_id)
+    return {
+        "user": user_dict,
+        "session_token": session_token
+    }
+
+def get_all_profiles() -> List[Dict[str, Any]]:
+    """Returns a list of all distinct user profiles for quick switching."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, given_name, preferred_name, email, picture, last_login FROM users ORDER BY last_login DESC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [_enrich_user_dict(r) for r in rows]
+
 def create_auth_session(user_id: str, expires_days: int = 30) -> str:
     conn = get_connection()
     cursor = conn.cursor()
@@ -764,7 +813,8 @@ def get_session_report(session_id: str, user_id: Optional[str] = None) -> Option
 def get_user_clinical_profile(user_id: str = "primary_user") -> Dict[str, Any]:
     """
     Retrieves the persistent longitudinal clinical profile, recurring stressors,
-    and effective coping mechanisms across all sessions.
+    and effective coping mechanisms across all sessions for a specific user.
+    Strictly isolated per user_id.
     """
     conn = get_connection()
     cursor = conn.cursor()
@@ -774,12 +824,20 @@ def get_user_clinical_profile(user_id: str = "primary_user") -> Dict[str, Any]:
         WHERE user_id = ?
     """, (user_id,))
     row = cursor.fetchone()
+
+    # Look up actual registered user record for accurate display name
+    cursor.execute("SELECT name, given_name, preferred_name FROM users WHERE id = ?", (user_id,))
+    user_row = cursor.fetchone()
     conn.close()
+
+    resolved_name = "Friend"
+    if user_row:
+        resolved_name = user_row["preferred_name"] or user_row["given_name"] or user_row["name"] or "Friend"
 
     if not row:
         return {
             "user_id": user_id,
-            "user_name": "Friend",
+            "user_name": resolved_name,
             "key_context": "Member seeking conversational companionship and emotional support",
             "recurring_stressors": [],
             "effective_coping": ["Guided box breathing (4-4-4-4)", "Gentle mindful reflection", "Empathetic companion dialogue"],
@@ -788,6 +846,9 @@ def get_user_clinical_profile(user_id: str = "primary_user") -> Dict[str, Any]:
         }
 
     d = dict(row)
+    if not d.get("user_name") or d.get("user_name") in ["Friend", "User"]:
+        d["user_name"] = resolved_name
+
     try:
         d["recurring_stressors"] = json.loads(d["recurring_stressors"]) if d.get("recurring_stressors") else []
     except Exception:
@@ -808,6 +869,7 @@ def update_user_clinical_profile(
 ) -> Dict[str, Any]:
     """
     Updates or appends clinical memory entities (name, recurring stressors, effective coping, context notes).
+    Ensures strict per-user isolation without hardcoded names.
     """
     curr = get_user_clinical_profile(user_id)
     stressors = curr.get("recurring_stressors", [])
@@ -827,7 +889,7 @@ def update_user_clinical_profile(
     if key_context and isinstance(key_context, str) and len(key_context.strip()) > 3:
         context = key_context.strip()
 
-    name = user_name.strip() if (user_name and isinstance(user_name, str) and len(user_name.strip()) > 1) else curr.get("user_name", "Logeshwaran")
+    name = user_name.strip() if (user_name and isinstance(user_name, str) and len(user_name.strip()) > 1) else curr.get("user_name", "Friend")
     b_well = baseline_wellness if baseline_wellness is not None else curr.get("baseline_wellness", 75.0)
     now = datetime.now().isoformat()
 
@@ -849,48 +911,74 @@ def update_user_clinical_profile(
 
     return get_user_clinical_profile(user_id)
 
-def get_recent_session_memory_anchor(user_id: str = "primary_user") -> Dict[str, Any]:
+def get_recent_session_memory_anchor(user_id: str = "primary_user", exclude_session_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Retrieves the most recent meaningful session topic, user quotes, and recurring stressors
     for memory-anchored greeting recall across days.
+    Ensures strict per-user isolation: only inspects sessions and messages belonging to user_id.
     """
     profile = get_user_clinical_profile(user_id)
     conn = get_connection()
     cursor = conn.cursor()
+
+    # Fetch the most recent past session that actually contains user speech
     cursor.execute("""
-        SELECT session_id, title, created_at, overall_wellness, dominant_emotion, summary
-        FROM sessions
-        WHERE user_id = ? AND summary IS NOT NULL AND summary != '' AND summary != 'Initial conversation started.'
-        ORDER BY created_at DESC
+        SELECT s.session_id, s.title, s.created_at, s.overall_wellness, s.dominant_emotion, s.summary
+        FROM sessions s
+        WHERE s.user_id = ?
+          AND (? IS NULL OR s.session_id != ?)
+          AND EXISTS (SELECT 1 FROM messages m WHERE m.session_id = s.session_id AND m.role = 'user')
+        ORDER BY s.last_active DESC, s.created_at DESC
         LIMIT 1
-    """, (user_id,))
+    """, (user_id, exclude_session_id, exclude_session_id))
     row = cursor.fetchone()
     if not row:
         conn.close()
         return {"has_history": False, "profile": profile}
 
     sess = dict(row)
+    # Fetch all user messages from that session to find substantive topics/concerns
     cursor.execute("""
-        SELECT role, text FROM messages
+        SELECT text FROM messages
         WHERE session_id = ? AND role = 'user'
-        ORDER BY id DESC LIMIT 2
+        ORDER BY id ASC
     """, (sess["session_id"],))
-    msgs = [r["text"] for r in cursor.fetchall()]
+    raw_msgs = [r["text"].strip() for r in cursor.fetchall() if r["text"] and len(r["text"].strip()) > 0]
     conn.close()
+
+    trivial_set = {
+        "hi", "hello", "hey", "yes", "no", "ok", "okay", "thanks", "thank you",
+        "bye", "goodbye", "good night", "vanakkam", "seri", "poidu varen"
+    }
+    # Substantive messages: not trivial greetings/goodbyes
+    substantive = [m for m in raw_msgs if m.lower().strip(" .,!?-") not in trivial_set and len(m) > 6]
+    if not substantive:
+        substantive = raw_msgs
+
+    core_topic = substantive[0] if substantive else (sess.get("title") or "")
+    latest_remark = substantive[-1] if substantive else ""
+    key_remarks = substantive[:3] if len(substantive) <= 3 else [substantive[0], substantive[-1]]
+
+    clean_summary = sess.get("summary", "")
+    if clean_summary == "Initial conversation started.":
+        clean_summary = ""
 
     return {
         "has_history": True,
         "profile": profile,
         "title": sess.get("title"),
-        "summary": sess.get("summary"),
+        "summary": clean_summary,
         "dominant_emotion": sess.get("dominant_emotion"),
-        "recent_remarks": msgs
+        "core_topic": core_topic,
+        "latest_remark": latest_remark,
+        "recent_remarks": key_remarks
     }
 
 def get_historical_context(current_session_id: Optional[str] = None, user_id: str = "primary_user", limit: int = 4) -> str:
     """
-    Retrieves cross-session memory and clinical trends across past and present conversations,
+    Retrieves cross-session memory and clinical trends across past conversations,
     incorporating the persistent clinical profile so Arogya naturally references long-term stressors.
+    Strictly isolates data to the requested user_id.
     """
     profile = get_user_clinical_profile(user_id)
     name = profile.get("user_name", "Friend")
@@ -916,7 +1004,9 @@ def get_historical_context(current_session_id: Optional[str] = None, user_id: st
     cursor.execute("""
         SELECT session_id, title, created_at, overall_wellness, dominant_emotion, summary
         FROM sessions
-        WHERE (session_id != ? OR ? IS NULL) AND user_id = ?
+        WHERE (session_id != ? OR ? IS NULL) 
+          AND user_id = ?
+          AND EXISTS (SELECT 1 FROM messages m WHERE m.session_id = sessions.session_id AND m.role = 'user')
         ORDER BY last_active DESC
         LIMIT ?
     """, (current_session_id or "", current_session_id or "", user_id, limit))
@@ -924,24 +1014,30 @@ def get_historical_context(current_session_id: Optional[str] = None, user_id: st
 
     if not past_sessions:
         conn.close()
-        lines.append("No previous sessions recorded. This is the first interaction with the user.")
+        lines.append("No previous sessions recorded. This is the first interaction with this user.")
         return "\n".join(lines)
 
+    trivial_set = {"hi", "hello", "hey", "yes", "no", "ok", "okay", "thanks", "thank you", "bye", "goodbye", "good night"}
     for s in past_sessions:
         s_id = s["session_id"]
         cursor.execute("""
-            SELECT role, text FROM messages
+            SELECT text FROM messages
             WHERE session_id = ? AND role = 'user'
-            ORDER BY id DESC LIMIT 2
+            ORDER BY id ASC
         """, (s_id,))
-        recent_user_msgs = [r["text"] for r in cursor.fetchall()]
-        recent_user_msgs.reverse()
+        all_u_msgs = [r["text"].strip() for r in cursor.fetchall() if r["text"]]
+        substantive = [m for m in all_u_msgs if m.lower().strip(" .,!?-") not in trivial_set and len(m) > 6]
+        highlight_msgs = substantive[:2] if substantive else all_u_msgs[:2]
+
+        s_summary = s["summary"]
+        if s_summary == "Initial conversation started.":
+            s_summary = "Conversation underway."
 
         lines.append(
             f"• Session '{s['title']}' ({s['created_at'][:10]}): "
             f"Wellness Score: {s['overall_wellness']}/100, Tone: {s['dominant_emotion']}. "
-            f"Summary: {s['summary']} "
-            f"Key user remarks: {' | '.join(recent_user_msgs) if recent_user_msgs else 'None recorded'}"
+            f"Summary: {s_summary} "
+            f"Key user remarks: {' | '.join(highlight_msgs) if highlight_msgs else 'None recorded'}"
         )
 
     conn.close()

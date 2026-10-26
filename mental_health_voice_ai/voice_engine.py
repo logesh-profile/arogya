@@ -62,10 +62,10 @@ def transcribe_audio(audio_path: str) -> str:
         data, sr = sf.read(audio_path)
         if len(data) == 0:
             return ""
-        # Check maximum amplitude and RMS volume
+        # Check maximum amplitude and RMS volume (calibrated for Bluetooth headsets and laptop mic arrays)
         max_amp = float(np.max(np.abs(data)))
         rms = float(np.sqrt(np.mean(data**2)))
-        if max_amp < 0.008 or rms < 0.002:
+        if max_amp < 0.0015 or rms < 0.0004:
             print(f"[!] Audio is silent (max_amp={max_amp:.4f}, rms={rms:.4f}). Skipping Whisper.")
             return ""
     except Exception as e:

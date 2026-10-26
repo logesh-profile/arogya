@@ -8,7 +8,9 @@ let isGoogleConfigured = false;
 
 document.addEventListener("DOMContentLoaded", async () => {
     initSlidingControls();
+    initLocalAuthControls();
     await initGoogleAuth();
+    await loadExistingProfiles();
 });
 
 // --- 1. SLIDING WINDOW CONTROLS ---
@@ -173,6 +175,105 @@ async function handleGoogleCredentialResponse(response) {
     } catch (err) {
         console.error("[!] Auth submission error:", err);
         showToast("Network error during sign in. Please try again.");
+    }
+}
+
+// --- 3B. LOCAL PROFILE AUTH CONTROLS ---
+function initLocalAuthControls() {
+    const btnLocalLogin = document.getElementById("btnLocalLogin");
+    const localInput = document.getElementById("localUsernameInput");
+    const btnLocalSignup = document.getElementById("btnLocalSignup");
+    const signupInput = document.getElementById("signupPreferredNameInput");
+
+    if (btnLocalLogin && localInput) {
+        btnLocalLogin.addEventListener("click", () => {
+            loginWithLocalUsername(localInput.value);
+        });
+        localInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                loginWithLocalUsername(localInput.value);
+            }
+        });
+    }
+
+    if (btnLocalSignup && signupInput) {
+        btnLocalSignup.addEventListener("click", () => {
+            loginWithLocalUsername(signupInput.value);
+        });
+    }
+}
+
+async function loadExistingProfiles() {
+    try {
+        const res = await fetch("/api/auth/profiles", { credentials: "include" });
+        if (!res.ok) return;
+        const data = await res.json();
+        const profiles = data.profiles || [];
+        const container = document.getElementById("existingProfilesList");
+        if (!container) return;
+        container.innerHTML = "";
+        if (profiles.length > 0) {
+            const label = document.createElement("div");
+            label.style.fontSize = "11px";
+            label.style.color = "rgba(255,255,255,0.6)";
+            label.style.marginBottom = "6px";
+            label.textContent = "Switch to recent user:";
+            container.appendChild(label);
+
+            const pillsWrap = document.createElement("div");
+            pillsWrap.style.display = "flex";
+            pillsWrap.style.flexWrap = "wrap";
+            pillsWrap.style.gap = "6px";
+            pillsWrap.style.marginBottom = "8px";
+
+            profiles.slice(0, 5).forEach(p => {
+                const btn = document.createElement("button");
+                btn.type = "button";
+                btn.className = "profile-chip-btn";
+                btn.style.padding = "4px 10px";
+                btn.style.fontSize = "11.5px";
+                btn.style.borderRadius = "999px";
+                btn.style.border = "1px solid rgba(255,255,255,0.2)";
+                btn.style.background = "rgba(255,255,255,0.06)";
+                btn.style.color = "#fff";
+                btn.style.cursor = "pointer";
+                const dName = p.preferred_name || p.given_name || p.name || "User";
+                btn.textContent = dName;
+                btn.onclick = () => loginWithLocalUsername(dName);
+                pillsWrap.appendChild(btn);
+            });
+            container.appendChild(pillsWrap);
+        }
+    } catch (e) {
+        console.warn("Could not load profiles:", e);
+    }
+}
+
+async function loginWithLocalUsername(username) {
+    if (!username || !username.trim()) {
+        showToast("Please enter a username.");
+        return;
+    }
+    showToast(`Entering as ${username.trim()}...`, false);
+    try {
+        const res = await fetch("/api/auth/switch-local", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username: username.trim() }),
+            credentials: "include"
+        });
+        if (!res.ok) {
+            showToast("Failed to switch profile.");
+            return;
+        }
+        showToast(`Welcome, ${username.trim()}! Entering Arogya...`, false);
+        setTimeout(() => {
+            window.location.href = "/";
+        }, 500);
+    } catch (e) {
+        console.error("Local login error:", e);
+        showToast("Network error during local login.");
     }
 }
 

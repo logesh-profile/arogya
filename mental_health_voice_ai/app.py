@@ -52,7 +52,9 @@ from database import (
     create_auth_session,
     get_user_by_session_token,
     revoke_auth_session,
-    get_user_by_id
+    get_user_by_id,
+    switch_or_create_local_user,
+    get_all_profiles
 )
 from mental_health_engine import (
     extract_acoustic_features,
@@ -292,6 +294,40 @@ def auth_logout(request: Request, response: Response):
         revoke_auth_session(token)
     response.delete_cookie(key="arogya_session")
     return {"status": "logged_out"}
+
+@app.post("/api/auth/switch-local")
+async def auth_switch_local(request: Request, response: Response):
+    """
+    Switches to or creates a local user profile for multi-account testing and isolated memory.
+    Establishes an HTTP-only session cookie so subsequent requests are strictly isolated to this user.
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request payload")
+
+    username = (data.get("username") or data.get("name") or "").strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="Username cannot be empty")
+
+    res = switch_or_create_local_user(username)
+    response.set_cookie(
+        key="arogya_session",
+        value=res["session_token"],
+        max_age=30 * 86400,
+        httponly=True,
+        samesite="lax",
+        secure=False
+    )
+    return {
+        "status": "success",
+        "user": res["user"]
+    }
+
+@app.get("/api/auth/profiles")
+def get_user_profiles():
+    """Returns all available user profiles for quick account switching."""
+    return {"profiles": get_all_profiles()}
 
 
 # ---------------------------------------------------------------------------

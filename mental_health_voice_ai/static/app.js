@@ -130,7 +130,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 async function initAuth() {
     try {
         // 1. Fetch server auth configuration (live Google Client ID)
-        const cfgRes = await fetch("/api/auth/config");
+        const cfgRes = await fetch("/api/auth/config", { credentials: "include" });
         if (cfgRes.ok) {
             const cfg = await cfgRes.json();
             googleClientId = cfg.client_id || "";
@@ -138,7 +138,7 @@ async function initAuth() {
         }
 
         // 2. Fetch active session state from backend
-        const meRes = await fetch("/api/auth/me");
+        const meRes = await fetch("/api/auth/me", { credentials: "include" });
         if (meRes.ok) {
             const meData = await meRes.json();
             if (meData.authenticated && meData.user) {
@@ -473,7 +473,7 @@ function setupAuthEvents() {
             if (userProfileBtn) userProfileBtn.classList.remove("active");
 
             try {
-                await fetch("/api/auth/logout", { method: "POST" });
+                await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
                 if (window.google?.accounts?.id?.disableAutoSelect) {
                     window.google.accounts.id.disableAutoSelect();
                 }
@@ -796,6 +796,10 @@ function exitVoiceMode() {
         if (isRecording) inlineStage.classList.remove("hidden");
         else inlineStage.classList.add("hidden");
     }
+    // Always sync complete conversation history into main chat stream
+    if (currentSessionId) {
+        loadSessionData(currentSessionId);
+    }
 }
 
 async function endVoiceConversation() {
@@ -962,21 +966,29 @@ function startVisualizer(stream) {
         analyser.getByteFrequencyData(freqData);
         analyser.getByteTimeDomainData(timeData);
 
-        // 1. Calculate RMS Volume (Energy)
+        // 1. Calculate RMS Volume (Energy) & Focused Vocal Band Energy
         let sum = 0;
+        let vocalSum = 0;
         let weightedFreqSum = 0;
         let totalFreqWeight = 0;
+        const vocalBinsCount = Math.min(22, bufferLength); // Primary human vocal frequency band (< 3.2 kHz)
 
         for (let i = 0; i < bufferLength; i++) {
             const val = freqData[i];
             sum += val;
+            if (i < vocalBinsCount) {
+                vocalSum += val;
+            }
             if (val > 10) {
                 weightedFreqSum += i * val;
                 totalFreqWeight += val;
             }
         }
         const avg = sum / bufferLength;
-        const percent = Math.min(100, Math.round((avg / 100) * 100));
+        const vocalAvg = vocalSum / vocalBinsCount;
+        // Vocal percent accurately tracks speech on boAt headsets and laptop mic arrays
+        const vocalPercent = Math.min(100, Math.round((vocalAvg / 40) * 100));
+        const percent = Math.min(100, Math.max(vocalPercent, Math.round((avg / 60) * 100)));
 
         // 2. Estimate Spectral Centroid & Vocal Tone / Pitch
         if (totalFreqWeight > 0) {
@@ -1047,7 +1059,7 @@ function startVisualizer(stream) {
 
         // 3. ChatGPT-Style Barge-In / Interruption Detection
         if (audioPlayer && !audioPlayer.paused && audioPlayer.currentTime > 0) {
-            if (percent > 14) {
+            if (vocalPercent > 16) {
                 console.log("[*] Barge-in detected: User interrupted Arogya!");
                 audioPlayer.pause();
                 audioPlayer.currentTime = 0;
@@ -1062,33 +1074,33 @@ function startVisualizer(stream) {
         }
 
         // 4. Conversational Voice Activity Detection (VAD) & Natural Pause Pacing
-        if ((isHandsFree || isVoiceModalActive) && isRecording) {
+        if (isRecording) {
             const hasRecognizedWords = Boolean(recognizedTranscript.trim().length > 0 || (textInput && textInput.value.trim().length > 0));
             
-            // Require sustained vocal energy (> 14% for at least 6-8 frames) OR recognized speech words
-            if (percent > 13) {
+            // Speech active: vocalPercent >= 8 for 3 frames OR recognized words
+            if (vocalPercent >= 8 || hasRecognizedWords) {
                 vadVoicedFrameCount = (typeof vadVoicedFrameCount !== "undefined" ? vadVoicedFrameCount : 0) + 1;
-                if (vadVoicedFrameCount >= 6 || hasRecognizedWords) {
+                if (vadVoicedFrameCount >= 3 || hasRecognizedWords) {
                     vadHasSpoken = true;
                 }
                 if (vadSilenceTimer) {
                     clearTimeout(vadSilenceTimer);
                     vadSilenceTimer = null;
                 }
-            } else if (percent <= 10) {
+            } else if (vocalPercent < 6) {
                 if (typeof vadVoicedFrameCount !== "undefined") {
                     vadVoicedFrameCount = Math.max(0, vadVoicedFrameCount - 1);
                 }
                 if (vadHasSpoken) {
                     if (!vadSilenceTimer) {
-                        // Natural 2.2s conversational pause window allows thoughtful, slow-cadence speech without premature cutoffs
+                        // Natural 2.0s conversational pause window allows thoughtful, slow-cadence speech without premature cutoffs
                         vadSilenceTimer = setTimeout(() => {
-                            if ((isHandsFree || isVoiceModalActive) && isRecording && vadHasSpoken) {
+                            if (isRecording && vadHasSpoken) {
                                 vadHasSpoken = false;
                                 vadVoicedFrameCount = 0;
                                 stopRecording();
                             }
-                        }, 2200);
+                        }, 2000);
                     }
                 }
             }
@@ -1307,7 +1319,7 @@ function setupAudioPlayerEvents() {
 // --- SESSIONS MANAGEMENT ---
 async function loadSessions() {
     try {
-        const res = await fetch("/api/sessions");
+        const res = await fetch("/api/sessions", { credentials: "include" });
         const sessions = await res.json();
         renderSessionsList(sessions);
         if (sessionCountTag) {
@@ -1373,7 +1385,7 @@ async function startNewSession(triggerGreeting = true) {
         if (sidebar) sidebar.classList.remove("mobile-open");
         if (sidebarBackdrop) sidebarBackdrop.classList.add("hidden");
 
-        const res = await fetch("/api/sessions", { method: "POST" });
+        const res = await fetch("/api/sessions", { method: "POST", credentials: "include" });
         const newSess = await res.json();
         currentSessionId = newSess.session_id;
         if (currentSessionTitle) currentSessionTitle.textContent = newSess.title;
@@ -1398,7 +1410,8 @@ async function renameSessionPrompt(sessionId, currentTitle) {
         formData.append("title", newTitle.trim());
         const res = await fetch(`/api/sessions/${sessionId}`, {
             method: "PATCH",
-            body: formData
+            body: formData,
+            credentials: "include"
         });
         if (res.ok) {
             if (sessionId === currentSessionId && currentSessionTitle) {
@@ -1420,7 +1433,7 @@ async function deleteSessionConfirm(sessionId) {
     if (!confirm("Delete this session and its clinical conversation history?")) return;
 
     try {
-        const res = await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
+        const res = await fetch(`/api/sessions/${sessionId}`, { method: "DELETE", credentials: "include" });
         if (res.ok) {
             if (sessionId === currentSessionId) {
                 currentSessionId = null;
@@ -1441,7 +1454,7 @@ async function deleteSessionConfirm(sessionId) {
 
 async function loadSessionData(sessionId) {
     try {
-        const res = await fetch(`/api/sessions/${sessionId}`);
+        const res = await fetch(`/api/sessions/${sessionId}`, { credentials: "include" });
         const data = await res.json();
 
         if (currentSessionTitle) currentSessionTitle.textContent = data.session.title || "Emotional Wellness Reflection";
@@ -1484,7 +1497,7 @@ async function fetchInitialGreeting() {
     setLiveStatus("Connecting...", "");
     orbCaption.textContent = "Arogya is welcoming you...";
     try {
-        const res = await fetch(`/api/greeting?session_id=${currentSessionId}&voice_mode=${voiceMode}`);
+        const res = await fetch(`/api/greeting?session_id=${currentSessionId}&voice_mode=${voiceMode}`, { credentials: "include" });
         const data = await res.json();
 
         currentSpeakingFace = data.speaking_face || "happy";
@@ -1670,14 +1683,12 @@ async function startRecording() {
             ? {
                 deviceId: { exact: selectedMicId },
                 channelCount: 1,
-                sampleRate: 16000,
                 echoCancellation: true,
                 noiseSuppression: true,
                 autoGainControl: true
               }
             : {
                 channelCount: 1,
-                sampleRate: 16000,
                 echoCancellation: true,
                 noiseSuppression: true,
                 autoGainControl: true
@@ -1725,7 +1736,7 @@ async function startRecording() {
                 try {
                     const formTr = new FormData();
                     formTr.append("file", lastRecordedBlob, "speech.webm");
-                    const trRes = await fetch("/api/transcribe", { method: "POST", body: formTr });
+                    const trRes = await fetch("/api/transcribe", { method: "POST", body: formTr, credentials: "include" });
                     const trData = await trRes.json();
                     const trText = (trData.transcript || "").trim();
 
@@ -1738,6 +1749,12 @@ async function startRecording() {
                         orbCaption.textContent = "Speech transcribed. Reflecting...";
                         await handleTextSubmit();
                         return;
+                    } else if (lastRecordedBlob && lastRecordedBlob.size > 2000) {
+                        // Pass directly to voice chat endpoint with acoustic features and full Whisper pipeline
+                        if (textInput) textInput.value = "Voice reflection";
+                        orbCaption.textContent = "Reflecting on your voice...";
+                        await handleTextSubmit();
+                        return;
                     } else {
                         orbCaption.textContent = "Microphone captured silence. Speak into the mic or type.";
                         if (isVoiceModalActive) {
@@ -1747,6 +1764,11 @@ async function startRecording() {
                     }
                 } catch(e) {
                     console.error("Transcribe error:", e);
+                    if (lastRecordedBlob && lastRecordedBlob.size > 2000) {
+                        if (textInput) textInput.value = "Voice reflection";
+                        await handleTextSubmit();
+                        return;
+                    }
                     orbCaption.textContent = "Could not catch words clearly. Try speaking again.";
                 }
             } else {
@@ -1861,11 +1883,12 @@ async function handleTextSubmit() {
             formData.append("file", audioToSend, "user_speech.webm");
             formData.append("session_id", currentSessionId);
             formData.append("voice_mode", voiceMode);
-            formData.append("client_transcript", text);
+            formData.append("client_transcript", text === "Voice reflection" ? "" : text);
 
             res = await fetch("/api/chat/voice", {
                 method: "POST",
-                body: formData
+                body: formData,
+                credentials: "include"
             });
             data = await res.json();
         } else {
@@ -1876,23 +1899,27 @@ async function handleTextSubmit() {
 
             res = await fetch("/api/chat/text", {
                 method: "POST",
-                body: formData
+                body: formData,
+                credentials: "include"
             });
             data = await res.json();
         }
 
         currentAiReplyText = data.reply_text || "";
         currentSpeakingFace = data.speaking_face || "caring";
+        const finalUserSpokenText = data.transcript || text;
 
         if (isVoiceModalActive) {
             const aiLive = document.getElementById("modalAiLiveText");
             if (aiLive) aiLive.textContent = data.reply_text;
+            const userLive = document.getElementById("modalUserLiveText");
+            if (userLive) userLive.textContent = `"${finalUserSpokenText}"`;
             const modalState = document.getElementById("modalVoiceStateText");
             if (modalState) modalState.textContent = "Arogya is speaking... (tap or speak to interrupt)";
         }
 
         // Render response: Arogya Newsreader caption on top, user's words italic underneath
-        appendExchangeToUI(data.reply_text, text, data.audio_url, true);
+        appendExchangeToUI(data.reply_text, finalUserSpokenText, data.audio_url, true);
 
         // Immediate Chat Titling
         if (data.new_title) {

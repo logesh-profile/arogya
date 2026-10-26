@@ -77,6 +77,18 @@
                                     <span>Verified by Google • Encrypted &amp; private session</span>
                                 </div>
                             </div>
+
+                            <!-- Local Profile Fast Login (Works without Google OAuth & isolates each user) -->
+                            <div class="local-auth-divider">
+                                <span>or sign in as user</span>
+                            </div>
+                            <div class="local-auth-box">
+                                <div id="existingProfilesList" class="profile-pills-wrap"></div>
+                                <div class="local-input-row" style="display:flex; gap:8px; margin-top:8px;">
+                                    <input type="text" id="localUsernameInput" class="text-input" placeholder="User Name (e.g. Logesh)" maxlength="30" style="flex:1;" />
+                                    <button type="button" id="btnLocalLogin" class="btn-local-enter" style="padding:0 16px; background:#fff; color:#000; border-radius:999px; font-weight:600; cursor:pointer; font-size:12.5px; border:none;">Enter</button>
+                                </div>
+                            </div>
                         </div>
 
                         <div class="form-footer-row">
@@ -125,6 +137,11 @@
                                     <span>One-click Sign Up with your verified Google account</span>
                                 </div>
                             </div>
+
+                            <div class="local-auth-divider" style="margin-top:12px;">
+                                <span>or create account directly</span>
+                            </div>
+                            <button type="button" id="btnLocalSignup" class="btn-local-signup" style="width:100%; height:42px; background:#fff; color:#000; border-radius:999px; font-weight:600; cursor:pointer; font-size:13px; border:none; margin-top:8px;">Continue with Preferred Name</button>
                         </div>
 
                         <div class="form-footer-row">
