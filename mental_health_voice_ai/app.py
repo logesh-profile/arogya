@@ -480,6 +480,15 @@ def esp32_status():
     return bridge.get_status()
 
 @app.get("/api/debug_gemini")
+def debug_gemini():
+    from mental_health_voice_ai.mental_health_engine import client, API_KEY
+    if not API_KEY:
+        return {"status": "error", "error": "API_KEY is empty"}
+    try:
+        models = [m.name for m in client.models.list()]
+        return {"status": "ok", "models": models}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 def debug_gemini(model: str = "gemini-2.0-flash"):
     from mental_health_voice_ai.mental_health_engine import client, API_KEY
     from google.genai import types
