@@ -431,18 +431,23 @@ async def esp32_speech_state(request: Request):
     face = data.get("face")
 
     bridge = get_esp32_bridge()
+    bridge.last_activity_time = time.time()
     if state == 1:
         if face:
             clean_face = str(face).strip().lower()
+            bridge.current_emotion = clean_face
             bridge.send(f"EMO:{clean_face}")
+        bridge.current_activity = "speaking"
         bridge.send("SPK:1")
     else:
+        bridge.current_activity = "idle"
         bridge.send("SPK:0")
 
     return {
         "status": "ok",
         "state": state,
-        "face": face,
+        "face": bridge.current_emotion,
+        "activity": bridge.current_activity,
         "esp32_connected": bridge.is_connected()
     }
 
@@ -457,6 +462,8 @@ async def esp32_emotion(request: Request):
         data = {}
     face = str(data.get("face", "calm")).strip().lower()
     bridge = get_esp32_bridge()
+    bridge.current_emotion = face
+    bridge.last_activity_time = time.time()
     bridge.send(f"EMO:{face}")
     return {
         "status": "ok",
@@ -479,13 +486,21 @@ def get_esp32_expression():
     ESP32 Wi-Fi Polling Endpoint: Returns the active FACS emotion and activity state.
     """
     bridge = get_esp32_bridge()
+    now = time.time()
     emo = getattr(bridge, "current_emotion", "calm")
     act = getattr(bridge, "current_activity", "idle")
+    last_act = getattr(bridge, "last_activity_time", 0.0)
+
+    # Safe auto-timeout: if speaking for more than 4.5 seconds without refresh, return to idle
+    if act == "speaking" and (now - last_act > 4.5):
+        act = "idle"
+        bridge.current_activity = "idle"
+
     return {
         "emotion": emo,
         "activity": act,
         "keyword": emo.upper(),
-        "last_update": time.time()
+        "last_update": now
     }
 
 @app.post("/api/expression")
@@ -503,6 +518,7 @@ async def set_esp32_expression(request: Request):
     bridge = get_esp32_bridge()
     bridge.current_emotion = str(emo).strip().lower()
     bridge.current_activity = str(act).strip().lower()
+    bridge.last_activity_time = time.time()
     bridge.send(f"EMO:{bridge.current_emotion}")
     if bridge.current_activity == "speaking":
         bridge.send("SPK:1")
@@ -668,6 +684,11 @@ async def process_voice_chat(
     spoken_text = eval_result.get("spoken_text")
     language_mode = eval_result.get("language_mode", "tanglish")
 
+    speaking_face = eval_result.get("speaking_face", tone_emotion["speaking_face"])
+    bridge.current_emotion = speaking_face
+    bridge.last_activity_time = time.time()
+    bridge.send(f"EMO:{speaking_face}")
+
     # 7. Synthesize Spoken Response (Emotion-Adaptive Cadence & Native Voice Routing)
     user_wellness = eval_result.get("overall_wellness", 75)
     user_state = eval_result.get("dominant_state", "Calm")
@@ -774,7 +795,10 @@ async def process_text_chat(
         user_id=user["id"]
     )
 
-    bridge.send(f"EMO:{eval_result.get('listening_face', 'thinking')}")
+    speaking_face = eval_result.get("speaking_face", "caring")
+    bridge.current_emotion = speaking_face
+    bridge.last_activity_time = time.time()
+    bridge.send(f"EMO:{speaking_face}")
 
     reply_text = eval_result.get("reply_text", "I hear you, and thank you for sharing that with me.")
     spoken_text = eval_result.get("spoken_text")
