@@ -163,6 +163,12 @@ async function handleGoogleCredentialResponse(response) {
 
         const data = await res.json();
         const user = data.user;
+        if (data.session_token) {
+            localStorage.setItem("arogya_session_token", data.session_token);
+        }
+        if (user) {
+            localStorage.setItem("arogya_active_user", JSON.stringify(user));
+        }
         const displayName = user.preferred_name || user.given_name || user.name || "Friend";
 
         showToast(`Welcome, ${displayName}! Entering Arogya...`, false);
@@ -266,6 +272,13 @@ async function loginWithLocalUsername(username) {
         if (!res.ok) {
             showToast("Failed to switch profile.");
             return;
+        }
+        const data = await res.json();
+        if (data.session_token) {
+            localStorage.setItem("arogya_session_token", data.session_token);
+        }
+        if (data.user) {
+            localStorage.setItem("arogya_active_user", JSON.stringify(data.user));
         }
         showToast(`Welcome, ${username.trim()}! Entering Arogya...`, false);
         setTimeout(() => {

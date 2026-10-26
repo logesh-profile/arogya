@@ -22,12 +22,11 @@ Existing solutions suffer from three fatal flaws:
   - **Channel 1 (UI Display):** Clean, warm conversational Tanglish in Latin script (e.g. *"Romba tired-ah irukka bro? Konjam rest edunga, namma pesalaam."*).
   - **Channel 2 (TTS Speech):** Authentic spoken colloquial Tamil (*பேச்சுத் தமிழ்*) in Tamil script with preserved English loanwords (e.g. *"ரொம்ப tired-ஆ இருக்கா ப்ரோ? கொஞ்சம் rest எடுங்க... நம்ம பேசலாம்."*).
 - **Zero Diglossia Artifacts:** Eliminates awkward textbook/Google-translated Tamil (*"நீங்கள் ஓய்வு எடுக்க வேண்டும்"*) in favor of natural conversational spoken phrases (*"கொஞ்சம் rest எடுங்க"*, *"என்ன ஆச்சு"*, *"நான் help பண்றேன்"*, *"சொல்லுங்க கேக்குறேன்"*).
-- **Native High-Fidelity Tamil Voice (`ta-IN-PallaviNeural`):** Authentic human Indian Tamil intonation, prosody, and retroflex consonant articulation (`ழ`, `ற`, `ள`, `ண`) with sub-second latency (~0.35s - 0.45s) and 0 MB VRAM footprint.
-- **Indian English Neural Voice (`en-IN-NeerjaNeural`):** Natural cadence for English dialogue with emotion-adaptive pacing and pitch inflection.
-- **Cloned Studio Mode (F5-TTS Flow-Matching Diffusion):** Local GPU-accelerated zero-shot voice cloning running on NVIDIA RTX 3050 with phonetic Tanglish staging.
+- **Sub-Second Fast Neural Voice Routing (~0.35s - 0.45s):** Streamlined for real-time ChatGPT speed using Microsoft Edge Neural TTS (`ta-IN-PallaviNeural` for spoken Tamil/Tanglish and `en-IN-NeerjaNeural` for English). Cloned voice toggle buttons have been removed from the live UI to guarantee instant response times without GPU diffusion delay.
 
-### 2. Hands-Free Ambient Conversational Mode (Full-Duplex VAD)
+### 2. Hands-Free Ambient Conversational Mode (Full-Duplex VAD & Headphone Optimized)
 - Operates naturally like a friend in the room.
+- **Hardware-Agnostic Audio Tuning:** Tuned audio constraints (`sampleRate: 16000`, `echoCancellation: true`, `noiseSuppression: true`, `autoGainControl: true`) with adaptive energy thresholds (`max_amp < 0.0008`, `rms < 0.0002`) ensuring crystal-clear detection whether using boAt Bluetooth headphones or laptop mic arrays.
 - Web Audio API energy detection senses when the user speaks and automatically submits upon a **1.4-second natural pause**.
 - Plays Arogya's response and automatically resumes listening without requiring manual clicks.
 
@@ -36,39 +35,42 @@ Existing solutions suffer from three fatal flaws:
 - Supports **Box Breathing (4-4-4-4)** and **Calming Vagus Stimulation (4-7-8)** with live phase countdowns.
 - **Automatic Tension Trigger:** Gentle invitation pill automatically appears whenever speech evaluation detects stress or anxiety $\ge 2/3$.
 
-### 4. Zero-Hallucination Evidence Scoring
+### 4. Zero-Hallucination Evidence Scoring & Multi-User Data Isolation
 - Evaluates 4 core symptom dimensions: *Stress & Pressure*, *Worry & Apprehension*, *Fatigue & Low Energy*, and *Emotional Heaviness*.
 - **Strict Empirical Criteria:** Requires verbatim transcript quotes for every awarded point. **"No quote = No points"**.
 - Overall wellness score (0–100) and statistical confidence are deterministically calculated in Python code.
+- **Strict User Account Isolation:** Every evaluation score, baseline record, and past reflection is strictly scoped to the authenticated user ID (`WHERE user_id = ?`).
 
-### 5. Scientific DSP Acoustic Biomarkers
-- Probabilistic YIN (`librosa.pyin`) fundamental frequency ($f_0$) tracking.
+### 5. Scientific DSP Acoustic Biomarkers & 30 FPS Visualizer
+- Probabilistic YIN (`librosa.pyin`) fundamental frequency ($f_0$) tracking with optimized hop length (`hop_length=1024`) cutting extraction time to ~0.28s.
 - Speaker-normalized, pitch-invariant semitone deviation:
   $$\text{semitones} = 12 \cdot \log_2\left(\frac{f_0}{\text{median}(f_0)}\right)$$
-- Extraction is decoupled from the LLM prompt to prevent subjective hallucination.
+- **Strict 30 FPS Hardware Limiter:** Decoupled animation loop capped at 30 FPS (`setTimeout(..., 33)`), halting completely when idle. Prevents runaway GPU load and heat on 144Hz high-refresh displays.
 
-### 6. Dedicated Separate Analytics & Trajectory Portal (`/analytics`)
-- Standalone analytics dashboard displaying multi-session longitudinal wellness curves, trajectory delta ($\Delta = \text{recent} - \text{baseline}$), symptom distributions, and voice biomarker history.
-- One-click export of structured clinical reflection reports in Markdown format.
+### 6. Empathetic Non-Stigmatizing Tone & Anti-Repetition Intelligence
+- **Non-Pathologizing Companionship:** Arogya never assumes or labels a user as depressed, burnt out, or anxious unless the user explicitly shares those feelings.
+- **Support for Loneliness & Overwhelm:** Designed for elderly individuals, stressed students, and anyone feeling lonely, offering warm, uplifting, co-regulating presence.
+- **Anti-Repetition Rule:** Bans repetitive clichés (*"I hear you"*, *"It is completely okay to feel..."*), speaking in fresh, genuine, conversational turns.
 
-### 7. Long-Term Clinical Profile & Stressor Memory
+### 7. Long-Term Clinical Profile & Cross-Chat Memory Anchors
 - Persistent SQLite memory (`user_clinical_profile`) tracking key user context (academics, placement interviews, sleep habits), recurring stressor clusters, and proven coping mechanisms.
-- Arogya naturally references previous discussions across different days.
+- **Cross-Chat Memory Recall:** Starting a new chat automatically references previous conversations and checks in on unresolved topics from earlier sessions.
 
 ### 8. Embodied Hardware & Ambient WiFi Presence Detection
 - Leverages **ambient WiFi Channel State Information (CSI) / signal variance** on the ESP32 to detect human room entry and stationary presence non-invasively without cameras or wearable devices.
+- **Microcontroller Emotional Attunement:** Live serial and Wi-Fi HTTP bridge (`/api/esp32/speech_state` and `/api/esp32/emotion`) synchronizes the companion robot's animated facial expressions in real time.
 - **Future Hardware Upgrade Roadmap:** Future hardware iterations will integrate an FMCW **60GHz mmWave radar** sensor (e.g. HLK-LD2410 / Seeed Studio mmWave) to add sub-millimeter chest wall displacement tracking and non-contact respiratory rate measurement.
 
 ### 9. Immediate Crisis Safety Triage
 - Independent safety filter detecting acute crisis or self-harm ideation without corrupting numerical scores.
 - Immediate direct integration with **Tele-MANAS (14416)**, **KIRAN (1800-599-0019)**, and **Vandrevala Foundation**.
 
-### 10. Real Google OAuth 2.0 Authentication & User Isolation
+### 10. Real Google OAuth 2.0 Authentication & Session Persistence
 - **100% Free Google Sign-In:** Leverages Google Identity Services (GSI) web SDK with zero third-party subscription fees or quotas.
-- **Top-Left Corner Profile Flyout:** Clicking the authenticated user pill in the top-left corner opens a pop-like flyout card showing Google-verified badge, avatar, preferred name, and email.
+- **Seamless Page Reload Retention:** Dual-layer token persistence (`localStorage` + HTTP-only session cookies) prevents accidental logouts on refresh. Page reloads automatically restore the user's latest conversation history instead of wiping the chat.
+- **Top-Left Corner Profile Flyout:** Clicking the authenticated user pill opens a pop-like flyout card showing Google-verified badge, avatar, preferred name, and email.
 - **Google Account Switcher:** Built-in "Switch Account" action triggers Google's native account chooser (`disableAutoSelect` + One Tap / Button prompt) to select from any Google accounts logged into the browser.
 - **One-Time Preferred Name Onboarding:** New users are prompted once upon initial Google sign-in to enter their desired display name, which is personalized into Arogya's long-term conversational memory.
-- **Strict User Privacy Isolation:** User reflections, sessions, voice prosody recordings, mental health metrics, and clinical memory profiles are securely partitioned by user ID in SQLite.
 
 ---
 
@@ -76,26 +78,25 @@ Existing solutions suffer from three fatal flaws:
 
 ```mermaid
 graph TD
-    A["User Spoken Speech (Tanglish / English)"] --> B["Microphone Input / Web Audio VAD"]
+    A["User Spoken Speech (Tanglish / English)"] --> B["Microphone Input (boAt Headset / Laptop Mic Array)"]
     B --> C["FFmpeg Normalization (16kHz Mono PCM WAV)"]
     C --> D["Speech-to-Text (Whisper GPU + Web Speech)"]
     C --> E["DSP Acoustic Extraction (pYIN Semitones, Pause Ratio)"]
     
     D --> F["Language & Register Detection (tanglish_engine.py)"]
     F --> G["Gemini 3.5 Flash Lite (temp=0.0)"]
-    G --> H["Verbatim Quote Evidence Scoring (7 Dimensions)"]
+    G --> H["Verbatim Quote Evidence Scoring (4 Dimensions)"]
     E --> I["Deterministic Python Wellness Fusion (0-100)"]
     H --> I
     
     I --> J["Conversational Tamil/Tanglish Naturalizer"]
-    J --> K["Prosody & Phonetic Preparation"]
-    K --> L["Intelligent TTS Router"]
-    L --> M["Fast Native Tamil (ta-IN-PallaviNeural ~0.35s)"]
+    J --> K["Prosody & Colloquial Phrasing Preparation"]
+    K --> L["Sub-Second Fast Neural Speech Synthesizer"]
+    L --> M["Fast Spoken Tamil (ta-IN-PallaviNeural ~0.35s)"]
     L --> N["Fast Indian English (en-IN-NeerjaNeural ~0.4s)"]
-    L --> O["Cloned GPU Studio (F5-TTS on RTX 3050 ~1.9s)"]
-    M --> P["Browser Audio Playback & 60 FPS Visualizer"]
+    M --> P["Browser Audio Playback & 30 FPS Visualizer"]
     N --> P
-    O --> P
+    I --> Q["ESP32 Robot Facial Expression Bridge (Wi-Fi / Serial)"]
 ```
 
 ---
@@ -107,11 +108,10 @@ graph TD
   - Google Gemini API (`gemini-3.5-flash-lite`, `google-genai` SDK)
   - Faster-Whisper (CTranslate2, CUDA FP16 on RTX 3050 GPU)
   - Conversational Tamil/Tanglish Naturalizer (`tanglish_engine.py`)
-  - Edge-TTS (`ta-IN-PallaviNeural`, `en-IN-NeerjaNeural`)
-  - F5-TTS (Flow-matching diffusion zero-shot voice cloning on RTX 3050 GPU)
+  - Microsoft Edge-TTS (`ta-IN-PallaviNeural`, `en-IN-NeerjaNeural`)
 - **Audio DSP:** Librosa (pYIN $f_0$), SoundFile, NumPy, FFmpeg
-- **Frontend:** HTML5 Canvas, Vanilla CSS3 (Editorial Monochrome system), JavaScript (ES6+), Web Audio API (Strict $\le 60\text{ FPS}$ Cap), Service Worker PWA
-- **Hardware Interface:** NVIDIA GeForce RTX 3050 6GB Laptop GPU (CUDA 13.0 / PyTorch cu121)
+- **Frontend:** HTML5 Canvas, Vanilla CSS3 (Editorial Monochrome system), JavaScript (ES6+), Web Audio API (Strict $\le 30\text{ FPS}$ Cap), Service Worker PWA
+- **Hardware Interface:** ESP32 Microcontroller (Wi-Fi HTTP & Serial Bridge), NVIDIA GeForce RTX 3050 6GB Laptop GPU (CUDA 13.0 / PyTorch cu121)
 
 ---
 

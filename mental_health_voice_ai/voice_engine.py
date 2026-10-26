@@ -65,7 +65,7 @@ def transcribe_audio(audio_path: str) -> str:
         # Check maximum amplitude and RMS volume (calibrated for Bluetooth headsets and laptop mic arrays)
         max_amp = float(np.max(np.abs(data)))
         rms = float(np.sqrt(np.mean(data**2)))
-        if max_amp < 0.0015 or rms < 0.0004:
+        if max_amp < 0.0008 or rms < 0.0002:
             print(f"[!] Audio is silent (max_amp={max_amp:.4f}, rms={rms:.4f}). Skipping Whisper.")
             return ""
     except Exception as e:
@@ -76,7 +76,7 @@ def transcribe_audio(audio_path: str) -> str:
     # initial_prompt guides Whisper for Indian English & conversational Tanglish loanwords
     segments, _ = model.transcribe(
         audio_path,
-        beam_size=5,
+        beam_size=2,
         language="en",
         initial_prompt="Indian English conversation, Tanglish, inaiku ennode day epdi irundhuchi, romba stress, tension, seri, yaar, enna aachu, eppadi irukkeenga.",
         vad_filter=True,

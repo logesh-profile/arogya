@@ -101,9 +101,26 @@ function notifyEsp32Emotion(face) {
 }
 
 // Auth State Variables
+// Auth State Variables & API Helper
 let currentUser = null;
 let googleClientId = "";
 let isGoogleConfigured = false;
+
+function apiFetch(url, options = {}) {
+    if (!options.headers) {
+        options.headers = {};
+    }
+    options.credentials = "include";
+    const token = localStorage.getItem("arogya_session_token");
+    if (token && !options.headers["Authorization"]) {
+        if (options.headers instanceof Headers) {
+            options.headers.set("Authorization", `Bearer ${token}`);
+        } else {
+            options.headers["Authorization"] = `Bearer ${token}`;
+        }
+    }
+    return fetch(url, options);
+}
 
 // --- INITIALIZATION ---
 document.addEventListener("DOMContentLoaded", async () => {
@@ -118,8 +135,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     await initAuth();
 
     if (currentUser) {
-        await loadSessions();
-        await startNewSession(true);
+        const sessions = await loadSessions();
+        if (sessions && sessions.length > 0) {
+            currentSessionId = sessions[0].session_id;
+            await loadSessionData(sessions[0].session_id);
+        } else {
+            await startNewSession(true);
+        }
     } else {
         updateAuthUI(false, null);
     }
@@ -127,11 +149,20 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 // ==========================================================================
 // PRODUCTION GOOGLE OAUTH 2.0 & MULTI-USER DATA ISOLATION CONTROLLER
-// ==========================================================================
+// ==========================================================
 async function initAuth() {
     try {
+        // Fast instant restore from localStorage to eliminate UI flicker / reload logouts
+        const cachedUser = localStorage.getItem("arogya_active_user");
+        if (cachedUser) {
+            try {
+                currentUser = JSON.parse(cachedUser);
+                updateAuthUI(true, currentUser);
+            } catch (e) {}
+        }
+
         // 1. Fetch server auth configuration (live Google Client ID)
-        const cfgRes = await fetch("/api/auth/config", { credentials: "include" });
+        const cfgRes = await apiFetch("/api/auth/config");
         if (cfgRes.ok) {
             const cfg = await cfgRes.json();
             googleClientId = cfg.client_id || "";
@@ -139,21 +170,26 @@ async function initAuth() {
         }
 
         // 2. Fetch active session state from backend
-        const meRes = await fetch("/api/auth/me", { credentials: "include" });
+        const meRes = await apiFetch("/api/auth/me");
         if (meRes.ok) {
             const meData = await meRes.json();
             if (meData.authenticated && meData.user) {
                 currentUser = meData.user;
+                localStorage.setItem("arogya_active_user", JSON.stringify(meData.user));
                 updateAuthUI(true, meData.user);
                 if (meData.needs_onboarding) {
                     openOnboardingModal(meData.user);
                 }
             } else {
                 currentUser = null;
+                localStorage.removeItem("arogya_active_user");
+                localStorage.removeItem("arogya_session_token");
                 updateAuthUI(false, null);
             }
-        } else {
+        } else if (meRes.status === 401) {
             currentUser = null;
+            localStorage.removeItem("arogya_active_user");
+            localStorage.removeItem("arogya_session_token");
             updateAuthUI(false, null);
         }
 
@@ -320,7 +356,7 @@ function setupGoogleIdentity() {
 async function handleGoogleCredentialResponse(response) {
     if (!response || !response.credential) return;
     try {
-        const res = await fetch("/api/auth/google", {
+        const res = await apiFetch("/api/auth/google", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ credential: response.credential })
@@ -332,6 +368,12 @@ async function handleGoogleCredentialResponse(response) {
         }
         const data = await res.json();
         currentUser = data.user;
+        if (data.session_token) {
+            localStorage.setItem("arogya_session_token", data.session_token);
+        }
+        if (data.user) {
+            localStorage.setItem("arogya_active_user", JSON.stringify(data.user));
+        }
         updateAuthUI(true, data.user);
         closeLoginGate();
 
@@ -340,8 +382,13 @@ async function handleGoogleCredentialResponse(response) {
             openOnboardingModal(data.user);
         } else {
             // Returning user: immediately load previously saved chats
-            await loadSessions();
-            await startNewSession(true);
+            const sessions = await loadSessions();
+            if (sessions && sessions.length > 0) {
+                currentSessionId = sessions[0].session_id;
+                await loadSessionData(sessions[0].session_id);
+            } else {
+                await startNewSession(true);
+            }
         }
     } catch (e) {
         console.error("Google sign-in error:", e);
@@ -403,7 +450,7 @@ async function handleOnboardingSubmit(e) {
     }
 
     try {
-        const res = await fetch("/api/auth/update-name", {
+        const res = await apiFetch("/api/auth/update-name", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ preferred_name: preferredName })
@@ -411,10 +458,16 @@ async function handleOnboardingSubmit(e) {
         if (res.ok) {
             const data = await res.json();
             currentUser = data.user;
+            localStorage.setItem("arogya_active_user", JSON.stringify(data.user));
             updateAuthUI(true, data.user);
             closeOnboardingModal();
-            await loadSessions();
-            await startNewSession(true);
+            const sessions = await loadSessions();
+            if (sessions && sessions.length > 0) {
+                currentSessionId = sessions[0].session_id;
+                await loadSessionData(sessions[0].session_id);
+            } else {
+                await startNewSession(true);
+            }
         } else {
             const err = await res.json();
             alert("Update name notice: " + (err.detail || "Could not save name"));
@@ -474,15 +527,19 @@ function setupAuthEvents() {
             if (userProfileBtn) userProfileBtn.classList.remove("active");
 
             try {
-                await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+                await apiFetch("/api/auth/logout", { method: "POST" });
                 if (window.google?.accounts?.id?.disableAutoSelect) {
                     window.google.accounts.id.disableAutoSelect();
                 }
                 currentUser = null;
+                localStorage.removeItem("arogya_active_user");
+                localStorage.removeItem("arogya_session_token");
                 updateAuthUI(false, null);
                 window.location.href = "/login";
             } catch (e) {
                 console.warn("Logout notice:", e);
+                localStorage.removeItem("arogya_active_user");
+                localStorage.removeItem("arogya_session_token");
                 window.location.href = "/login";
             }
         });
@@ -546,47 +603,16 @@ function setTheme(theme) {
 
 // --- VOICE ENGINE SWITCHER (SPEED CONTROL) ---
 function initVoiceEngine() {
-    const savedMode = localStorage.getItem("arogya_voice_mode") || "fast";
-    setVoiceMode(savedMode);
-
-    const fastBtn = document.getElementById("engineFastBtn");
-    const clonedBtn = document.getElementById("engineClonedBtn");
-    const headerFastBtn = document.getElementById("headerFastBtn");
-    const headerClonedBtn = document.getElementById("headerClonedBtn");
-    const modalFastBtn = document.getElementById("modalFastBtn");
-    const modalClonedBtn = document.getElementById("modalClonedBtn");
-
-    const selectFast = () => setVoiceMode("fast");
-    const selectCloned = () => setVoiceMode("cloned");
-
-    if (fastBtn) fastBtn.addEventListener("click", selectFast);
-    if (clonedBtn) clonedBtn.addEventListener("click", selectCloned);
-    if (headerFastBtn) headerFastBtn.addEventListener("click", selectFast);
-    if (headerClonedBtn) headerClonedBtn.addEventListener("click", selectCloned);
-    if (modalFastBtn) modalFastBtn.addEventListener("click", selectFast);
-    if (modalClonedBtn) modalClonedBtn.addEventListener("click", selectCloned);
+    voiceMode = "fast";
+    setVoiceMode("fast");
 }
 
 function setVoiceMode(mode) {
-    voiceMode = mode;
-    localStorage.setItem("arogya_voice_mode", mode);
+    voiceMode = "fast";
+    localStorage.setItem("arogya_voice_mode", "fast");
 
-    const fastBtn = document.getElementById("engineFastBtn");
-    const clonedBtn = document.getElementById("engineClonedBtn");
-    const headerFastBtn = document.getElementById("headerFastBtn");
-    const headerClonedBtn = document.getElementById("headerClonedBtn");
-    const modalFastBtn = document.getElementById("modalFastBtn");
-    const modalClonedBtn = document.getElementById("modalClonedBtn");
     const badge = document.getElementById("currentEngineBadge");
-
-    if (fastBtn) fastBtn.classList.toggle("active", mode === "fast");
-    if (clonedBtn) clonedBtn.classList.toggle("active", mode === "cloned");
-    if (headerFastBtn) headerFastBtn.classList.toggle("active", mode === "fast");
-    if (headerClonedBtn) headerClonedBtn.classList.toggle("active", mode === "cloned");
-    if (modalFastBtn) modalFastBtn.classList.toggle("active", mode === "fast");
-    if (modalClonedBtn) modalClonedBtn.classList.toggle("active", mode === "cloned");
-
-    if (badge) badge.textContent = mode === "fast" ? "INSTANT (~0.4s)" : "CLONED (~6s)";
+    if (badge) badge.textContent = "INSTANT (~0.4s)";
 }
 
 // --- CONTROLS SETUP ---
@@ -1372,14 +1398,16 @@ function setupAudioPlayerEvents() {
 // --- SESSIONS MANAGEMENT ---
 async function loadSessions() {
     try {
-        const res = await fetch("/api/sessions", { credentials: "include" });
+        const res = await apiFetch("/api/sessions");
         const sessions = await res.json();
         renderSessionsList(sessions);
         if (sessionCountTag) {
             sessionCountTag.textContent = sessions.length;
         }
+        return sessions || [];
     } catch (err) {
         console.error("Failed to load sessions:", err);
+        return [];
     }
 }
 
@@ -1438,7 +1466,7 @@ async function startNewSession(triggerGreeting = true) {
         if (sidebar) sidebar.classList.remove("mobile-open");
         if (sidebarBackdrop) sidebarBackdrop.classList.add("hidden");
 
-        const res = await fetch("/api/sessions", { method: "POST", credentials: "include" });
+        const res = await apiFetch("/api/sessions", { method: "POST" });
         const newSess = await res.json();
         currentSessionId = newSess.session_id;
         if (currentSessionTitle) currentSessionTitle.textContent = newSess.title;
@@ -1461,10 +1489,9 @@ async function renameSessionPrompt(sessionId, currentTitle) {
     try {
         const formData = new FormData();
         formData.append("title", newTitle.trim());
-        const res = await fetch(`/api/sessions/${sessionId}`, {
+        const res = await apiFetch(`/api/sessions/${sessionId}`, {
             method: "PATCH",
-            body: formData,
-            credentials: "include"
+            body: formData
         });
         if (res.ok) {
             if (sessionId === currentSessionId && currentSessionTitle) {
@@ -1486,7 +1513,7 @@ async function deleteSessionConfirm(sessionId) {
     if (!confirm("Delete this session and its clinical conversation history?")) return;
 
     try {
-        const res = await fetch(`/api/sessions/${sessionId}`, { method: "DELETE", credentials: "include" });
+        const res = await apiFetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
         if (res.ok) {
             if (sessionId === currentSessionId) {
                 currentSessionId = null;
@@ -1507,7 +1534,7 @@ async function deleteSessionConfirm(sessionId) {
 
 async function loadSessionData(sessionId) {
     try {
-        const res = await fetch(`/api/sessions/${sessionId}`, { credentials: "include" });
+        const res = await apiFetch(`/api/sessions/${sessionId}`);
         const data = await res.json();
 
         if (currentSessionTitle) currentSessionTitle.textContent = data.session.title || "Emotional Wellness Reflection";
@@ -1550,7 +1577,7 @@ async function fetchInitialGreeting() {
     setLiveStatus("Connecting...", "");
     orbCaption.textContent = "Arogya is welcoming you...";
     try {
-        const res = await fetch(`/api/greeting?session_id=${currentSessionId}&voice_mode=${voiceMode}`, { credentials: "include" });
+        const res = await apiFetch(`/api/greeting?session_id=${currentSessionId}&voice_mode=${voiceMode}`);
         const data = await res.json();
 
         currentSpeakingFace = data.speaking_face || "happy";
@@ -1911,10 +1938,9 @@ async function handleTextSubmit(overrideText = null) {
             formData.append("voice_mode", voiceMode);
             formData.append("client_transcript", text === "Voice reflection..." ? "" : text);
 
-            res = await fetch("/api/chat/voice", {
+            res = await apiFetch("/api/chat/voice", {
                 method: "POST",
-                body: formData,
-                credentials: "include"
+                body: formData
             });
             data = await res.json();
         } else {
@@ -1923,10 +1949,9 @@ async function handleTextSubmit(overrideText = null) {
             formData.append("session_id", currentSessionId);
             formData.append("voice_mode", voiceMode);
 
-            res = await fetch("/api/chat/text", {
+            res = await apiFetch("/api/chat/text", {
                 method: "POST",
-                body: formData,
-                credentials: "include"
+                body: formData
             });
             data = await res.json();
         }

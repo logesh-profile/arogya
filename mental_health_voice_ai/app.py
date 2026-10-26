@@ -263,6 +263,7 @@ async def auth_google(request: Request, response: Response):
         return {
             "status": "success",
             "user": user,
+            "session_token": session_token,
             "needs_onboarding": not bool(user.get("onboarding_completed"))
         }
     except Exception as e:
@@ -321,7 +322,8 @@ async def auth_switch_local(request: Request, response: Response):
     )
     return {
         "status": "success",
-        "user": res["user"]
+        "user": res["user"],
+        "session_token": res["session_token"]
     }
 
 @app.get("/api/auth/profiles")

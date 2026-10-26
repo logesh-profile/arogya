@@ -328,10 +328,6 @@
                     </div>
                 </div>
                 <div class="voice-topbar-actions">
-                    <div class="modal-voice-switcher">
-                        <button id="modalFastBtn" class="modal-voice-btn active" title="Instant Fast Neural Voice (~0.4s)">⚡ Instant</button>
-                        <button id="modalClonedBtn" class="modal-voice-btn" title="Your Reference Cloned Voice via F5-TTS (~6s GPU Diffusion)">🎙️ Cloned</button>
-                    </div>
                     <span class="voice-modal-tone-badge" id="modalToneBadge">Tone: Natural</span>
                     <button id="modalMinimizeBtn" class="btn-voice-minimize" title="Return to Chat View">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/></svg>
@@ -413,24 +409,6 @@
                     </button>
                     <button id="closeSidebarBtn" class="close-sidebar-btn" title="Close Sidebar">
                         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Voice Engine Selector (Speed Control) -->
-            <div class="voice-engine-card">
-                <div class="voice-card-header">
-                    <span class="panel-section-label">VOICE ENGINE</span>
-                    <span class="engine-badge tabular-num" id="currentEngineBadge">INSTANT</span>
-                </div>
-                <div class="engine-toggle-group">
-                    <button class="engine-btn active" id="engineFastBtn" data-mode="fast">
-                        <span class="engine-name">Fast Neural</span>
-                        <span class="engine-meta tabular-num">~0.4s • Instant</span>
-                    </button>
-                    <button class="engine-btn" id="engineClonedBtn" data-mode="cloned">
-                        <span class="engine-name">Cloned F5-TTS</span>
-                        <span class="engine-meta tabular-num">~1.9s • GPU Reference</span>
                     </button>
                 </div>
             </div>
@@ -565,12 +543,6 @@
                 </div>
 
                 <div class="header-right">
-                    <!-- Quick Voice Engine Switcher (Fast Neural vs Cloned Voice) -->
-                    <div class="header-voice-switcher" id="headerVoiceSwitcher">
-                        <button id="headerFastBtn" class="header-voice-btn active" title="Instant Sub-Second Neural Voice (~0.4s)">⚡ Instant</button>
-                        <button id="headerClonedBtn" class="header-voice-btn" title="Your Reference Cloned Voice via F5-TTS (~6s GPU Diffusion)">🎙️ Cloned</button>
-                    </div>
-
                     <!-- Live ChatGPT Voice Mode Button -->
                     <button id="openVoiceModeBtn" class="btn-header-tool btn-voice-mode-pulse" title="Start ChatGPT-style Continuous Voice Dialogue">
                         <span class="voice-mode-pulse-dot"></span>
