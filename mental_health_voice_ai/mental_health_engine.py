@@ -494,28 +494,29 @@ DO NOT assume or invent exams, deadlines, or life situations. Keep it simple, we
 DO NOT sound robotic, bookish, or formal. Output strictly valid JSON.
 """
             gdata = None
-            # Proven model ladder: original working model gemini-flash-latest first
-            for model_name in ["gemini-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash"]:
-                try:
-                    cfg = types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                        temperature=0.3
-                    )
-                    resp = client.models.generate_content(
-                        model=model_name,
-                        contents=prompt,
-                        config=cfg
-                    )
-                    raw_text = (resp.text or "").strip()
-                    if raw_text.startswith("```"):
-                        raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
-                        raw_text = re.sub(r"\s*```$", "", raw_text)
-                    candidate = json.loads(raw_text.strip())
-                    if candidate and isinstance(candidate, dict) and "reply_text" in candidate:
-                        gdata = candidate
-                        break
-                except Exception as em:
-                    print(f"[!] Greeting model {model_name} error: {em}")
+            if client:
+                for model_name in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]:
+                    try:
+                        cfg = types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=0.3,
+                            max_output_tokens=300
+                        )
+                        resp = client.models.generate_content(
+                            model=model_name,
+                            contents=prompt,
+                            config=cfg
+                        )
+                        raw_text = (resp.text or "").strip()
+                        if raw_text.startswith("```"):
+                            raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+                            raw_text = re.sub(r"\s*```$", "", raw_text)
+                        candidate = json.loads(raw_text.strip())
+                        if candidate and isinstance(candidate, dict) and "reply_text" in candidate:
+                            gdata = candidate
+                            break
+                    except Exception as em:
+                        print(f"[!] Greeting model {model_name} error: {em}")
             if not gdata:
                 gdata = {}
             reply = gdata.get("reply_text", "").strip()
@@ -764,14 +765,15 @@ Produce the requested JSON:
 
     data = None
     if client:
-        # Proven original working models: gemini-flash-latest first, followed by stable fallbacks
-        candidate_models = ["gemini-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash"]
+        # Ultra-fast sub-second LLM inference with gemini-2.0-flash, falling back to gemini-1.5-flash
+        candidate_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
         for model_name in candidate_models:
             try:
                 cfg = types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
                     response_mime_type="application/json",
-                    temperature=0.0
+                    temperature=0.0,
+                    max_output_tokens=400
                 )
                 response = client.models.generate_content(
                     model=model_name,
@@ -787,7 +789,7 @@ Produce the requested JSON:
                     data = candidate_data
                     break
             except Exception as e_model:
-                print(f"[!] Model {model_name} error: {e_model}")
+                print(f"[!] Model {model_name} notice: {e_model}")
 
     if not data:
         # Context-aware fallback: NEVER repeat the exact same canned sentence repeatedly
@@ -802,7 +804,6 @@ Produce the requested JSON:
             fallback_reply = "I hear your question, and I'm right here listening. Tell me more so I can understand better."
         else:
             fallback_reply = "I'm listening and I'm right here with you. Tell me what's on your mind."
-
         data = {
             "reply_text": fallback_reply,
             "conversation_title": generate_quick_session_title(current_transcript),

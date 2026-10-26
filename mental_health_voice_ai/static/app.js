@@ -135,15 +135,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     await initAuth();
 
     if (currentUser) {
-        const sessions = await loadSessions();
-        if (sessions && sessions.length > 0) {
-            currentSessionId = sessions[0].session_id;
-            await loadSessionData(sessions[0].session_id);
-        } else {
-            await startNewSession(true);
-        }
+        updateAuthUI(true, currentUser);
     } else {
         updateAuthUI(false, null);
+    }
+
+    // Always restore the user's active conversation on page reload (never erase chats!)
+    const sessions = await loadSessions();
+    if (sessions && sessions.length > 0) {
+        const savedSessionId = localStorage.getItem("arogya_active_session_id");
+        const sessionToLoad = (savedSessionId && sessions.some(s => s.session_id === savedSessionId))
+            ? savedSessionId
+            : sessions[0].session_id;
+        currentSessionId = sessionToLoad;
+        localStorage.setItem("arogya_active_session_id", sessionToLoad);
+        await loadSessionData(sessionToLoad);
+    } else {
+        await startNewSession(true);
     }
 });
 
@@ -1451,6 +1459,7 @@ function renderSessionsList(sessions) {
 async function selectSession(sessionId) {
     if (currentSessionId === sessionId) return;
     currentSessionId = sessionId;
+    localStorage.setItem("arogya_active_session_id", sessionId);
     const sidebar = document.getElementById("sidebar");
     const sidebarBackdrop = document.getElementById("sidebarBackdrop");
     if (sidebar) sidebar.classList.remove("mobile-open");
@@ -1469,6 +1478,7 @@ async function startNewSession(triggerGreeting = true) {
         const res = await apiFetch("/api/sessions", { method: "POST" });
         const newSess = await res.json();
         currentSessionId = newSess.session_id;
+        localStorage.setItem("arogya_active_session_id", newSess.session_id);
         if (currentSessionTitle) currentSessionTitle.textContent = newSess.title;
         renderWelcomeCard();
         resetScorecard();

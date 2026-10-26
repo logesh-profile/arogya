@@ -188,7 +188,7 @@ async def synthesize_fast_speech(
 
     try:
         communicate = edge_tts.Communicate(text, voice=target_voice, rate=rate, pitch=pitch)
-        await asyncio.wait_for(communicate.save(out_path), timeout=3.0)
+        await asyncio.wait_for(communicate.save(out_path), timeout=8.0)
         return f"/audio/{out_filename}"
     except Exception as e:
         print(f"[!] Fast speech synthesis timeout or warning: {e}")
@@ -217,8 +217,13 @@ async def synthesize_speech(
         if f5tts is not None and os.path.exists(REF_AUDIO):
             try:
                 loop = asyncio.get_event_loop()
-                # For F5-TTS (diffusion zero-shot model), use clean Tanglish Latin text
-                cloned_text = text if not re.search(r'[\u0B80-\u0BFF]', text) else active_text
+                # For F5-TTS, strictly enforce Latin phonetic Tanglish/English (strip any raw Tamil script)
+                cloned_text = text
+                if re.search(r'[\u0B80-\u0BFF]', cloned_text):
+                    # Strip any Tamil script characters that F5-TTS diffusion vocabulary cannot tokenize
+                    cloned_text = re.sub(r'[\u0B80-\u0BFF]', '', cloned_text).strip()
+                if not cloned_text:
+                    cloned_text = "I am listening and right here with you."
                 return await loop.run_in_executor(None, synthesize_cloned_speech, cloned_text, wellness_score, dominant_state)
             except Exception as e:
                 print(f"[!] Cloned speech synthesis notice: {e}, routing to Fast Neural voice")
