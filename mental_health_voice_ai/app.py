@@ -482,16 +482,18 @@ def esp32_status():
 @app.get("/api/debug_gemini")
 def debug_gemini():
     from mental_health_voice_ai.mental_health_engine import client, API_KEY
+    from google.genai import types
     if not API_KEY:
         return {"status": "error", "error": "API_KEY is empty or missing in environment"}
-    try:
-        resp = client.models.generate_content(
-            model="gemini-flash-latest",
-            contents="say hello in one word"
-        )
-        return {"status": "ok", "response": resp.text, "model": "gemini-flash-latest"}
-    except Exception as e:
-        return {"status": "error", "error": str(e), "type": type(e).__name__}
+    results = {}
+    for m in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-2.5-flash", "gemini-2.0-flash-lite", "gemini-flash-latest"]:
+        try:
+            cfg = types.GenerateContentConfig(response_mime_type="application/json")
+            resp = client.models.generate_content(model=m, contents='output JSON: {"greeting": "hi"}', config=cfg)
+            results[m] = {"status": "ok", "reply": resp.text.strip()}
+        except Exception as e:
+            results[m] = {"status": "error", "msg": str(e)[:150]}
+    return results
 
 @app.get("/api/expression")
 @app.get("/expression")
