@@ -106,6 +106,7 @@ def extract_acoustic_features(audio_path: str) -> Dict[str, Any]:
     - librosa.pyin: fundamental frequency estimation.
     - Semitone deviation: 12 * log2(f0 / median(f0)), gender-neutral & pitch-invariant.
     - Pause ratio: silence vs voiced speech.
+    - RMS energy & spectral centroid: vocal intensity and tonal brightness.
     """
     try:
         y, sr = librosa.load(audio_path, sr=16000)
@@ -114,10 +115,15 @@ def extract_acoustic_features(audio_path: str) -> Dict[str, Any]:
             return {
                 "duration": round(duration, 2),
                 "pitch_semitone_std": None,
+                "median_f0": None,
+                "rms_energy": 0.0,
                 "pause_ratio": 0.0,
                 "is_valid_speech": False,
                 "note": "Audio sample too brief for stable pitch estimation"
             }
+
+        # RMS Energy (Vocal Power / Loudness)
+        rms_energy = float(np.sqrt(np.mean(y**2)))
 
         # Probabilistic YIN (pyin) for robust fundamental frequency tracking
         f0, voiced_flag, _ = librosa.pyin(y, fmin=75, fmax=400, sr=sr)
@@ -127,6 +133,7 @@ def extract_acoustic_features(audio_path: str) -> Dict[str, Any]:
         min_voiced_frames = int((sr / 512) * 3)
         if len(valid_f0) < min_voiced_frames:
             semitone_std = None
+            median_f0 = None
             note = "Insufficient voiced frames detected"
         else:
             median_f0 = float(np.median(valid_f0))
@@ -147,6 +154,8 @@ def extract_acoustic_features(audio_path: str) -> Dict[str, Any]:
         return {
             "duration": round(duration, 2),
             "pitch_semitone_std": semitone_std,
+            "median_f0": round(median_f0, 1) if median_f0 else None,
+            "rms_energy": round(rms_energy, 4),
             "pause_ratio": round(pause_ratio, 2),
             "is_valid_speech": semitone_std is not None,
             "note": note
@@ -156,10 +165,163 @@ def extract_acoustic_features(audio_path: str) -> Dict[str, Any]:
         return {
             "duration": 0.0,
             "pitch_semitone_std": None,
+            "median_f0": None,
+            "rms_energy": 0.0,
             "pause_ratio": 0.0,
             "is_valid_speech": False,
             "note": "Extraction error"
         }
+
+
+# ---------------------------------------------------------------------------
+# 3B. VOICE TONE-FIRST EMOTION & EXPRESSION CLASSIFIER (12-TAG CO-REGULATION)
+# ---------------------------------------------------------------------------
+EMOTION_12_TAGS = [
+    "calm", "happy", "excited", "caring", "concerned", "sad",
+    "surprised", "confused", "thinking", "sleepy", "proud", "love"
+]
+
+# Attunement & Co-Regulation Mapping:
+# - User Speaking Phase: AI Face mirrors / attunes to validate emotion
+# - AI Responding Phase: AI Face leads with therapeutic co-regulation
+EMOTION_FACE_MAP = {
+    "sad":        {"listen": "caring",    "speak": "love"},
+    "concerned":  {"listen": "concerned", "speak": "calm"},
+    "frustrated": {"listen": "concerned", "speak": "calm"},
+    "anxious":    {"listen": "concerned", "speak": "calm"},
+    "sleepy":     {"listen": "sleepy",    "speak": "caring"},
+    "exhausted":  {"listen": "sleepy",    "speak": "caring"},
+    "thinking":   {"listen": "thinking",  "speak": "happy"},
+    "neutral":    {"listen": "thinking",  "speak": "happy"},
+    "confused":   {"listen": "concerned", "speak": "caring"},
+    "surprised":  {"listen": "surprised", "speak": "calm"},
+    "calm":       {"listen": "calm",      "speak": "caring"},
+    "happy":      {"listen": "happy",     "speak": "excited"},
+    "excited":    {"listen": "happy",     "speak": "excited"},
+    "proud":      {"listen": "happy",     "speak": "love"},
+    "caring":     {"listen": "caring",    "speak": "love"},
+    "love":       {"listen": "caring",    "speak": "love"}
+}
+
+def classify_user_emotion_from_voice_tone(
+    acoustic_features: Dict[str, Any],
+    transcript: str = ""
+) -> Dict[str, str]:
+    """
+    Evaluates user emotion based PRIMARILY on acoustic vocal tone (biometric ground truth:
+    pitch semitone std/jitter, RMS energy power, pause ratio, median F0), with transcript
+    words functioning only secondarily when audio is absent.
+
+    Maps strictly to the 12 tags:
+    ['calm', 'happy', 'excited', 'caring', 'concerned', 'sad', 'surprised', 'confused', 'thinking', 'sleepy', 'proud', 'love']
+
+    Returns:
+    {
+        "user_emotion": "<12-tag emotion>",
+        "listening_face": "<12-tag listening face>",
+        "speaking_face": "<12-tag speaking face>"
+    }
+    """
+    is_valid = acoustic_features.get("is_valid_speech", False)
+    semitone_std = acoustic_features.get("pitch_semitone_std")
+    pause_ratio = acoustic_features.get("pause_ratio", 0.0)
+    rms = acoustic_features.get("rms_energy", 0.0)
+    duration = acoustic_features.get("duration", 0.0)
+    median_f0 = acoustic_features.get("median_f0")
+    t_lower = (transcript or "").lower()
+
+    # Determine if voice audio is present (energy > 0.005 and duration >= 0.5s)
+    has_audio_tone = bool(duration >= 0.5 and (rms > 0.005 or is_valid))
+
+    if has_audio_tone:
+        # === ACOUSTIC BIOMARKER GROUND TRUTH (TONE-FIRST DECISION MATRIX) ===
+        # Standard deviation in semitones: 12 * log2(f0 / median(f0))
+        # 1. Sleepy / Exhausted (Extremely faint energy < 0.020, dragging pauses > 0.32)
+        if rms < 0.020 and pause_ratio > 0.32:
+            detected_emotion = "sleepy"
+
+        # 2. Depressed / Sad (Flat affect < 1.35 st, low acoustic power < 0.035, hesitations > 0.20)
+        elif (semitone_std is not None and semitone_std < 1.35) and (rms < 0.035 or pause_ratio > 0.20):
+            detected_emotion = "sad"
+        elif rms < 0.024 and pause_ratio > 0.22:
+            detected_emotion = "sad"
+
+        # 3. Anxious / Trembling / Panic (Severe jitter > 2.85 st, high tension energy, or elevated pitch)
+        elif semitone_std is not None and semitone_std > 2.85:
+            detected_emotion = "concerned"  # Anxious -> concerned tag
+        elif semitone_std is not None and semitone_std > 2.50 and median_f0 and median_f0 > 240:
+            detected_emotion = "concerned"
+
+        # 4. Frustrated / Angry / Tense (Loud acoustic power > 0.062, elevated semitones > 2.3, low pause)
+        elif rms > 0.062 and ((semitone_std and semitone_std > 2.2) or pause_ratio < 0.16):
+            detected_emotion = "concerned"  # Frustrated -> concerned tag
+
+        # 5. Surprised / Sudden Shock (Sharp pitch excursion > 2.7 st followed by abrupt pause > 0.25)
+        elif (semitone_std is not None and semitone_std > 2.70) and pause_ratio > 0.25:
+            detected_emotion = "surprised"
+
+        # 6. Excited / Upbeat Euphoria (High dynamic range > 2.55 st, strong energy > 0.048, fluid pace)
+        elif (semitone_std is not None and semitone_std > 2.55) and rms > 0.048:
+            detected_emotion = "excited"
+
+        # 7. Proud / Confident Projection (Resonant energy >= 0.042, firm modulation 1.9-2.5 st, controlled pace)
+        elif rms >= 0.042 and semitone_std is not None and (1.9 <= semitone_std <= 2.5) and pause_ratio < 0.22:
+            detected_emotion = "proud"
+
+        # 8. Happy / Joyful Modulation (Melodious pitch 1.8-2.6 st, healthy energy >= 0.032, fluid flow)
+        elif semitone_std is not None and (1.8 <= semitone_std <= 2.6) and rms >= 0.032:
+            detected_emotion = "happy"
+
+        # 9. Confused / Hesitant (Mid-clause hesitations > 0.28, moderate energy)
+        elif pause_ratio > 0.28 and semitone_std is not None and (1.4 <= semitone_std <= 2.4):
+            detected_emotion = "confused"
+
+        # 10. Thinking / Rumination (Substantial thinking pauses > 0.30, moderate/low semitone range)
+        elif pause_ratio > 0.30:
+            detected_emotion = "thinking"
+
+        # 11. Caring / Love / Gentle Softness (Intimate whispered volume, warm gentle inflection)
+        elif (0.018 <= rms <= 0.028) and semitone_std is not None and (1.6 <= semitone_std <= 2.2) and any(w in t_lower for w in ["love", "care", "dear", "thank", "thanks"]):
+            detected_emotion = "caring"
+
+        # 12. Calm (Balanced pitch 1.3-1.9 st, resting energy 0.025-0.050, steady cadence)
+        else:
+            detected_emotion = "calm"
+    else:
+        # Fallback to transcript keywords ONLY when voice audio is missing (e.g. pure text chat)
+        if any(w in t_lower for w in ["sad", "cry", "depress", "valikidhu", "kashtam", "kashtama", "seththudalam", "alone", "lonely"]):
+            detected_emotion = "sad"
+        elif any(w in t_lower for w in ["frustrat", "angry", "hate", "tension", "irritat", "anxious", "panic", "fear", "bayama"]):
+            detected_emotion = "concerned"
+        elif any(w in t_lower for w in ["tired", "exhaust", "sleepy", "drained", "weak", "mood illa"]):
+            detected_emotion = "sleepy"
+        elif any(w in t_lower for w in ["proud", "achieved", "won", "passed", "did it", "success"]):
+            detected_emotion = "proud"
+        elif any(w in t_lower for w in ["excited", "cannot wait", "thrilled", "super happy"]):
+            detected_emotion = "excited"
+        elif any(w in t_lower for w in ["happy", "great", "awesome", "super", "sandhosham"]):
+            detected_emotion = "happy"
+        elif any(w in t_lower for w in ["love", "caring", "thank you", "thanks"]):
+            detected_emotion = "love"
+        elif any(w in t_lower for w in ["confused", "don't know", "therila", "puriyala"]):
+            detected_emotion = "confused"
+        elif any(w in t_lower for w in ["thinking", "wondering", "nenaikiren"]):
+            detected_emotion = "thinking"
+        elif any(w in t_lower for w in ["surprised", "shocked", "really", "wow"]):
+            detected_emotion = "surprised"
+        else:
+            detected_emotion = "calm"
+
+    # Enforce strictly valid 12-tag mapping
+    canonical_emotion = detected_emotion if detected_emotion in EMOTION_12_TAGS else "calm"
+    face_map = EMOTION_FACE_MAP.get(canonical_emotion, {"listen": "thinking", "speak": "happy"})
+
+    return {
+        "user_emotion": canonical_emotion,
+        "listening_face": face_map["listen"],
+        "speaking_face": face_map["speak"]
+    }
+
 
 
 # ---------------------------------------------------------------------------
@@ -522,6 +684,9 @@ def analyze_and_respond(
             "conversation_title": "Crisis Support Alert",
             "is_crisis": True,
             "crisis_reason": crisis_reason,
+            "user_emotion": "sad",
+            "listening_face": "caring",
+            "speaking_face": "love",
             "reasons": [
                 {"label": "Crisis Safety Protocol", "score": 3, "max_score": 3, "quote": current_transcript}
             ],
@@ -671,6 +836,9 @@ Produce the requested JSON:
     else:
         conversation_title = generate_quick_session_title(current_transcript)
 
+    # 8. Classify user emotion and attunement faces (tone-first ground truth)
+    emotion_info = classify_user_emotion_from_voice_tone(acoustic_features, current_transcript)
+
     return {
         "reply_text": naturalized_reply,                  # Naturalized display text for user
         "spoken_text": prosody_stage.get("spoken_text"),   # Phonetically prepared text for TTS
@@ -681,6 +849,9 @@ Produce the requested JSON:
         "overall_wellness": calc["overall_wellness"],
         "confidence": calc["confidence"],
         "dominant_state": data.get("dominant_state", "Reflective"),
+        "user_emotion": emotion_info["user_emotion"],
+        "listening_face": emotion_info["listening_face"],
+        "speaking_face": emotion_info["speaking_face"],
         "reasons": calc["reasons"],
         "total_points": calc["total_points"],
         "max_points": calc["max_points"],

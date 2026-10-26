@@ -31,4 +31,5 @@ __pycache__/
 # Databases & Local Logs
 *.log
 *.sqlite3-journal
+mental_health_voice_ai/data/*.db
 scratch/

@@ -54,8 +54,15 @@ from database import (
     revoke_auth_session,
     get_user_by_id
 )
-from mental_health_engine import extract_acoustic_features, analyze_and_respond, generate_quick_session_title, generate_memory_greeting
+from mental_health_engine import (
+    extract_acoustic_features,
+    analyze_and_respond,
+    generate_quick_session_title,
+    generate_memory_greeting,
+    classify_user_emotion_from_voice_tone
+)
 from voice_engine import transcribe_audio, synthesize_speech
+from serial_bridge import get_esp32_bridge
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -365,8 +372,68 @@ async def get_initial_greeting(request: Request, session_id: Optional[str] = Non
 
     return {
         "greeting_text": greeting_text,
-        "audio_url": audio_url
+        "audio_url": audio_url,
+        "speaking_face": "happy"
     }
+
+# ---------------------------------------------------------------------------
+# ESP32 ROBOT DISPLAY & AFFECTIVE ATTUNEMENT SERIAL ENDPOINTS
+# ---------------------------------------------------------------------------
+@app.post("/api/esp32/speech_state")
+async def esp32_speech_state(request: Request):
+    """
+    Called by client audio player when speech begins (state=1) or finishes (state=0).
+    Synchronizes external ESP32 OLED face expressions and mouth movement opcodes.
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    state = int(data.get("state", 0))
+    face = data.get("face")
+
+    bridge = get_esp32_bridge()
+    if state == 1:
+        if face:
+            clean_face = str(face).strip().lower()
+            bridge.send(f"EMO:{clean_face}")
+        bridge.send("SPK:1")
+    else:
+        bridge.send("SPK:0")
+
+    return {
+        "status": "ok",
+        "state": state,
+        "face": face,
+        "esp32_connected": bridge.is_connected()
+    }
+
+@app.post("/api/esp32/emotion")
+async def esp32_emotion(request: Request):
+    """
+    Direct emotion opcode dispatch to ESP32 display (e.g. EMO:caring, EMO:thinking).
+    """
+    try:
+        data = await request.json()
+    except Exception:
+        data = {}
+    face = str(data.get("face", "calm")).strip().lower()
+    bridge = get_esp32_bridge()
+    bridge.send(f"EMO:{face}")
+    return {
+        "status": "ok",
+        "face": face,
+        "esp32_connected": bridge.is_connected()
+    }
+
+@app.get("/api/esp32/status")
+def esp32_status():
+    """
+    Diagnostic status endpoint for physical ESP32 connection (graceful fallback on cloud/Render).
+    """
+    bridge = get_esp32_bridge()
+    return bridge.get_status()
+
 
 @app.post("/api/transcribe")
 async def transcribe_only(file: UploadFile = File(...)):
@@ -426,6 +493,8 @@ async def process_voice_chat(
     6. Synthesizes voice in Indian accent (F5-TTS cloned / fast Indian neural)
     """
     user = get_effective_user(request)
+    bridge = get_esp32_bridge()
+    bridge.send("EMO:thinking")
 
     # 1. Save uploaded raw audio
     raw_filename = f"user_raw_{uuid.uuid4().hex[:8]}.webm"
@@ -473,6 +542,10 @@ async def process_voice_chat(
 
     if not transcript:
         transcript = "I wanted to take a moment to reflect on my feelings."
+
+    # Immediate Affective Attunement: mirror user's vocal tone on ESP32 display
+    tone_emotion = classify_user_emotion_from_voice_tone(acoustic_features, transcript)
+    bridge.send(f"EMO:{tone_emotion['listening_face']}")
 
     # 4. Session History & Baseline Statistical Context
     session_messages = get_session_messages(session_id)
@@ -564,6 +637,9 @@ async def process_voice_chat(
         "reply_text": reply_text,
         "audio_url": ai_audio_url,
         "acoustic_features": acoustic_features,
+        "user_emotion": eval_result.get("user_emotion", tone_emotion["user_emotion"]),
+        "listening_face": eval_result.get("listening_face", tone_emotion["listening_face"]),
+        "speaking_face": eval_result.get("speaking_face", tone_emotion["speaking_face"]),
         "overall_wellness": aggregated.get("overall_wellness", 75),
         "evaluation": aggregated,
         "suggest_grounding": eval_result.get("suggest_grounding", False),
@@ -584,6 +660,9 @@ async def process_text_chat(
     Instant text chat with grounded evidence scoring and immediate titling.
     """
     user = get_effective_user(request)
+    bridge = get_esp32_bridge()
+    bridge.send("EMO:thinking")
+
     dummy_acoustics = {
         "duration": 0.0,
         "pitch_semitone_std": None,
@@ -614,6 +693,8 @@ async def process_text_chat(
         n_sessions=n_sessions,
         user_id=user["id"]
     )
+
+    bridge.send(f"EMO:{eval_result.get('listening_face', 'thinking')}")
 
     reply_text = eval_result.get("reply_text", "I hear you, and thank you for sharing that with me.")
     spoken_text = eval_result.get("spoken_text")
@@ -663,6 +744,9 @@ async def process_text_chat(
         "transcript": text,
         "reply_text": reply_text,
         "audio_url": ai_audio_url,
+        "user_emotion": eval_result.get("user_emotion", "calm"),
+        "listening_face": eval_result.get("listening_face", "calm"),
+        "speaking_face": eval_result.get("speaking_face", "caring"),
         "overall_wellness": aggregated.get("overall_wellness", 75),
         "evaluation": aggregated,
         "suggest_grounding": eval_result.get("suggest_grounding", False),

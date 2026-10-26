@@ -80,6 +80,24 @@ let isBreathingPaused = false;
 let isVoiceModalActive = false;
 let voiceToneCentroid = 200;
 let currentAiReplyText = "";
+let currentSpeakingFace = "happy";
+
+// ESP32 Microcontroller Synchronizer (Non-blocking, cloud-safe)
+function notifyEsp32SpeechState(state, face = null) {
+    fetch("/api/esp32/speech_state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state: state, face: face })
+    }).catch(() => {});
+}
+
+function notifyEsp32Emotion(face) {
+    fetch("/api/esp32/emotion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ face: face })
+    }).catch(() => {});
+}
 
 // Auth State Variables
 let currentUser = null;
@@ -1225,6 +1243,9 @@ function setupAudioPlayerEvents() {
         setLiveStatus("Speaking...", "listening");
         orbCaption.textContent = "Arogya is speaking...";
 
+        // Notify physical ESP32 to show speaking face and start mouth movement
+        notifyEsp32SpeechState(1, currentSpeakingFace);
+
         if (isVoiceModalActive) {
             const aiText = document.getElementById("modalAiLiveText");
             if (aiText && currentAiReplyText) aiText.textContent = currentAiReplyText;
@@ -1244,6 +1265,9 @@ function setupAudioPlayerEvents() {
         setLiveStatus("Ready", "");
         orbCaption.textContent = (isHandsFree || isVoiceModalActive) ? "Listening to your thoughts..." : "Click microphone or type to reflect";
         drawIdleWaveform();
+
+        // Notify physical ESP32 that speech has stopped
+        notifyEsp32SpeechState(0);
 
         if (isVoiceModalActive) {
             const modalState = document.getElementById("modalVoiceStateText");
@@ -1272,6 +1296,7 @@ function setupAudioPlayerEvents() {
 
     audioPlayer.addEventListener("pause", () => {
         setLiveStatus("Ready", "");
+        notifyEsp32SpeechState(0);
         if (isVoiceModalActive) {
             const orbWrap = document.getElementById("voiceOrbWrapper");
             if (orbWrap) orbWrap.classList.remove("speaking");
@@ -1462,6 +1487,7 @@ async function fetchInitialGreeting() {
         const res = await fetch(`/api/greeting?session_id=${currentSessionId}&voice_mode=${voiceMode}`);
         const data = await res.json();
 
+        currentSpeakingFace = data.speaking_face || "happy";
         appendExchangeToUI(data.greeting_text, "", data.audio_url, true);
         setLiveStatus("Ready", "");
     } catch (err) {
@@ -1637,6 +1663,7 @@ async function toggleRecording() {
 }
 
 async function startRecording() {
+    notifyEsp32Emotion("thinking");
     try {
         const selectedMicId = micDeviceSelect ? micDeviceSelect.value : "";
         const audioConstraints = selectedMicId
@@ -1815,6 +1842,7 @@ async function handleTextSubmit() {
     appendPendingUserToUI(text);
     setLiveStatus("Reflecting...", "listening");
     orbCaption.textContent = "Arogya is reflecting...";
+    notifyEsp32Emotion("thinking");
 
     if (isVoiceModalActive) {
         const modalState = document.getElementById("modalVoiceStateText");
@@ -1854,6 +1882,7 @@ async function handleTextSubmit() {
         }
 
         currentAiReplyText = data.reply_text || "";
+        currentSpeakingFace = data.speaking_face || "caring";
 
         if (isVoiceModalActive) {
             const aiLive = document.getElementById("modalAiLiveText");
