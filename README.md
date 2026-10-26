@@ -105,7 +105,7 @@ graph TD
 
 - **Backend:** Python 3.11.9, FastAPI, Uvicorn, SQLite3 (WAL mode) — configured with `.python-version` & `runtime.txt` for automatic Render cloud deployments
 - **AI Models & Pipeline:**
-  - Google Gemini API (`gemini-2.0-flash` sub-second inference with `gemini-1.5-flash` resilient fallback)
+  - Google Gemini API (`gemini-flash-lite-latest` sub-second inference with `gemini-3.5-flash-lite` high-quota fallback)
   - Faster-Whisper (CTranslate2, CUDA FP16 on RTX 3050 GPU)
   - Conversational Tamil/Tanglish Naturalizer (`tanglish_engine.py`)
   - Microsoft Edge-TTS (`ta-IN-PallaviNeural`, `en-IN-NeerjaNeural` sub-second ~0.35s voice; cloned models preserved on disk)

@@ -424,7 +424,10 @@ def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "p
     and previous session reflections across days.
     Adapts language naturally: if user previously spoke Tanglish/Tamil, greets in conversational Tanglish & spoken Tamil script.
     """
-    from database import get_recent_session_memory_anchor, get_user_clinical_profile
+    try:
+        from database import get_recent_session_memory_anchor, get_user_clinical_profile
+    except ImportError:
+        from mental_health_voice_ai.database import get_recent_session_memory_anchor, get_user_clinical_profile
 
     anchor = get_recent_session_memory_anchor(user_id=user_id, exclude_session_id=session_id)
     profile = anchor.get("profile") or get_user_clinical_profile(user_id)
@@ -442,7 +445,10 @@ def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "p
     recent_remarks = anchor.get("recent_remarks", [])
 
     # Detect user language preference from past remarks
-    from tanglish_engine import detect_language_and_register, stage_prosody_and_phonetics
+    try:
+        from tanglish_engine import detect_language_and_register, stage_prosody_and_phonetics
+    except ImportError:
+        from mental_health_voice_ai.tanglish_engine import detect_language_and_register, stage_prosody_and_phonetics
     detected_lang = "tanglish"
     all_past_text = " ".join(recent_remarks) if recent_remarks else core_topic
     if all_past_text:
@@ -495,7 +501,7 @@ DO NOT sound robotic, bookish, or formal. Output strictly valid JSON.
 """
             gdata = None
             if client:
-                for model_name in ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]:
+                for model_name in ["gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.5-flash"]:
                     try:
                         cfg = types.GenerateContentConfig(
                             response_mime_type="application/json",
@@ -765,15 +771,15 @@ Produce the requested JSON:
 
     data = None
     if client:
-        # Ultra-fast sub-second LLM inference with gemini-2.0-flash, falling back to gemini-1.5-flash
-        candidate_models = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-flash-latest"]
+        # Ultra-fast sub-second LLM inference with active high-quota models
+        candidate_models = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.5-flash"]
         for model_name in candidate_models:
             try:
                 cfg = types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
                     response_mime_type="application/json",
                     temperature=0.0,
-                    max_output_tokens=400
+                    max_output_tokens=1200
                 )
                 response = client.models.generate_content(
                     model=model_name,
@@ -851,7 +857,10 @@ Produce the requested JSON:
     profile_updates = data.get("profile_updates", {})
     if profile_updates and isinstance(profile_updates, dict):
         try:
-            from database import update_user_clinical_profile
+            try:
+                from database import update_user_clinical_profile
+            except ImportError:
+                from mental_health_voice_ai.database import update_user_clinical_profile
             update_user_clinical_profile(
                 user_id=user_id,
                 user_name=profile_updates.get("user_name"),
@@ -863,11 +872,18 @@ Produce the requested JSON:
             print(f"[!] Clinical profile auto-update notice: {pe}")
 
     # 6. Conversational Tamil/Tanglish Naturalization & Prosody Staging
-    from tanglish_engine import (
-        detect_language_and_register,
-        naturalize_tanglish_response,
-        stage_prosody_and_phonetics
-    )
+    try:
+        from tanglish_engine import (
+            detect_language_and_register,
+            naturalize_tanglish_response,
+            stage_prosody_and_phonetics
+        )
+    except ImportError:
+        from mental_health_voice_ai.tanglish_engine import (
+            detect_language_and_register,
+            naturalize_tanglish_response,
+            stage_prosody_and_phonetics
+        )
     lang_info = detect_language_and_register(current_transcript, session_history)
     language_mode = lang_info.get("language_mode", "tanglish")
     speech_register = lang_info.get("register", "warm_tanglish")
