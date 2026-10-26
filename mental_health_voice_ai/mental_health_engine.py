@@ -493,11 +493,12 @@ DO NOT assume or invent exams, deadlines, or life situations. Keep it simple, we
 DO NOT sound robotic, bookish, or formal. Output strictly valid JSON.
 """
             resp = client.models.generate_content(
-                model="gemini-3.5-flash-lite",
+                model="gemini-2.5-flash",
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     temperature=0.3,
+                    thinking_config=types.ThinkingConfig(thinking_budget=0)
                 )
             )
             gdata = json.loads(resp.text)
@@ -736,28 +737,26 @@ Produce the requested JSON:
 """
 
     try:
-        # LLM inference with gemini-3.5-flash-lite at temperature=0.0 for sub-second, zero-hallucination response
-        response = client.models.generate_content(
-            model="gemini-3.5-flash-lite",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                response_mime_type="application/json",
-                temperature=0.0,
-            )
+        # Ultra-fast sub-second LLM inference with gemini-2.5-flash (zero thinking overhead)
+        fast_config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_INSTRUCTION,
+            response_mime_type="application/json",
+            temperature=0.0,
+            thinking_config=types.ThinkingConfig(thinking_budget=0)
         )
-        data = json.loads(response.text)
-    except Exception as e:
-        print(f"[!] Primary model notice: {e}, attempting fallback...")
         try:
             response = client.models.generate_content(
-                model="gemini-flash-latest",
+                model="gemini-2.5-flash",
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    response_mime_type="application/json",
-                    temperature=0.0,
-                )
+                config=fast_config
+            )
+            data = json.loads(response.text)
+        except Exception as e_primary:
+            print(f"[!] Primary gemini-2.5-flash notice: {e_primary}, falling back to gemini-2.0-flash...")
+            response = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt,
+                config=fast_config
             )
             data = json.loads(response.text)
         except Exception as e2:
