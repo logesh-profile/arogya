@@ -479,6 +479,20 @@ def esp32_status():
     bridge = get_esp32_bridge()
     return bridge.get_status()
 
+@app.get("/api/debug_gemini")
+def debug_gemini():
+    from mental_health_voice_ai.mental_health_engine import client, API_KEY
+    if not API_KEY:
+        return {"status": "error", "error": "API_KEY is empty or missing in environment"}
+    try:
+        resp = client.models.generate_content(
+            model="gemini-flash-latest",
+            contents="say hello in one word"
+        )
+        return {"status": "ok", "response": resp.text, "model": "gemini-flash-latest"}
+    except Exception as e:
+        return {"status": "error", "error": str(e), "type": type(e).__name__}
+
 @app.get("/api/expression")
 @app.get("/expression")
 def get_esp32_expression():
