@@ -1,6 +1,6 @@
 # 🌿 Arogya • Embodied Voice Companion & Acoustic Biomarker Mental Health AI
 
-> **A real-time bilingual voice companion robot and longitudinal mental health intelligence platform featuring authentic Tanglish & English voice cloning, hands-free conversational VAD, non-contact mmWave vital radar sensing, and deterministic quote-grounded evidence scoring.**
+> **A real-time bilingual voice companion robot and longitudinal mental health intelligence platform featuring authentic Tanglish & English voice cloning, hands-free conversational VAD, ambient WiFi-based presence detection, and deterministic quote-grounded evidence scoring.**
 
 ---
 
@@ -11,7 +11,7 @@
 Existing solutions suffer from three fatal flaws:
 1. **Linguistic Stigma:** Indian youth express their deepest emotions in colloquial vernaculars (**Tanglish** — Tamil naturally blended with English). Conventional chatbots reply in stiff, unnatural English.
 2. **Neglect of Acoustic & Physical Biomarkers:** Depression, anxiety, and burnout manifest in pitch flattening ($f_0$ semitone variance), pause ratios, and rapid shallow breathing. Text chatbots cannot detect any of this.
-3. **The "Silent Suffering" Barrier:** When individuals are severely overwhelmed, they lack the energy to type into a phone. Arogya's ambient companion robot senses presence and vital signs via **60GHz mmWave radar** and speaks with a human voice to de-escalate stress proactively.
+3. **The "Silent Suffering" Barrier:** When individuals are severely overwhelmed, they lack the energy to type into a phone. Arogya's ambient companion robot senses human room presence non-invasively via **ambient WiFi signal perturbation (WiFi CSI)** and speaks with a human voice to de-escalate stress proactively. *(High-precision 60GHz FMCW mmWave radar is planned as a future hardware upgrade).*
 
 ---
 
@@ -55,9 +55,9 @@ Existing solutions suffer from three fatal flaws:
 - Persistent SQLite memory (`user_clinical_profile`) tracking key user context (academics, placement interviews, sleep habits), recurring stressor clusters, and proven coping mechanisms.
 - Arogya naturally references previous discussions across different days.
 
-### 8. Embodied Hardware & Non-Contact mmWave Sensing Architecture
-- Connects with **60GHz FMCW mmWave radar** (e.g., HLK-LD2410 / Seeed Studio mmWave) over ESP32 UART.
-- Measures presence, respiratory rate (breaths/min), and heart-rate variability non-invasively through chest-wall micromotions without intrusive cameras or wearables.
+### 8. Embodied Hardware & Ambient WiFi Presence Detection
+- Leverages **ambient WiFi Channel State Information (CSI) / signal variance** on the ESP32 to detect human room entry and stationary presence non-invasively without cameras or wearable devices.
+- **Future Hardware Upgrade Roadmap:** Future hardware iterations will integrate an FMCW **60GHz mmWave radar** sensor (e.g. HLK-LD2410 / Seeed Studio mmWave) to add sub-millimeter chest wall displacement tracking and non-contact respiratory rate measurement.
 
 ### 9. Immediate Crisis Safety Triage
 - Independent safety filter detecting acute crisis or self-harm ideation without corrupting numerical scores.
