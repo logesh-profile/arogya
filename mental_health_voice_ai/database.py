@@ -477,6 +477,12 @@ def save_message(session_id: str, role: str, text: str, audio_path: Optional[str
     now = datetime.now().isoformat()
     metrics_str = json.dumps(speech_metrics) if speech_metrics else None
 
+    # Guarantee session exists in sessions table for foreign key and history integrity
+    cursor.execute("""
+        INSERT OR IGNORE INTO sessions (session_id, title, created_at, last_active, user_id)
+        VALUES (?, 'Check-in', ?, ?, 'primary_user')
+    """, (session_id, now, now))
+
     cursor.execute("""
         INSERT INTO messages (session_id, role, text, timestamp, audio_path, speech_metrics_json)
         VALUES (?, ?, ?, ?, ?, ?)

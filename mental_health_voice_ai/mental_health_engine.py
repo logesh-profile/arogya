@@ -494,26 +494,28 @@ DO NOT assume or invent exams, deadlines, or life situations. Keep it simple, we
 DO NOT sound robotic, bookish, or formal. Output strictly valid JSON.
 """
             gdata = None
-            for model_name in ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"]:
+            # Proven model ladder: original working model gemini-flash-latest first
+            for model_name in ["gemini-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash"]:
                 try:
                     cfg = types.GenerateContentConfig(
                         response_mime_type="application/json",
-                        temperature=0.3,
-                        max_output_tokens=300
+                        temperature=0.3
                     )
-                    if "2.5" in model_name:
-                        cfg.thinking_config = types.ThinkingConfig(thinking_budget=0)
                     resp = client.models.generate_content(
                         model=model_name,
                         contents=prompt,
                         config=cfg
                     )
-                    candidate = json.loads(resp.text)
-                    if candidate and "reply_text" in candidate:
+                    raw_text = (resp.text or "").strip()
+                    if raw_text.startswith("```"):
+                        raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+                        raw_text = re.sub(r"\s*```$", "", raw_text)
+                    candidate = json.loads(raw_text.strip())
+                    if candidate and isinstance(candidate, dict) and "reply_text" in candidate:
                         gdata = candidate
                         break
                 except Exception as em:
-                    print(f"[!] Greeting model {model_name} notice: {em}")
+                    print(f"[!] Greeting model {model_name} error: {em}")
             if not gdata:
                 gdata = {}
             reply = gdata.get("reply_text", "").strip()
@@ -733,51 +735,76 @@ def analyze_and_respond(
             ]
         }
 
-    # 2. Build Prompt (Pure Transcript + Conversational Context, NO contaminated voice heuristics)
+    # 2. Build Prompt with Full Conversational History (up to 20 past turns for complete memory & QA)
     history_snippet = []
-    for m in session_history[-4:]:
-        history_snippet.append(f"{m['role'].upper()}: {m['text']}")
+    for m in session_history[-20:]:
+        role = "USER" if m.get("role") == "user" else "AROGYA"
+        txt = (m.get("text") or "").strip()
+        if txt:
+            history_snippet.append(f"{role}: {txt}")
     history_str = "\n".join(history_snippet) if history_snippet else "Conversation just began."
 
     prompt = f"""
 {historical_context}
 
---- CURRENT DIALOGUE ---
+--- CONVERSATION HISTORY (PAST TURNS IN THIS SESSION) ---
 {history_str}
+
+--- CURRENT USER INPUT ---
 USER (Just now): "{current_transcript}"
 
-Evaluate the emotional statement based strictly on the user's explicit words.
+IMPORTANT CONVERSATIONAL MEMORY & QUESTION-ANSWERING DIRECTIVE:
+1. Review the CONVERSATION HISTORY above carefully.
+2. If the user asks a question, refers to something said earlier in this conversation (e.g. "what was I saying?", "do you remember?", "what should I do?"), or continues a previous topic, directly and accurately ANSWER their question using the conversation history context.
+3. Keep your spoken reply ("reply_text") natural, compassionate, conversational, and direct (2 to 3 sentences in colloquial Tanglish or Indian English).
+4. Evaluate the user's emotional state across the 7 dimensions based strictly on their actual statements.
+
 Produce the requested JSON:
 """
 
     data = None
     if client:
-        # Ultra-fast sub-second model ladder: gemini-2.0-flash -> gemini-2.5-flash -> gemini-1.5-flash
-        for model_name in ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"]:
+        # Proven original working models: gemini-flash-latest first, followed by stable fallbacks
+        candidate_models = ["gemini-flash-latest", "gemini-1.5-flash", "gemini-2.0-flash", "gemini-2.5-flash"]
+        for model_name in candidate_models:
             try:
                 cfg = types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
                     response_mime_type="application/json",
-                    temperature=0.0,
-                    max_output_tokens=400
+                    temperature=0.0
                 )
-                if "2.5" in model_name:
-                    cfg.thinking_config = types.ThinkingConfig(thinking_budget=0)
                 response = client.models.generate_content(
                     model=model_name,
                     contents=prompt,
                     config=cfg
                 )
-                candidate_data = json.loads(response.text)
-                if candidate_data and "reply_text" in candidate_data:
+                raw_text = (response.text or "").strip()
+                if raw_text.startswith("```"):
+                    raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+                    raw_text = re.sub(r"\s*```$", "", raw_text)
+                candidate_data = json.loads(raw_text.strip())
+                if candidate_data and isinstance(candidate_data, dict) and "reply_text" in candidate_data:
                     data = candidate_data
                     break
             except Exception as e_model:
-                print(f"[!] Model {model_name} notice: {e_model}")
+                print(f"[!] Model {model_name} error: {e_model}")
 
     if not data:
+        # Context-aware fallback: NEVER repeat the exact same canned sentence repeatedly
+        t_lower = current_transcript.lower().strip()
+        if any(w in t_lower for w in ["hi", "hello", "hey", "vanakkam"]):
+            fallback_reply = "Vanakkam! I'm right here with you. How is your day going so far?"
+        elif any(w in t_lower for w in ["bad", "sad", "upset", "depress", "tired", "exhaust", "stress"]):
+            fallback_reply = "I'm so sorry you're having a tough time today. I'm right here with you—tell me more about what happened."
+        elif any(w in t_lower for w in ["happy", "good", "great", "fine", "super"]):
+            fallback_reply = "I'm really glad to hear that! What made today good for you?"
+        elif "?" in current_transcript:
+            fallback_reply = "I hear your question, and I'm right here listening. Tell me more so I can understand better."
+        else:
+            fallback_reply = "I'm listening and I'm right here with you. Tell me what's on your mind."
+
         data = {
-            "reply_text": "I hear you, and I am right here with you. Take a soft breath. Tell me what has been on your mind.",
+            "reply_text": fallback_reply,
             "conversation_title": generate_quick_session_title(current_transcript),
             "dominant_state": "Reflective",
             "evidence": {

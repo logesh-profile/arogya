@@ -589,6 +589,13 @@ async def process_voice_chat(
     6. Synthesizes voice in Indian accent (F5-TTS cloned / fast Indian neural)
     """
     user = get_effective_user(request)
+    if not session_id or session_id in ["null", "undefined", "None"]:
+        all_sess = get_all_sessions(user_id=user["id"])
+        if all_sess and len(all_sess) > 0:
+            session_id = all_sess[0]["session_id"]
+        else:
+            session_id = f"sess_{uuid.uuid4().hex[:10]}"
+            create_session(session_id, "Check-in", user_id=user["id"])
     bridge = get_esp32_bridge()
     bridge.send("EMO:thinking")
 
@@ -761,6 +768,13 @@ async def process_text_chat(
     Instant text chat with grounded evidence scoring and immediate titling.
     """
     user = get_effective_user(request)
+    if not session_id or session_id in ["null", "undefined", "None"]:
+        all_sess = get_all_sessions(user_id=user["id"])
+        if all_sess and len(all_sess) > 0:
+            session_id = all_sess[0]["session_id"]
+        else:
+            session_id = f"sess_{uuid.uuid4().hex[:10]}"
+            create_session(session_id, "Check-in", user_id=user["id"])
     bridge = get_esp32_bridge()
     bridge.send("EMO:thinking")
 
