@@ -493,16 +493,29 @@ Welcome {short_name} warmly, mention that you're here to listen and keep them co
 DO NOT assume or invent exams, deadlines, or life situations. Keep it simple, welcoming, and open-ended.
 DO NOT sound robotic, bookish, or formal. Output strictly valid JSON.
 """
-            resp = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.3,
-                    thinking_config=types.ThinkingConfig(thinking_budget=0)
-                )
-            )
-            gdata = json.loads(resp.text)
+            gdata = None
+            for model_name in ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"]:
+                try:
+                    cfg = types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.3,
+                        max_output_tokens=300
+                    )
+                    if "2.5" in model_name:
+                        cfg.thinking_config = types.ThinkingConfig(thinking_budget=0)
+                    resp = client.models.generate_content(
+                        model=model_name,
+                        contents=prompt,
+                        config=cfg
+                    )
+                    candidate = json.loads(resp.text)
+                    if candidate and "reply_text" in candidate:
+                        gdata = candidate
+                        break
+                except Exception as em:
+                    print(f"[!] Greeting model {model_name} notice: {em}")
+            if not gdata:
+                gdata = {}
             reply = gdata.get("reply_text", "").strip()
             spoken_script = gdata.get("spoken_tamil_script")
             if reply and len(reply) > 5:
@@ -737,32 +750,32 @@ Evaluate the emotional statement based strictly on the user's explicit words.
 Produce the requested JSON:
 """
 
-    try:
-        # Ultra-fast sub-second LLM inference with gemini-2.5-flash (zero thinking overhead)
-        fast_config = types.GenerateContentConfig(
-            system_instruction=SYSTEM_INSTRUCTION,
-            response_mime_type="application/json",
-            temperature=0.0,
-            max_output_tokens=400,
-            thinking_config=types.ThinkingConfig(thinking_budget=0)
-        )
-        try:
-            response = client.models.generate_content(
-                model="gemini-2.5-flash",
-                contents=prompt,
-                config=fast_config
-            )
-            data = json.loads(response.text)
-        except Exception as e_primary:
-            print(f"[!] Primary gemini-2.5-flash notice: {e_primary}, falling back to gemini-2.0-flash...")
-            response = client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=prompt,
-                config=fast_config
-            )
-            data = json.loads(response.text)
-    except Exception as e2:
-        print(f"[!] Fallback LLM error: {e2}")
+    data = None
+    if client:
+        # Ultra-fast sub-second model ladder: gemini-2.0-flash -> gemini-2.5-flash -> gemini-1.5-flash
+        for model_name in ["gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash"]:
+            try:
+                cfg = types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    response_mime_type="application/json",
+                    temperature=0.0,
+                    max_output_tokens=400
+                )
+                if "2.5" in model_name:
+                    cfg.thinking_config = types.ThinkingConfig(thinking_budget=0)
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=cfg
+                )
+                candidate_data = json.loads(response.text)
+                if candidate_data and "reply_text" in candidate_data:
+                    data = candidate_data
+                    break
+            except Exception as e_model:
+                print(f"[!] Model {model_name} notice: {e_model}")
+
+    if not data:
         data = {
             "reply_text": "I hear you, and I am right here with you. Take a soft breath. Tell me what has been on your mind.",
             "conversation_title": generate_quick_session_title(current_transcript),
