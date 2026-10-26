@@ -16,6 +16,7 @@ let audioChunks = [];
 let audioContext = null;
 let analyser = null;
 let animFrameId = null;
+let activeVisualizerSource = null;
 let lastRecordedBlob = null;
 let speechRecognizer = null;
 let recognizedTranscript = "";
@@ -787,6 +788,14 @@ function enterVoiceMode() {
 }
 
 function exitVoiceMode() {
+    if (animFrameId) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+    }
+    if (activeVisualizerSource) {
+        try { activeVisualizerSource.disconnect(); } catch(e){}
+        activeVisualizerSource = null;
+    }
     isVoiceModalActive = false;
     const modal = document.getElementById("chatgptVoiceModal");
     if (modal) modal.classList.add("hidden");
@@ -909,6 +918,14 @@ function resetMicMeter() {
 
 // --- SPECTACULAR SOUND & TONE AUDIO VISUALIZER (OPTIMIZED 60 FPS CAP) ---
 function startVisualizer(stream) {
+    if (animFrameId) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+    }
+    if (activeVisualizerSource) {
+        try { activeVisualizerSource.disconnect(); } catch(e){}
+        activeVisualizerSource = null;
+    }
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
@@ -916,6 +933,7 @@ function startVisualizer(stream) {
         audioContext.resume();
     }
     const source = audioContext.createMediaStreamSource(stream);
+    activeVisualizerSource = source;
     analyser = audioContext.createAnalyser();
     analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.8;
@@ -947,10 +965,13 @@ function startVisualizer(stream) {
 
     function render(timestamp) {
         if (!isRecording && (!audioPlayer || audioPlayer.paused)) {
+            if (animFrameId) {
+                cancelAnimationFrame(animFrameId);
+                animFrameId = null;
+            }
             drawIdleWaveform();
             return;
         }
-        animFrameId = requestAnimationFrame(render);
 
         // Strict Hardware Frame Rate Limiter: Strictly hard-capped to <= 60 FPS (16.67ms frame time)
         // Ensures smooth, buttery rendering while preventing GPU overheating, battery drain, and thermal throttling on all low-end devices
@@ -959,9 +980,13 @@ function startVisualizer(stream) {
         if (timestamp) {
             if (!lastRenderTime) lastRenderTime = timestamp;
             const elapsed = timestamp - lastRenderTime;
-            if (elapsed < MIN_FRAME_INTERVAL) return;
+            if (elapsed < MIN_FRAME_INTERVAL) {
+                animFrameId = requestAnimationFrame(render);
+                return;
+            }
             lastRenderTime = timestamp - (elapsed % MIN_FRAME_INTERVAL);
         }
+        animFrameId = requestAnimationFrame(render);
 
         analyser.getByteFrequencyData(freqData);
         analyser.getByteTimeDomainData(timeData);
@@ -1245,7 +1270,7 @@ function startVisualizer(stream) {
             inlineCtx.globalAlpha = 1.0;
         }
     }
-    render();
+    animFrameId = requestAnimationFrame(render);
 }
 
 function setupAudioPlayerEvents() {
@@ -1274,6 +1299,10 @@ function setupAudioPlayerEvents() {
     });
 
     audioPlayer.addEventListener("ended", () => {
+        if (!isRecording && animFrameId) {
+            cancelAnimationFrame(animFrameId);
+            animFrameId = null;
+        }
         setLiveStatus("Ready", "");
         orbCaption.textContent = (isHandsFree || isVoiceModalActive) ? "Listening to your thoughts..." : "Click microphone or type to reflect";
         drawIdleWaveform();
@@ -1307,6 +1336,10 @@ function setupAudioPlayerEvents() {
     });
 
     audioPlayer.addEventListener("pause", () => {
+        if (!isRecording && animFrameId) {
+            cancelAnimationFrame(animFrameId);
+            animFrameId = null;
+        }
         setLiveStatus("Ready", "");
         notifyEsp32SpeechState(0);
         if (isVoiceModalActive) {
@@ -1679,20 +1712,16 @@ async function startRecording() {
     notifyEsp32Emotion("thinking");
     try {
         const selectedMicId = micDeviceSelect ? micDeviceSelect.value : "";
-        const audioConstraints = selectedMicId
-            ? {
-                deviceId: { exact: selectedMicId },
-                channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-              }
-            : {
-                channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: true,
-                autoGainControl: true
-              };
+        const audioConstraints = {
+            channelCount: 1,
+            sampleRate: { ideal: 16000 },
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+        };
+        if (selectedMicId) {
+            audioConstraints.deviceId = { exact: selectedMicId };
+        }
 
         let stream;
         try {
@@ -1723,61 +1752,28 @@ async function startRecording() {
 
             const currentText = textInput ? textInput.value.trim() : "";
             const isBrowserHallucination = currentText.toLowerCase().split(/\s+/).every(w => w === "you" || w === "thank");
+            const finalClientText = (!isBrowserHallucination && currentText.length >= 2) ? currentText : "";
 
-            if (!currentText || currentText.length < 2 || isBrowserHallucination) {
-                if (textInput) textInput.value = "";
-                orbCaption.textContent = "Transcribing speech with neural Whisper...";
-                setLiveStatus("Transcribing...", "listening");
+            if (lastRecordedBlob && lastRecordedBlob.size > 1500) {
+                orbCaption.textContent = "Voice captured. Arogya is reflecting...";
+                setLiveStatus("Reflecting...", "listening");
                 if (isVoiceModalActive) {
                     const modalState = document.getElementById("modalVoiceStateText");
-                    if (modalState) modalState.textContent = "Transcribing your speech...";
+                    if (modalState) modalState.textContent = "Arogya is reflecting...";
+                    const userLive = document.getElementById("modalUserLiveText");
+                    if (userLive && finalClientText) userLive.textContent = `"${finalClientText}"`;
                 }
-
-                try {
-                    const formTr = new FormData();
-                    formTr.append("file", lastRecordedBlob, "speech.webm");
-                    const trRes = await fetch("/api/transcribe", { method: "POST", body: formTr, credentials: "include" });
-                    const trData = await trRes.json();
-                    const trText = (trData.transcript || "").trim();
-
-                    if (trText.length > 1) {
-                        if (textInput) textInput.value = trText;
-                        if (isVoiceModalActive) {
-                            const modalUser = document.getElementById("modalUserLiveText");
-                            if (modalUser) modalUser.textContent = `"${trText}"`;
-                        }
-                        orbCaption.textContent = "Speech transcribed. Reflecting...";
-                        await handleTextSubmit();
-                        return;
-                    } else if (lastRecordedBlob && lastRecordedBlob.size > 2000) {
-                        // Pass directly to voice chat endpoint with acoustic features and full Whisper pipeline
-                        if (textInput) textInput.value = "Voice reflection";
-                        orbCaption.textContent = "Reflecting on your voice...";
-                        await handleTextSubmit();
-                        return;
-                    } else {
-                        orbCaption.textContent = "Microphone captured silence. Speak into the mic or type.";
-                        if (isVoiceModalActive) {
-                            const modalState = document.getElementById("modalVoiceStateText");
-                            if (modalState) modalState.textContent = "Silence captured. Speak again when ready.";
-                        }
-                    }
-                } catch(e) {
-                    console.error("Transcribe error:", e);
-                    if (lastRecordedBlob && lastRecordedBlob.size > 2000) {
-                        if (textInput) textInput.value = "Voice reflection";
-                        await handleTextSubmit();
-                        return;
-                    }
-                    orbCaption.textContent = "Could not catch words clearly. Try speaking again.";
-                }
-            } else {
-                orbCaption.textContent = "Speech captured. Reflecting...";
-                await handleTextSubmit();
+                await handleTextSubmit(finalClientText);
                 return;
+            } else {
+                orbCaption.textContent = "Microphone captured silence. Speak into the mic or type.";
+                if (isVoiceModalActive) {
+                    const modalState = document.getElementById("modalVoiceStateText");
+                    if (modalState) modalState.textContent = "Silence captured. Speak again when ready.";
+                }
+                setLiveStatus("Ready", "");
+                if (textInput) textInput.focus();
             }
-            setLiveStatus("Ready", "");
-            if (textInput) textInput.focus();
         };
 
         if (!speechRecognizer) initSpeechRecognition();
@@ -1853,15 +1849,18 @@ function stopRecording() {
 }
 
 // --- SUBMISSION: CHATGPT-SPEED RESPONSE & IMMEDIATE TITLING ---
-async function handleTextSubmit() {
-    const text = textInput ? textInput.value.trim() : "";
-    if (!text) {
+async function handleTextSubmit(overrideText = null) {
+    const text = overrideText !== null ? overrideText : (textInput ? textInput.value.trim() : "");
+    const audioToSend = lastRecordedBlob;
+    lastRecordedBlob = null;
+
+    if (!text && !audioToSend) {
         orbCaption.textContent = "Please speak into the mic or type first.";
         return;
     }
 
     if (textInput) textInput.value = "";
-    appendPendingUserToUI(text);
+    appendPendingUserToUI(text || "Voice reflection...");
     setLiveStatus("Reflecting...", "listening");
     orbCaption.textContent = "Arogya is reflecting...";
     notifyEsp32Emotion("thinking");
@@ -1870,11 +1869,8 @@ async function handleTextSubmit() {
         const modalState = document.getElementById("modalVoiceStateText");
         if (modalState) modalState.textContent = "Arogya is reflecting...";
         const userLive = document.getElementById("modalUserLiveText");
-        if (userLive) userLive.textContent = `"${text}"`;
+        if (userLive) userLive.textContent = `"${text || 'Listening to your voice...'}"`;
     }
-
-    const audioToSend = lastRecordedBlob;
-    lastRecordedBlob = null;
 
     try {
         let res, data;
@@ -1883,7 +1879,7 @@ async function handleTextSubmit() {
             formData.append("file", audioToSend, "user_speech.webm");
             formData.append("session_id", currentSessionId);
             formData.append("voice_mode", voiceMode);
-            formData.append("client_transcript", text === "Voice reflection" ? "" : text);
+            formData.append("client_transcript", text === "Voice reflection..." ? "" : text);
 
             res = await fetch("/api/chat/voice", {
                 method: "POST",
@@ -1907,7 +1903,7 @@ async function handleTextSubmit() {
 
         currentAiReplyText = data.reply_text || "";
         currentSpeakingFace = data.speaking_face || "caring";
-        const finalUserSpokenText = data.transcript || text;
+        const finalUserSpokenText = data.transcript || text || "Voice reflection";
 
         if (isVoiceModalActive) {
             const aiLive = document.getElementById("modalAiLiveText");

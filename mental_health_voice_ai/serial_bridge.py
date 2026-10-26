@@ -7,8 +7,10 @@ Runs seamlessly on both local development machines and cloud environments (e.g. 
 """
 
 import time
+import json
 import queue
 import threading
+import urllib.request
 from typing import Optional
 
 try:
@@ -28,18 +30,51 @@ class ESP32Bridge:
         self.last_connected_port: Optional[str] = None
         self._logged_no_port = False
 
+        self.current_emotion = "calm"
+        self.current_activity = "idle"
+        self._last_http_post = 0.0
+
         if HAS_SERIAL:
             threading.Thread(target=self._run, daemon=True, name="ESP32-Serial-Worker").start()
+
+    def _notify_http_bridge(self, emotion: str, activity: str):
+        """Asynchronously dispatches state to local Wi-Fi Hotspot bridge (port 5000)."""
+        def _worker():
+            try:
+                payload = json.dumps({"emotion": emotion, "activity": activity}).encode("utf-8")
+                req = urllib.request.Request(
+                    "http://127.0.0.1:5000/api/expression",
+                    data=payload,
+                    headers={"Content-Type": "application/json"},
+                    method="POST"
+                )
+                with urllib.request.urlopen(req, timeout=0.5) as resp:
+                    pass
+            except Exception:
+                pass
+        threading.Thread(target=_worker, daemon=True).start()
 
     def send(self, line: str):
         """
         Enqueues an opcode line to send to the ESP32 (e.g. 'EMO:caring', 'SPK:1').
-        Non-blocking: drops message if queue is full rather than stalling audio/LLM.
+        Dispatches to both physical USB Serial (if connected) and Wi-Fi Hotspot HTTP bridge.
         """
-        if not HAS_SERIAL:
-            return
         clean_line = line.strip()
         if not clean_line:
+            return
+
+        # Update and relay to Wi-Fi Hotspot HTTP Bridge
+        if clean_line.startswith("EMO:"):
+            self.current_emotion = clean_line[4:].strip().lower()
+            self._notify_http_bridge(self.current_emotion, self.current_activity)
+        elif clean_line == "SPK:1":
+            self.current_activity = "speaking"
+            self._notify_http_bridge(self.current_emotion, "speaking")
+        elif clean_line == "SPK:0":
+            self.current_activity = "idle"
+            self._notify_http_bridge(self.current_emotion, "idle")
+
+        if not HAS_SERIAL:
             return
         try:
             self.q.put_nowait(clean_line)
