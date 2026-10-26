@@ -470,7 +470,7 @@ def delete_session(session_id: str, user_id: Optional[str] = None) -> bool:
     conn.close()
     return True
 
-def save_message(session_id: str, role: str, text: str, audio_path: Optional[str] = None, speech_metrics: Optional[Dict[str, Any]] = None):
+def save_message(session_id: str, role: str, text: str, audio_path: Optional[str] = None, speech_metrics: Optional[Dict[str, Any]] = None, user_id: Optional[str] = None):
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -478,17 +478,21 @@ def save_message(session_id: str, role: str, text: str, audio_path: Optional[str
     metrics_str = json.dumps(speech_metrics) if speech_metrics else None
 
     # Guarantee session exists in sessions table for foreign key and history integrity
+    target_user = user_id or 'primary_user'
     cursor.execute("""
         INSERT OR IGNORE INTO sessions (session_id, title, created_at, last_active, user_id)
-        VALUES (?, 'Check-in', ?, ?, 'primary_user')
-    """, (session_id, now, now))
+        VALUES (?, 'Check-in', ?, ?, ?)
+    """, (session_id, now, now, target_user))
 
     cursor.execute("""
         INSERT INTO messages (session_id, role, text, timestamp, audio_path, speech_metrics_json)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (session_id, role, text, now, audio_path, metrics_str))
 
-    cursor.execute("UPDATE sessions SET last_active = ? WHERE session_id = ?", (now, session_id))
+    if user_id:
+        cursor.execute("UPDATE sessions SET last_active = ?, user_id = COALESCE(user_id, ?) WHERE session_id = ?", (now, user_id, session_id))
+    else:
+        cursor.execute("UPDATE sessions SET last_active = ? WHERE session_id = ?", (now, session_id))
     conn.commit()
     conn.close()
 

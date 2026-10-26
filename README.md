@@ -103,12 +103,12 @@ graph TD
 
 ## 📦 Tech Stack
 
-- **Backend:** Python 3.11, FastAPI, Uvicorn, SQLite3 (WAL mode)
+- **Backend:** Python 3.11.9, FastAPI, Uvicorn, SQLite3 (WAL mode) — configured with `.python-version` & `runtime.txt` for automatic Render cloud deployments
 - **AI Models & Pipeline:**
-  - Google Gemini API (`gemini-3.5-flash-lite`, `google-genai` SDK)
+  - Google Gemini API (`gemini-2.0-flash` sub-second inference with `gemini-1.5-flash` resilient fallback)
   - Faster-Whisper (CTranslate2, CUDA FP16 on RTX 3050 GPU)
   - Conversational Tamil/Tanglish Naturalizer (`tanglish_engine.py`)
-  - Microsoft Edge-TTS (`ta-IN-PallaviNeural`, `en-IN-NeerjaNeural`)
+  - Microsoft Edge-TTS (`ta-IN-PallaviNeural`, `en-IN-NeerjaNeural` sub-second ~0.35s voice; cloned models preserved on disk)
 - **Audio DSP:** Librosa (pYIN $f_0$), SoundFile, NumPy, FFmpeg
 - **Frontend:** HTML5 Canvas, Vanilla CSS3 (Editorial Monochrome system), JavaScript (ES6+), Web Audio API (Strict $\le 30\text{ FPS}$ Cap), Service Worker PWA
 - **Hardware Interface:** ESP32 Microcontroller (Wi-Fi HTTP & Serial Bridge), NVIDIA GeForce RTX 3050 6GB Laptop GPU (CUDA 13.0 / PyTorch cu121)

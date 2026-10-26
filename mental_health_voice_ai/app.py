@@ -479,27 +479,7 @@ def esp32_status():
     bridge = get_esp32_bridge()
     return bridge.get_status()
 
-@app.get("/api/debug_gemini")
-def debug_gemini():
-    from mental_health_voice_ai.mental_health_engine import client, API_KEY
-    if not API_KEY:
-        return {"status": "error", "error": "API_KEY is empty"}
-    try:
-        models = [m.name for m in client.models.list()]
-        return {"status": "ok", "models": models}
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
-def debug_gemini(model: str = "gemini-2.0-flash"):
-    from mental_health_voice_ai.mental_health_engine import client, API_KEY
-    from google.genai import types
-    if not API_KEY:
-        return {"status": "error", "error": "API_KEY is empty or missing in environment"}
-    try:
-        cfg = types.GenerateContentConfig(response_mime_type="application/json")
-        resp = client.models.generate_content(model=model, contents='output JSON: {"greeting": "hi"}', config=cfg)
-        return {"model": model, "status": "ok", "reply": resp.text.strip()}
-    except Exception as e:
-        return {"model": model, "status": "error", "msg": str(e)}
+
 
 @app.get("/api/expression")
 @app.get("/expression")
@@ -694,7 +674,8 @@ async def process_voice_chat(
         role="user",
         text=transcript,
         audio_path=f"/audio/{clean_filename}",
-        speech_metrics=acoustic_features
+        speech_metrics=acoustic_features,
+        user_id=user["id"]
     )
 
     # 6. Evidence-Grounded Evaluation & Empathetic Response (temp=0.0)
@@ -735,7 +716,8 @@ async def process_voice_chat(
         session_id=session_id,
         role="assistant",
         text=reply_text,
-        audio_path=ai_audio_url
+        audio_path=ai_audio_url,
+        user_id=user["id"]
     )
 
     # 9. Update Database Record with Grounded Evidence
@@ -818,7 +800,7 @@ async def process_text_chat(
     if latest_rec and latest_rec.get("overall_wellness") is not None and baseline.get("wellness_std"):
         trend_z = (latest_rec["overall_wellness"] - baseline["wellness_mean"]) / baseline["wellness_std"]
 
-    save_message(session_id=session_id, role="user", text=text, speech_metrics=dummy_acoustics)
+    save_message(session_id=session_id, role="user", text=text, speech_metrics=dummy_acoustics, user_id=user["id"])
 
     eval_result = analyze_and_respond(
         current_transcript=text,
@@ -857,7 +839,7 @@ async def process_text_chat(
         except Exception as e:
             print(f"[!] Speech synthesis notice: {e}")
 
-    save_message(session_id=session_id, role="assistant", text=reply_text, audio_path=ai_audio_url)
+    save_message(session_id=session_id, role="assistant", text=reply_text, audio_path=ai_audio_url, user_id=user["id"])
     eval_result["session_id"] = session_id
     eval_result["voice_semitone_std"] = None
     save_mental_health_record(eval_result)

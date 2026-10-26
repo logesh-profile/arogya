@@ -212,21 +212,8 @@ async def synthesize_speech(
     """
     active_text = spoken_text if (spoken_text and len(spoken_text.strip()) > 0) else text
 
-    if mode == "cloned":
-        f5tts = get_f5tts()
-        if f5tts is not None and os.path.exists(REF_AUDIO):
-            try:
-                loop = asyncio.get_event_loop()
-                # For F5-TTS, strictly enforce Latin phonetic Tanglish/English (strip any raw Tamil script)
-                cloned_text = text
-                if re.search(r'[\u0B80-\u0BFF]', cloned_text):
-                    # Strip any Tamil script characters that F5-TTS diffusion vocabulary cannot tokenize
-                    cloned_text = re.sub(r'[\u0B80-\u0BFF]', '', cloned_text).strip()
-                if not cloned_text:
-                    cloned_text = "I am listening and right here with you."
-                return await loop.run_in_executor(None, synthesize_cloned_speech, cloned_text, wellness_score, dominant_state)
-            except Exception as e:
-                print(f"[!] Cloned speech synthesis notice: {e}, routing to Fast Neural voice")
+    # Standardized on Fast Native Neural Voice for instant sub-second responses (~0.35s).
+    # Cloned voice model and audio files are preserved on disk for future activation if needed.
 
     return await synthesize_fast_speech(
         active_text,
