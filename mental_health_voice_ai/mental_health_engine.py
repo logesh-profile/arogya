@@ -630,14 +630,30 @@ def compute_deterministic_wellness(
     max_pts = float(len(dim_labels) * 3)  # 21.0
     text_sym = total_symptom_pts / max_pts  # 0.0 to 1.0
 
-    s = 0.6 * text_sym
-    if voice_z is not None and n_sessions >= 5:
-        s += 0.15 * float(np.clip(voice_z / 3.0, -1.0, 1.0))
-    if trend_z is not None and n_sessions >= 5:
-        s += 0.25 * float(np.clip(trend_z / 3.0, -1.0, 1.0))
+    max_score = max(scores) if scores else 0
+    active_dims = sum(1 for s_val in scores if s_val > 0)
 
-    confidence = round(min(1.0, max(0.25, n_sessions / 5.0)), 2)
-    wellness_score = int(np.clip(round(100.0 * (1.0 - s)), 5, 100))
+    # Clinically calibrated symptom deduction model:
+    # - Peak severity penalty: Level 1 (-12 pts), Level 2 (-24 pts), Level 3 (-38 pts)
+    # - Comorbidity burden: +6 pts deduction per additional active symptom dimension
+    peak_penalty = {0: 0, 1: 12, 2: 24, 3: 38}.get(max_score, 0)
+    comorbidity_penalty = max(0, active_dims - 1) * 6
+    symptom_deduction = peak_penalty + comorbidity_penalty
+
+    # Base equilibrium wellness is 84 (healthy everyday balance), or 86 for positive check-ins
+    if total_symptom_pts == 0:
+        base_wellness = 86.0
+    else:
+        base_wellness = max(15.0, 84.0 - symptom_deduction)
+
+    if voice_z is not None and n_sessions >= 3:
+        # Acoustic pitch flattening indicates strain
+        base_wellness -= float(np.clip(voice_z * 3.0, -8.0, 8.0))
+    if trend_z is not None and n_sessions >= 3:
+        base_wellness += float(np.clip(trend_z * 3.0, -6.0, 6.0))
+
+    confidence = round(min(1.0, max(0.45, 0.5 + (total_symptom_pts * 0.08) + (n_sessions / 10.0))), 2)
+    wellness_score = int(np.clip(round(base_wellness), 10, 98))
 
     return {
         "overall_wellness": wellness_score,

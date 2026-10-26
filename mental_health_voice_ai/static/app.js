@@ -1435,12 +1435,16 @@ function renderSessionsList(sessions) {
             selectSession(s.session_id);
         };
 
-        const score = s.overall_wellness || 75;
+        const score = Math.round(s.overall_wellness != null ? s.overall_wellness : 75);
+        const scoreClass = score >= 75 ? "score-good" : (score >= 55 ? "score-fair" : "score-low");
         const dateStr = new Date(s.created_at).toLocaleDateString("en-IN", { month: "short", day: "numeric" });
 
         item.innerHTML = `
             <div class="session-item-content">
-                <span class="session-item-title">${escapeHtml(s.title || "Check-in")}</span>
+                <div class="session-item-title-row">
+                    <span class="session-item-title">${escapeHtml(s.title || "Check-in")}</span>
+                    <span class="session-score-pill ${scoreClass}">${score}%</span>
+                </div>
                 <span class="session-item-meta tabular-num">${dateStr} • ${escapeHtml(s.dominant_emotion || "Reflective")}</span>
             </div>
             <div class="session-actions">
@@ -1548,6 +1552,14 @@ async function loadSessionData(sessionId) {
         const data = await res.json();
 
         if (currentSessionTitle) currentSessionTitle.textContent = data.session.title || "Emotional Wellness Reflection";
+        
+        const sessionWellness = (data.session && data.session.overall_wellness != null) 
+            ? data.session.overall_wellness 
+            : (data.latest_score && data.latest_score.overall_wellness);
+        const sessionState = (data.session && data.session.dominant_emotion) 
+            || (data.latest_score && data.latest_score.dominant_state);
+        updateHeaderScorePill(sessionWellness, sessionState);
+
         if (data.messages && data.messages.length > 0) {
             chatStream.innerHTML = "";
             renderMessageHistory(data.messages);
@@ -1572,7 +1584,9 @@ function renderMessageHistory(messages) {
         if (msg.role === "user") {
             lastUserText = msg.text;
         } else if (msg.role === "assistant") {
-            appendExchangeToUI(msg.text, lastUserText, msg.audio_path, false);
+            const turnScore = (msg.speech_metrics && msg.speech_metrics.overall_wellness != null) ? msg.speech_metrics.overall_wellness : null;
+            const turnState = (msg.speech_metrics && msg.speech_metrics.dominant_state) ? msg.speech_metrics.dominant_state : null;
+            appendExchangeToUI(msg.text, lastUserText, msg.audio_path, false, turnScore, turnState);
             lastUserText = "";
         }
     });
@@ -1644,7 +1658,7 @@ function renderWelcomeCard() {
 
 // - Arogya Captions: Newsreader (300 Large & Light, Warm Human Voice)
 // - Spoken Words: Newsreader Italic (Quieter Subline)
-function appendExchangeToUI(captionText, userSpokenWords, audioUrl, autoplay = false) {
+function appendExchangeToUI(captionText, userSpokenWords, audioUrl, autoplay = false, turnScore = null, turnEmotion = null) {
     const pendingCard = document.getElementById("pendingUserCard");
     if (pendingCard) pendingCard.remove();
     const welcomeCard = document.getElementById("chatWelcomeCard");
@@ -1660,6 +1674,14 @@ function appendExchangeToUI(captionText, userSpokenWords, audioUrl, autoplay = f
         </button>
     ` : "";
 
+    let scoreBadgeHtml = "";
+    if (turnScore != null) {
+        const s = Math.round(turnScore);
+        const badgeClass = s >= 75 ? "score-good" : (s >= 55 ? "score-fair" : "score-low");
+        const emotionLabel = turnEmotion ? ` • ${escapeHtml(turnEmotion)}` : "";
+        scoreBadgeHtml = `<span class="turn-score-badge ${badgeClass}" title="Evaluated mental wellness score for this reflection">${s}%${emotionLabel}</span>`;
+    }
+
     const userSublineHtml = userSpokenWords ? `
         <div class="user-spoken-subline">
             <span class="user-echo-indicator">You:</span>
@@ -1670,7 +1692,10 @@ function appendExchangeToUI(captionText, userSpokenWords, audioUrl, autoplay = f
     exchange.innerHTML = `
         <div class="arogya-caption-card">
             <div class="caption-sender-header">
-                <span class="caption-sender-name">Arogya</span>
+                <div class="caption-sender-left">
+                    <span class="caption-sender-name">Arogya</span>
+                    ${scoreBadgeHtml}
+                </div>
                 ${playBtnHtml}
             </div>
             <div class="arogya-caption-text">${escapeHtml(captionText)}</div>
@@ -1979,8 +2004,12 @@ async function handleTextSubmit(overrideText = null) {
             if (modalState) modalState.textContent = "Arogya is speaking... (tap or speak to interrupt)";
         }
 
-        // Render response: Arogya Newsreader caption on top, user's words italic underneath
-        appendExchangeToUI(data.reply_text, finalUserSpokenText, data.audio_url, true);
+        const turnScore = (data.evaluation && data.evaluation.overall_wellness !== undefined) ? data.evaluation.overall_wellness : data.overall_wellness;
+        const turnState = (data.evaluation && (data.evaluation.dominant_state || data.evaluation.dominant_emotion)) || data.dominant_state;
+
+        // Render response: Arogya Newsreader caption on top, user's words italic underneath, with live turn score badge
+        appendExchangeToUI(data.reply_text, finalUserSpokenText, data.audio_url, true, turnScore, turnState);
+        updateHeaderScorePill(turnScore, turnState);
 
         // Immediate Chat Titling
         if (data.new_title) {
@@ -2127,15 +2156,33 @@ function updateScorecard(evalData) {
                 ? `Session mean pitch variance (${std} st) relative to speaker median.`
                 : "Text-based input or awaiting voiced speech.";
         }
+    if (evalData.overall_wellness !== undefined && evalData.overall_wellness !== null) {
+        updateHeaderScorePill(evalData.overall_wellness, evalData.dominant_state || evalData.dominant_emotion);
     }
 }
 
+function updateHeaderScorePill(wellness, state) {
+    const pill = document.getElementById("headerScorePill");
+    if (!pill) return;
+    if (wellness == null) {
+        pill.textContent = "84% • Balanced";
+        pill.className = "header-score-pill score-good";
+        return;
+    }
+    const score = Math.round(wellness);
+    const scoreClass = score >= 75 ? "score-good" : (score >= 55 ? "score-fair" : "score-low");
+    const label = state || (score >= 75 ? "Balanced" : (score >= 55 ? "Strain / Fatigue" : "Elevated Distress"));
+    pill.textContent = `${score}% • ${label}`;
+    pill.className = `header-score-pill ${scoreClass}`;
+}
+
 function resetScorecard() {
-    if (wellnessScoreNum) wellnessScoreNum.textContent = "75";
-    if (confidenceBadge) confidenceBadge.textContent = "Confidence: 50%";
-    if (scoreCircle) scoreCircle.style.strokeDashoffset = "62.8";
+    if (wellnessScoreNum) wellnessScoreNum.textContent = "84";
+    if (confidenceBadge) confidenceBadge.textContent = "Confidence: Baseline";
+    if (scoreCircle) scoreCircle.style.strokeDashoffset = "40.2";
     if (wellnessBadge) wellnessBadge.textContent = "Grounded & Balanced";
     if (dominantEmotion) dominantEmotion.textContent = "Primary State: Calm";
+    updateHeaderScorePill(84, "Balanced");
     const aggregateNote = document.getElementById("aggregateNote");
     if (aggregateNote) aggregateNote.textContent = "Session Average (Awaiting Input)";
 

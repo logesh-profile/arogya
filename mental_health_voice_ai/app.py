@@ -118,6 +118,8 @@ def get_current_user(request: Request) -> Optional[dict]:
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header.split(" ", 1)[1].strip()
+    if not token:
+        token = request.query_params.get("token")
     if token:
         return get_user_by_session_token(token)
     return None
@@ -711,12 +713,13 @@ async def process_voice_chat(
         spoken_text=spoken_text
     )
 
-    # 8. Save Assistant Message (Stores canonical colloquial text for chat history)
+    # 8. Save Assistant Message (Stores canonical colloquial text & turn metrics for chat history)
     save_message(
         session_id=session_id,
         role="assistant",
         text=reply_text,
         audio_path=ai_audio_url,
+        speech_metrics={"overall_wellness": user_wellness, "dominant_state": user_state},
         user_id=user["id"]
     )
 
@@ -839,7 +842,14 @@ async def process_text_chat(
         except Exception as e:
             print(f"[!] Speech synthesis notice: {e}")
 
-    save_message(session_id=session_id, role="assistant", text=reply_text, audio_path=ai_audio_url, user_id=user["id"])
+    save_message(
+        session_id=session_id,
+        role="assistant",
+        text=reply_text,
+        audio_path=ai_audio_url,
+        speech_metrics={"overall_wellness": user_wellness, "dominant_state": user_state},
+        user_id=user["id"]
+    )
     eval_result["session_id"] = session_id
     eval_result["voice_semitone_std"] = None
     save_mental_health_record(eval_result)

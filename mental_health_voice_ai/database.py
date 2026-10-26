@@ -1073,6 +1073,20 @@ def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
     """, (user_id,))
     session_rows = [dict(r) for r in cursor.fetchall()]
 
+    # If authenticated user has no direct sessions yet, adopt guest/primary_user sessions
+    if not session_rows and user_id != "primary_user":
+        cursor.execute("""
+            SELECT session_id, title, created_at, last_active, overall_wellness, dominant_emotion, summary
+            FROM sessions
+            WHERE user_id = 'primary_user'
+            ORDER BY created_at ASC
+        """)
+        fallback_rows = [dict(r) for r in cursor.fetchall()]
+        if fallback_rows:
+            cursor.execute("UPDATE sessions SET user_id = ? WHERE user_id = 'primary_user'", (user_id,))
+            conn.commit()
+            session_rows = fallback_rows
+
     # 2. Fetch all mental health records for this user's sessions
     cursor.execute("""
         SELECT r.* FROM mental_health_records r

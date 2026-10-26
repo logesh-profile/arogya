@@ -2,16 +2,43 @@
  * Arogya • Longitudinal Clinical Analytics & Trajectory Controller
  */
 
+function analyticsFetch(url, options = {}) {
+    if (!options.headers) {
+        options.headers = {};
+    }
+    options.credentials = "include";
+    const token = localStorage.getItem("arogya_session_token");
+    if (token && !options.headers["Authorization"]) {
+        if (options.headers instanceof Headers) {
+            options.headers.set("Authorization", `Bearer ${token}`);
+        } else {
+            options.headers["Authorization"] = `Bearer ${token}`;
+        }
+    }
+    return fetch(url, options);
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     initTheme();
+    setupExportLink();
     loadCurrentUser();
     loadAnalyticsData();
 });
 
+function setupExportLink() {
+    const exportBtn = document.getElementById("exportReportBtn");
+    if (exportBtn) {
+        const token = localStorage.getItem("arogya_session_token");
+        if (token) {
+            exportBtn.href = `/api/analytics/export/download?token=${encodeURIComponent(token)}`;
+        }
+    }
+}
+
 // Load authenticated user profile
 async function loadCurrentUser() {
     try {
-        const res = await fetch("/api/auth/me");
+        const res = await analyticsFetch("/api/auth/me");
         if (res.ok) {
             const data = await res.json();
             if (data.authenticated && data.user) {
@@ -67,7 +94,7 @@ function updateThemeUI(theme) {
 // Fetch & Populate Analytics Summary
 async function loadAnalyticsData() {
     try {
-        const res = await fetch("/api/analytics/summary");
+        const res = await analyticsFetch("/api/analytics/summary");
         if (!res.ok) throw new Error("Failed to load analytics summary");
         const data = await res.json();
         window.lastAnalyticsData = data;
@@ -127,8 +154,8 @@ function renderTrendChart(timeline, kpis) {
     const ctx = canvas.getContext("2d");
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
-    const w = rect.width;
-    const h = rect.height;
+    const w = rect.width || (canvas.parentElement ? canvas.parentElement.clientWidth : 800) || 800;
+    const h = rect.height || 260;
 
     canvas.width = w * dpr;
     canvas.height = h * dpr;
@@ -390,4 +417,12 @@ if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('/sw.js').catch(() => {});
     });
 }
+
+// Window resize listener to re-render chart smoothly
+window.addEventListener("resize", () => {
+    if (window.lastAnalyticsData) {
+        renderTrendChart(window.lastAnalyticsData.timeline, window.lastAnalyticsData.kpis);
+    }
+});
+
 
