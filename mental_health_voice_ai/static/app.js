@@ -551,25 +551,26 @@ function setupAuthEvents() {
         });
     }
 
-    // Sidebar auth button
-    if (sidebarAuthBtn) {
-        sidebarAuthBtn.addEventListener("click", () => {
-            if (currentUser) {
-                if (userProfilePopup) userProfilePopup.classList.toggle("hidden");
-            } else {
-                window.location.href = "/login";
+    // Sidebar user card & auth button
+    const sidebarUserCard = document.getElementById("sidebarUserCard");
+    const handleSidebarAuthClick = (e) => {
+        e.stopPropagation();
+        if (currentUser) {
+            if (userProfilePopup) {
+                userProfilePopup.classList.toggle("hidden");
+                if (userProfileBtn) userProfileBtn.classList.toggle("active", !userProfilePopup.classList.contains("hidden"));
             }
-        });
+        } else {
+            window.location.href = "/login";
+        }
+    };
+    if (sidebarAuthBtn) {
+        sidebarAuthBtn.addEventListener("click", handleSidebarAuthClick);
     }
-
-    // Sidebar auth button
-    if (sidebarAuthBtn) {
-        sidebarAuthBtn.addEventListener("click", () => {
-            if (currentUser) {
-                if (userProfilePopup) userProfilePopup.classList.toggle("hidden");
-            } else {
-                openLoginGate(false);
-            }
+    if (sidebarUserCard) {
+        sidebarUserCard.addEventListener("click", (e) => {
+            if (e.target.closest("#sidebarAuthBtn")) return; // handled by button
+            handleSidebarAuthClick(e);
         });
     }
 
@@ -903,6 +904,14 @@ async function initMicDeviceSelector() {
         if (!micDeviceSelect) return;
         micDeviceSelect.innerHTML = "";
 
+        if (audioInputs.length === 0) {
+            const opt = document.createElement("option");
+            opt.value = "";
+            opt.textContent = "Default Microphone";
+            micDeviceSelect.appendChild(opt);
+            return;
+        }
+
         let preferredId = localStorage.getItem("preferred_mic_id") || "";
         let autoSelectedId = "";
 
@@ -929,12 +938,18 @@ async function initMicDeviceSelector() {
             micDeviceSelect.value = targetId;
         }
 
-        micDeviceSelect.addEventListener("change", () => {
-            localStorage.setItem("preferred_mic_id", micDeviceSelect.value);
-            console.log("[*] Preferred microphone set to:", micDeviceSelect.options[micDeviceSelect.selectedIndex]?.text);
-        });
+        if (!micDeviceSelect._hasChangeListener) {
+            micDeviceSelect.addEventListener("change", () => {
+                localStorage.setItem("preferred_mic_id", micDeviceSelect.value);
+                console.log("[*] Preferred microphone set to:", micDeviceSelect.options[micDeviceSelect.selectedIndex]?.text);
+            });
+            micDeviceSelect._hasChangeListener = true;
+        }
     } catch (err) {
         console.warn("Could not enumerate audio devices:", err);
+        if (micDeviceSelect && micDeviceSelect.options.length === 0) {
+            micDeviceSelect.innerHTML = '<option value="">Default Microphone</option>';
+        }
     }
 }
 
@@ -2207,6 +2222,8 @@ function updateScorecard(evalData) {
                 ? `Session mean pitch variance (${std} st) relative to speaker median.`
                 : "Text-based input or awaiting voiced speech.";
         }
+    }
+
     if (evalData.overall_wellness !== undefined && evalData.overall_wellness !== null) {
         updateHeaderScorePill(evalData.overall_wellness, evalData.dominant_state || evalData.dominant_emotion);
     }
