@@ -414,6 +414,42 @@ You MUST output strictly valid JSON matching this exact structure:
 """
 
 
+def query_local_ollama(prompt: str, system_instruction: str, model_name: str = "qwen2.5:3b") -> Optional[Dict[str, Any]]:
+    """
+    Sub-second offline local inference via Ollama on RTX 3050 GPU (http://127.0.0.1:11434).
+    Seamlessly falls back to cloud Gemini if Ollama is not active.
+    """
+    import urllib.request
+    ollama_host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
+    target_model = os.getenv("OLLAMA_MODEL", model_name)
+    try:
+        payload = json.dumps({
+            "model": target_model,
+            "prompt": f"{system_instruction}\n\n{prompt}",
+            "format": "json",
+            "stream": False,
+            "options": {"temperature": 0.0, "num_predict": 450}
+        }).encode("utf-8")
+        req = urllib.request.Request(
+            f"{ollama_host}/api/generate",
+            data=payload,
+            headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=3.5) as resp:
+            if resp.status == 200:
+                body = json.loads(resp.read().decode("utf-8"))
+                response_str = (body.get("response") or "").strip()
+                if response_str.startswith("```"):
+                    response_str = re.sub(r"^```(?:json)?\s*", "", response_str)
+                    response_str = re.sub(r"\s*```$", "", response_str)
+                cand = json.loads(response_str)
+                if cand and isinstance(cand, dict) and "reply_text" in cand:
+                    print(f"[+] Successfully responded via Local Ollama ({target_model}) on GPU")
+                    return cand
+    except Exception:
+        pass
+    return None
+
 # ---------------------------------------------------------------------------
 # 4B. DYNAMIC MEMORY-ANCHORED GREETING GENERATOR
 # ---------------------------------------------------------------------------
@@ -518,14 +554,14 @@ Welcome {short_name} warmly, mention that you're here to listen and keep them co
 DO NOT assume or invent exams, deadlines, or life situations. Keep it simple, welcoming, and open-ended.
 DO NOT sound robotic, bookish, or formal. Output strictly valid JSON.
 """
-            gdata = None
-            if client:
-                for model_name in ["gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.5-flash"]:
+            gdata = query_local_ollama(prompt, "You are Arogya, welcoming the user.")
+            if not gdata and client:
+                for model_name in ["gemini-flash-lite-latest", "gemini-3.5-flash-lite"]:
                     try:
                         cfg = types.GenerateContentConfig(
                             response_mime_type="application/json",
                             temperature=0.3,
-                            max_output_tokens=300
+                            max_output_tokens=250
                         )
                         resp = client.models.generate_content(
                             model=model_name,
@@ -840,16 +876,22 @@ Produce the requested JSON:
 """
 
     data = None
-    if client:
-        # Ultra-fast sub-second LLM inference with active high-quota models
-        candidate_models = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-3.5-flash"]
+
+    # 1. Check Local GPU Ollama if active (ultra-fast offline response on RTX 3050)
+    data = query_local_ollama(prompt, SYSTEM_INSTRUCTION)
+    if data:
+        print("[+] Processed via Local Ollama on GPU")
+
+    # 2. Cloud Gemini Flash Lite (sub-second high-quota cloud models)
+    if not data and client:
+        candidate_models = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite"]
         for model_name in candidate_models:
             try:
                 cfg = types.GenerateContentConfig(
                     system_instruction=SYSTEM_INSTRUCTION,
                     response_mime_type="application/json",
                     temperature=0.0,
-                    max_output_tokens=1200
+                    max_output_tokens=550
                 )
                 response = client.models.generate_content(
                     model=model_name,

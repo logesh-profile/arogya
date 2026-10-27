@@ -1671,12 +1671,18 @@ function appendExchangeToUI(captionText, userSpokenWords, audioUrl, autoplay = f
     const exchange = document.createElement("div");
     exchange.className = "conversation-exchange";
 
+    const escapedCaption = captionText.replace(/\\/g, "\\\\").replace(/'/g, "\\'").replace(/"/g, "&quot;").replace(/\n/g, " ");
     const playBtnHtml = audioUrl ? `
         <button class="btn-caption-play" onclick="playAudio('${audioUrl}')">
             <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             <span>Play</span>
         </button>
-    ` : "";
+    ` : `
+        <button class="btn-caption-play" onclick="synthesizeAndPlay('${escapedCaption}', this)">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            <span>Play</span>
+        </button>
+    `;
 
     let scoreBadgeHtml = "";
     if (turnScore != null) {
@@ -1746,6 +1752,39 @@ function playAudio(url) {
     audioPlayer.play().catch(err => {
         console.warn("Autoplay notice:", err);
     });
+}
+
+async function synthesizeAndPlay(text, btnEl) {
+    if (btnEl) {
+        btnEl.disabled = true;
+        btnEl.innerHTML = `<span style="font-size:10px;">Voicing...</span>`;
+    }
+    try {
+        const formData = new FormData();
+        formData.append("text", text);
+        formData.append("voice_mode", voiceMode || "fast");
+        const res = await apiFetch("/api/synthesize", {
+            method: "POST",
+            body: formData
+        });
+        if (res.ok) {
+            const data = await res.json();
+            if (data.audio_url) {
+                if (btnEl) {
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Play</span>`;
+                    btnEl.onclick = () => playAudio(data.audio_url);
+                }
+                playAudio(data.audio_url);
+            }
+        }
+    } catch (e) {
+        console.warn("TTS notice:", e);
+        if (btnEl) {
+            btnEl.disabled = false;
+            btnEl.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg><span>Play</span>`;
+        }
+    }
 }
 
 function setLiveStatus(text, modeClass) {
@@ -1983,10 +2022,11 @@ async function handleTextSubmit(overrideText = null) {
             });
             data = await res.json();
         } else {
+            // Text input: Send voice_mode="none" for instant sub-second text display without waiting for audio
             const formData = new FormData();
             formData.append("text", text);
             formData.append("session_id", currentSessionId);
-            formData.append("voice_mode", voiceMode);
+            formData.append("voice_mode", "none");
 
             res = await apiFetch("/api/chat/text", {
                 method: "POST",
@@ -2011,9 +2051,14 @@ async function handleTextSubmit(overrideText = null) {
         const turnScore = (data.evaluation && data.evaluation.overall_wellness !== undefined) ? data.evaluation.overall_wellness : data.overall_wellness;
         const turnState = (data.evaluation && (data.evaluation.dominant_state || data.evaluation.dominant_emotion)) || data.dominant_state;
 
-        // Render response: Arogya Newsreader caption on top, user's words italic underneath, with live turn score badge
-        appendExchangeToUI(data.reply_text, finalUserSpokenText, data.audio_url, true, turnScore, turnState);
+        // Render response immediately: Arogya Newsreader caption on top, user's words italic underneath
+        appendExchangeToUI(data.reply_text, finalUserSpokenText, data.audio_url, Boolean(audioToSend && data.audio_url), turnScore, turnState);
         updateHeaderScorePill(turnScore, turnState);
+
+        // If user typed text but has auto-play active, synthesize in background without blocking text render!
+        if (!audioToSend && voiceMode !== "none" && !data.audio_url) {
+            synthesizeAndPlay(data.reply_text, null);
+        }
 
         // Immediate Chat Titling
         if (data.new_title) {

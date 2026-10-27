@@ -648,40 +648,62 @@ async def process_voice_chat(
         if not (all(w == "you" for w in words) or c_text.lower() in ["you", "thank you", "[gentle sigh]"]):
             transcript = c_text
 
-    loop = asyncio.get_event_loop()
-    if transcript:
-        # Client transcript provided; extract acoustics in background thread
-        acoustic_features = await loop.run_in_executor(None, extract_acoustic_features, active_audio_path)
-    else:
-        # Run Whisper GPU STT and Librosa CPU DSP concurrently
-        whisper_task = loop.run_in_executor(None, transcribe_audio, active_audio_path)
-        dsp_task = loop.run_in_executor(None, extract_acoustic_features, active_audio_path)
-        whisper_text, acoustic_features = await asyncio.gather(whisper_task, dsp_task)
-        if whisper_text:
-            transcript = whisper_text
-
-    if not transcript:
-        transcript = "I wanted to take a moment to reflect on my feelings."
-
-    # Immediate Affective Attunement: mirror user's vocal tone on ESP32 display
-    tone_emotion = classify_user_emotion_from_voice_tone(acoustic_features, transcript)
-    bridge.send(f"EMO:{tone_emotion['listening_face']}")
-
     # 4. Session History & Baseline Statistical Context
     session_messages = get_session_messages(session_id)
     historical_context = get_historical_context(session_id, user_id=user["id"])
     n_sessions = get_session_count(user_id=user["id"])
     baseline = get_user_baseline_stats(user_id=user["id"])
 
-    semitone_std = acoustic_features.get("pitch_semitone_std")
-    voice_z = None
-    if semitone_std is not None and baseline.get("voice_mean") is not None and baseline.get("voice_std"):
-        voice_z = (semitone_std - baseline["voice_mean"]) / baseline["voice_std"]
-
     latest_rec = get_latest_mental_health_record(session_id)
     trend_z = None
     if latest_rec and latest_rec.get("overall_wellness") is not None and baseline.get("wellness_std"):
         trend_z = (latest_rec["overall_wellness"] - baseline["wellness_mean"]) / baseline["wellness_std"]
+
+    loop = asyncio.get_event_loop()
+    if transcript:
+        # High-Speed Parallel Pipeline: Run Librosa DSP and LLM concurrently
+        dsp_task = loop.run_in_executor(None, extract_acoustic_features, active_audio_path)
+        llm_task = loop.run_in_executor(
+            None,
+            analyze_and_respond,
+            transcript,
+            {},
+            session_messages,
+            historical_context,
+            None,
+            trend_z,
+            n_sessions,
+            user["id"]
+        )
+        acoustic_features, eval_result = await asyncio.gather(dsp_task, llm_task)
+    else:
+        # Run Whisper STT and Librosa DSP concurrently
+        whisper_task = loop.run_in_executor(None, transcribe_audio, active_audio_path)
+        dsp_task = loop.run_in_executor(None, extract_acoustic_features, active_audio_path)
+        whisper_text, acoustic_features = await asyncio.gather(whisper_task, dsp_task)
+        transcript = whisper_text or "I wanted to take a moment to reflect on my feelings."
+        eval_result = analyze_and_respond(
+            current_transcript=transcript,
+            acoustic_features=acoustic_features,
+            session_history=session_messages,
+            historical_context=historical_context,
+            voice_z=None,
+            trend_z=trend_z,
+            n_sessions=n_sessions,
+            user_id=user["id"]
+        )
+
+    # Attach acoustic telemetry
+    eval_result["acoustic_features"] = acoustic_features
+    semitone_std = acoustic_features.get("pitch_semitone_std")
+    voice_z = None
+    if semitone_std is not None and baseline.get("voice_mean") is not None and baseline.get("voice_std"):
+        voice_z = (semitone_std - baseline["voice_mean"]) / baseline["voice_std"]
+    eval_result["voice_z"] = voice_z
+
+    # Immediate Affective Attunement: mirror user's vocal tone on ESP32 display
+    tone_emotion = classify_user_emotion_from_voice_tone(acoustic_features, transcript)
+    bridge.send(f"EMO:{tone_emotion['listening_face']}")
 
     # 5. Save User Message
     save_message(
@@ -690,18 +712,6 @@ async def process_voice_chat(
         text=transcript,
         audio_path=f"/audio/{clean_filename}",
         speech_metrics=acoustic_features,
-        user_id=user["id"]
-    )
-
-    # 6. Evidence-Grounded Evaluation & Empathetic Response (temp=0.0)
-    eval_result = analyze_and_respond(
-        current_transcript=transcript,
-        acoustic_features=acoustic_features,
-        session_history=session_messages,
-        historical_context=historical_context,
-        voice_z=voice_z,
-        trend_z=trend_z,
-        n_sessions=n_sessions,
         user_id=user["id"]
     )
 
