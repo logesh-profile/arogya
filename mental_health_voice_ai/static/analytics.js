@@ -114,17 +114,23 @@ function populateKPIs(kpis, profile) {
     if (!kpis) return;
 
     const lifetimeEl = document.getElementById("kpiLifetime");
-    if (lifetimeEl) lifetimeEl.textContent = kpis.lifetime_wellness || 75;
+    if (lifetimeEl) {
+        lifetimeEl.textContent = kpis.lifetime_wellness != null ? kpis.lifetime_wellness : "--";
+    }
 
     const deltaEl = document.getElementById("kpiDelta");
     if (deltaEl) {
-        const d = kpis.trajectory_delta || 0.0;
-        deltaEl.textContent = (d > 0 ? `+${d}` : `${d}`);
+        if (kpis.lifetime_wellness != null && kpis.trajectory_delta !== undefined) {
+            const d = kpis.trajectory_delta;
+            deltaEl.textContent = (d > 0 ? `+${d}` : `${d}`);
+        } else {
+            deltaEl.textContent = "--";
+        }
     }
 
     const badgeEl = document.getElementById("kpiTrajectoryBadge");
     if (badgeEl) {
-        badgeEl.textContent = kpis.trajectory_status || "Steady";
+        badgeEl.textContent = kpis.trajectory_status || "Awaiting Baseline";
         badgeEl.className = "trajectory-badge";
         if (kpis.trajectory_delta >= 3) {
             badgeEl.classList.add("positive");
@@ -134,7 +140,7 @@ function populateKPIs(kpis, profile) {
     }
 
     const descEl = document.getElementById("kpiTrajectoryDesc");
-    if (descEl) descEl.textContent = kpis.trajectory_desc || "";
+    if (descEl) descEl.textContent = kpis.trajectory_desc || "Complete reflections to establish your emotional equilibrium.";
 
     const reflectionsEl = document.getElementById("kpiReflections");
     if (reflectionsEl) reflectionsEl.textContent = kpis.total_reflections || 0;
@@ -143,7 +149,7 @@ function populateKPIs(kpis, profile) {
     if (sessionsEl) sessionsEl.textContent = `across ${kpis.total_sessions || 0} session${kpis.total_sessions === 1 ? '' : 's'}`;
 
     const semiEl = document.getElementById("kpiSemitones");
-    if (semiEl) semiEl.textContent = kpis.average_voice_semitones || "1.85";
+    if (semiEl) semiEl.textContent = kpis.average_voice_semitones != null ? kpis.average_voice_semitones : "--";
 }
 
 // HTML5 Canvas Trend Chart
@@ -198,24 +204,26 @@ function renderTrendChart(timeline, kpis) {
         ctx.fillText(`${val}`, padLeft - 8, y + 3);
     });
 
-    // Draw Baseline Guide Line
-    const baseline = kpis ? kpis.baseline_wellness || 75 : 75;
-    const baseY = padTop + plotH - ((baseline - minY) / (maxY - minY)) * plotH;
-    ctx.save();
-    ctx.setLineDash([4, 4]);
-    ctx.strokeStyle = baselineColor;
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(padLeft, baseY);
-    ctx.lineTo(w - padRight, baseY);
-    ctx.stroke();
-    ctx.restore();
+    // Draw Baseline Guide Line (only if baseline exists)
+    if (kpis && kpis.baseline_wellness != null) {
+        const baseline = kpis.baseline_wellness;
+        const baseY = padTop + plotH - ((baseline - minY) / (maxY - minY)) * plotH;
+        ctx.save();
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = baselineColor;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(padLeft, baseY);
+        ctx.lineTo(w - padRight, baseY);
+        ctx.stroke();
+        ctx.restore();
+    }
 
     if (!timeline || timeline.length === 0) {
         ctx.font = "13px 'Plus Jakarta Sans', sans-serif";
         ctx.fillStyle = textColor;
         ctx.textAlign = "center";
-        ctx.fillText("No multi-session points recorded yet. Complete check-ins to view trajectory.", w / 2, h / 2);
+        ctx.fillText("No multi-session points recorded yet for your account. Complete reflections to view trajectory.", w / 2, h / 2);
         return;
     }
 

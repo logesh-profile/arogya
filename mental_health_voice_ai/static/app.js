@@ -178,27 +178,25 @@ async function initAuth() {
         }
 
         // 2. Fetch active session state from backend
-        const meRes = await apiFetch("/api/auth/me");
-        if (meRes.ok) {
-            const meData = await meRes.json();
-            if (meData.authenticated && meData.user) {
-                currentUser = meData.user;
-                localStorage.setItem("arogya_active_user", JSON.stringify(meData.user));
-                updateAuthUI(true, meData.user);
-                if (meData.needs_onboarding) {
-                    openOnboardingModal(meData.user);
+        try {
+            const meRes = await apiFetch("/api/auth/me");
+            if (meRes.ok) {
+                const meData = await meRes.json();
+                if (meData.authenticated && meData.user) {
+                    currentUser = meData.user;
+                    localStorage.setItem("arogya_active_user", JSON.stringify(meData.user));
+                    updateAuthUI(true, meData.user);
+                    if (meData.needs_onboarding) {
+                        openOnboardingModal(meData.user);
+                    }
+                } else if (!currentUser) {
+                    updateAuthUI(false, null);
                 }
-            } else {
-                currentUser = null;
-                localStorage.removeItem("arogya_active_user");
-                localStorage.removeItem("arogya_session_token");
+            } else if (!currentUser) {
                 updateAuthUI(false, null);
             }
-        } else if (meRes.status === 401) {
-            currentUser = null;
-            localStorage.removeItem("arogya_active_user");
-            localStorage.removeItem("arogya_session_token");
-            updateAuthUI(false, null);
+        } catch (authErr) {
+            console.warn("Auth initialization notice (keeping local session):", authErr);
         }
 
         // 3. Setup Google Identity Services (GSI)
@@ -1435,17 +1433,23 @@ function renderSessionsList(sessions) {
             selectSession(s.session_id);
         };
 
-        const score = Math.round(s.overall_wellness != null ? s.overall_wellness : 75);
-        const scoreClass = score >= 75 ? "score-good" : (score >= 55 ? "score-fair" : "score-low");
+        const hasWellness = s.overall_wellness != null;
+        const score = hasWellness ? Math.round(s.overall_wellness) : null;
+        const scoreClass = hasWellness 
+            ? (score >= 75 ? "score-good" : (score >= 55 ? "score-fair" : "score-low"))
+            : "score-neutral";
+        const scorePillHtml = hasWellness
+            ? `<span class="session-score-pill ${scoreClass}">${score}%</span>`
+            : `<span class="session-score-pill score-neutral">New</span>`;
         const dateStr = new Date(s.created_at).toLocaleDateString("en-IN", { month: "short", day: "numeric" });
 
         item.innerHTML = `
             <div class="session-item-content">
                 <div class="session-item-title-row">
                     <span class="session-item-title">${escapeHtml(s.title || "Check-in")}</span>
-                    <span class="session-score-pill ${scoreClass}">${score}%</span>
+                    ${scorePillHtml}
                 </div>
-                <span class="session-item-meta tabular-num">${dateStr} • ${escapeHtml(s.dominant_emotion || "Reflective")}</span>
+                <span class="session-item-meta tabular-num">${dateStr} • ${escapeHtml(s.dominant_emotion || "Awaiting Reflection")}</span>
             </div>
             <div class="session-actions">
                 <button class="session-action-btn" title="Rename" onclick="renameSessionPrompt('${s.session_id}', '${escapeHtml(s.title || '')}')">
@@ -1568,7 +1572,7 @@ async function loadSessionData(sessionId) {
             await fetchInitialGreeting();
         }
 
-        if (data.latest_score) {
+        if (data.latest_score && data.latest_score.overall_wellness != null) {
             updateScorecard(data.latest_score);
         } else {
             resetScorecard();
@@ -2075,8 +2079,8 @@ function updateScorecard(evalData) {
     }
 
     if (confidenceBadge) {
-        const conf = Math.round((evalData.confidence || 0.5) * 100);
-        confidenceBadge.textContent = `Confidence: ${conf}%`;
+        const conf = evalData.confidence != null ? Math.round(evalData.confidence * 100) : null;
+        confidenceBadge.textContent = conf != null ? `Confidence: ${conf}%` : "Confidence: --";
     }
 
     if (scoreCircle) {
@@ -2090,8 +2094,10 @@ function updateScorecard(evalData) {
     }
 
     if (wellnessBadge) {
-        if (wellness === null || wellness === undefined) {
+        if (evalData.is_crisis) {
             wellnessBadge.textContent = "Safety Alert Active";
+        } else if (wellness === null || wellness === undefined) {
+            wellnessBadge.textContent = "Awaiting Reflection";
         } else if (wellness >= 70) {
             wellnessBadge.textContent = "Grounded & Balanced";
         } else if (wellness >= 50) {
@@ -2165,8 +2171,8 @@ function updateHeaderScorePill(wellness, state) {
     const pill = document.getElementById("headerScorePill");
     if (!pill) return;
     if (wellness == null) {
-        pill.textContent = "84% • Balanced";
-        pill.className = "header-score-pill score-good";
+        pill.textContent = "Awaiting Reflection";
+        pill.className = "header-score-pill score-neutral";
         return;
     }
     const score = Math.round(wellness);
@@ -2177,12 +2183,12 @@ function updateHeaderScorePill(wellness, state) {
 }
 
 function resetScorecard() {
-    if (wellnessScoreNum) wellnessScoreNum.textContent = "84";
-    if (confidenceBadge) confidenceBadge.textContent = "Confidence: Baseline";
-    if (scoreCircle) scoreCircle.style.strokeDashoffset = "40.2";
-    if (wellnessBadge) wellnessBadge.textContent = "Grounded & Balanced";
-    if (dominantEmotion) dominantEmotion.textContent = "Primary State: Calm";
-    updateHeaderScorePill(84, "Balanced");
+    if (wellnessScoreNum) wellnessScoreNum.textContent = "--";
+    if (confidenceBadge) confidenceBadge.textContent = "Confidence: --";
+    if (scoreCircle) scoreCircle.style.strokeDashoffset = "251.3";
+    if (wellnessBadge) wellnessBadge.textContent = "Awaiting Reflection";
+    if (dominantEmotion) dominantEmotion.textContent = "Primary State: --";
+    updateHeaderScorePill(null, null);
     const aggregateNote = document.getElementById("aggregateNote");
     if (aggregateNote) aggregateNote.textContent = "Session Average (Awaiting Input)";
 

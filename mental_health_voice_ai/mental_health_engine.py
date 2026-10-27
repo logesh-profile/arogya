@@ -425,13 +425,32 @@ def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "p
     Adapts language naturally: if user previously spoke Tanglish/Tamil, greets in conversational Tanglish & spoken Tamil script.
     """
     try:
-        from database import get_recent_session_memory_anchor, get_user_clinical_profile
+        from database import get_recent_session_memory_anchor, get_user_clinical_profile, get_user_by_id
     except ImportError:
-        from mental_health_voice_ai.database import get_recent_session_memory_anchor, get_user_clinical_profile
+        from mental_health_voice_ai.database import get_recent_session_memory_anchor, get_user_clinical_profile, get_user_by_id
 
     anchor = get_recent_session_memory_anchor(user_id=user_id, exclude_session_id=session_id)
     profile = anchor.get("profile") or get_user_clinical_profile(user_id)
-    name = profile.get("user_name") or "Friend"
+    user_info = get_user_by_id(user_id) if user_id else None
+    
+    name = None
+    if user_info:
+        name = user_info.get("preferred_name") or user_info.get("given_name") or user_info.get("name") or user_info.get("display_name")
+        if not name or name.strip().lower() in ["user", "friend", "primary_user"]:
+            email = user_info.get("email", "")
+            if email and "@" in email:
+                prefix = email.split("@")[0].split(".")[0].split("_")[0]
+                if prefix and not prefix.isdigit():
+                    name = prefix.capitalize()
+    if not name or name.strip().lower() in ["user", "friend", "primary_user"]:
+        name = profile.get("user_name")
+    if not name or name.strip().lower() in ["user", "friend", "primary_user"]:
+        if user_id and not user_id.startswith("primary_user") and not user_id.startswith("sess_"):
+            clean_uid = user_id.replace("user_", "").split("@")[0].split(".")[0].split("_")[0]
+            if clean_uid and not clean_uid.isdigit():
+                name = clean_uid.capitalize()
+        else:
+            name = "Friend"
     short_name = name.split()[0] if name else "Friend"
     key_context = profile.get("key_context", "Member seeking conversational companionship and emotional support")
     stressors = profile.get("recurring_stressors", [])
@@ -758,7 +777,36 @@ def analyze_and_respond(
             ]
         }
 
-    # 2. Build Prompt with Full Conversational History (up to 20 past turns for complete memory & QA)
+    # 2. Resolve Active User Identity for warm, personalized dialogue
+    try:
+        from database import get_user_by_id, get_user_clinical_profile
+    except ImportError:
+        from mental_health_voice_ai.database import get_user_by_id, get_user_clinical_profile
+
+    user_info = get_user_by_id(user_id) if user_id else None
+    user_profile = get_user_clinical_profile(user_id) if user_id else {}
+    
+    user_name = None
+    if user_info:
+        user_name = user_info.get("preferred_name") or user_info.get("given_name") or user_info.get("name") or user_info.get("display_name")
+        if not user_name or user_name.strip().lower() in ["user", "friend", "primary_user"]:
+            email = user_info.get("email", "")
+            if email and "@" in email:
+                prefix = email.split("@")[0].split(".")[0].split("_")[0]
+                if prefix and not prefix.isdigit():
+                    user_name = prefix.capitalize()
+    if not user_name or user_name.strip().lower() in ["user", "friend", "primary_user"]:
+        user_name = user_profile.get("user_name")
+    if not user_name or user_name.strip().lower() in ["user", "friend", "primary_user"]:
+        if user_id and not user_id.startswith("primary_user") and not user_id.startswith("sess_"):
+            clean_uid = user_id.replace("user_", "").split("@")[0].split(".")[0].split("_")[0]
+            if clean_uid and not clean_uid.isdigit():
+                user_name = clean_uid.capitalize()
+        else:
+            user_name = "Friend"
+    first_name = user_name.split()[0] if user_name else "Friend"
+
+    # 3. Build Prompt with Full Conversational History (up to 20 past turns for complete memory & QA)
     history_snippet = []
     for m in session_history[-20:]:
         role = "USER" if m.get("role") == "user" else "AROGYA"
@@ -770,6 +818,12 @@ def analyze_and_respond(
     prompt = f"""
 {historical_context}
 
+--- ACTIVE USER PROFILE ---
+User Name: {first_name} (Full Name: {user_name}, User ID: {user_id})
+MANDATORY DIRECTIVE:
+1. Address the user by their actual name ({first_name}) naturally, warmly, and empathetically when appropriate.
+2. NEVER address them by any other person's name or placeholder.
+
 --- CONVERSATION HISTORY (PAST TURNS IN THIS SESSION) ---
 {history_str}
 
@@ -779,7 +833,7 @@ USER (Just now): "{current_transcript}"
 IMPORTANT CONVERSATIONAL MEMORY & QUESTION-ANSWERING DIRECTIVE:
 1. Review the CONVERSATION HISTORY above carefully.
 2. If the user asks a question, refers to something said earlier in this conversation (e.g. "what was I saying?", "do you remember?", "what should I do?"), or continues a previous topic, directly and accurately ANSWER their question using the conversation history context.
-3. Keep your spoken reply ("reply_text") natural, compassionate, conversational, and direct (2 to 3 sentences in colloquial Tanglish or Indian English).
+3. Keep your spoken reply ("reply_text") natural, compassionate, conversational, and direct (2 to 3 sentences in colloquial Tanglish or Indian English). Address {first_name} warmly.
 4. Evaluate the user's emotional state across the 7 dimensions based strictly on their actual statements.
 
 Produce the requested JSON:
@@ -814,18 +868,18 @@ Produce the requested JSON:
                 print(f"[!] Model {model_name} notice: {e_model}")
 
     if not data:
-        # Context-aware fallback: NEVER repeat the exact same canned sentence repeatedly
+        # Context-aware fallback: Personalize with user's actual name
         t_lower = current_transcript.lower().strip()
         if any(w in t_lower for w in ["hi", "hello", "hey", "vanakkam"]):
-            fallback_reply = "Vanakkam! I'm right here with you. How is your day going so far?"
+            fallback_reply = f"Vanakkam {first_name}! I'm right here with you. How is your day going so far?"
         elif any(w in t_lower for w in ["bad", "sad", "upset", "depress", "tired", "exhaust", "stress"]):
-            fallback_reply = "I'm so sorry you're having a tough time today. I'm right here with you—tell me more about what happened."
+            fallback_reply = f"I'm so sorry you're having a tough time today, {first_name}. I'm right here with you—tell me more about what happened."
         elif any(w in t_lower for w in ["happy", "good", "great", "fine", "super"]):
-            fallback_reply = "I'm really glad to hear that! What made today good for you?"
+            fallback_reply = f"I'm really glad to hear that, {first_name}! What made today good for you?"
         elif "?" in current_transcript:
-            fallback_reply = "I hear your question, and I'm right here listening. Tell me more so I can understand better."
+            fallback_reply = f"I hear your question, {first_name}, and I'm right here listening. Tell me more so I can understand better."
         else:
-            fallback_reply = "I'm listening and I'm right here with you. Tell me what's on your mind."
+            fallback_reply = f"I'm listening and I'm right here with you, {first_name}. Tell me what's on your mind."
         data = {
             "reply_text": fallback_reply,
             "conversation_title": generate_quick_session_title(current_transcript),

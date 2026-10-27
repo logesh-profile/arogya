@@ -4371,6 +4371,12 @@ body:not(.user-authenticated) .btn-corner-signin {
     color: #ef4444;
 }
 
+.header-score-pill.score-neutral {
+    border-color: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text-muted, #a1a1aa);
+}
+
 .session-item-title-row {
     display: flex;
     align-items: center;
@@ -4409,6 +4415,12 @@ body:not(.user-authenticated) .btn-corner-signin {
     border-color: rgba(239, 68, 68, 0.35);
     background: rgba(239, 68, 68, 0.09);
     color: #ef4444;
+}
+
+.session-score-pill.score-neutral {
+    border-color: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-muted, #71717a);
 }
 
 .caption-sender-left {

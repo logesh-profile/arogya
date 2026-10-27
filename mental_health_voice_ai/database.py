@@ -3,9 +3,13 @@ import sqlite3
 import json
 import secrets
 import uuid
+import hmac
+import hashlib
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 import numpy as np
+
+AUTH_SECRET = os.getenv("SESSION_SECRET", "arogya_clinical_voice_companion_secret_2026_secure").encode("utf-8")
 
 DB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 DB_PATH = os.path.join(DB_DIR, "mental_health.db")
@@ -318,14 +322,20 @@ def get_all_profiles() -> List[Dict[str, Any]]:
     conn.close()
     return [_enrich_user_dict(r) for r in rows]
 
-def create_auth_session(user_id: str, expires_days: int = 30) -> str:
+def create_auth_session(user_id: str, expires_days: int = 90) -> str:
     conn = get_connection()
     cursor = conn.cursor()
-    token = secrets.token_hex(32)
     now = datetime.now()
     expires = now + timedelta(days=expires_days)
+    
+    nonce = secrets.token_hex(16)
+    exp_ts = int(expires.timestamp())
+    raw_payload = f"{user_id}:{exp_ts}:{nonce}"
+    sig = hmac.new(AUTH_SECRET, raw_payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    token = f"{raw_payload}:{sig}"
+
     cursor.execute("""
-        INSERT INTO user_sessions (session_token, user_id, created_at, expires_at)
+        INSERT OR REPLACE INTO user_sessions (session_token, user_id, created_at, expires_at)
         VALUES (?, ?, ?, ?)
     """, (token, user_id, now.isoformat(), expires.isoformat()))
     conn.commit()
@@ -333,19 +343,62 @@ def create_auth_session(user_id: str, expires_days: int = 30) -> str:
     return token
 
 def get_user_by_session_token(token: str) -> Optional[Dict[str, Any]]:
-    if not token:
+    if not token or not isinstance(token, str):
         return None
+    token = token.strip()
+    
     conn = get_connection()
     cursor = conn.cursor()
     now = datetime.now().isoformat()
+    
+    # 1. Direct active session lookup in SQLite
     cursor.execute("""
         SELECT u.* FROM users u
         JOIN user_sessions s ON u.id = s.user_id
         WHERE s.session_token = ? AND s.expires_at > ?
     """, (token, now))
     row = cursor.fetchone()
+    if row:
+        conn.close()
+        return _enrich_user_dict(row)
+
+    # 2. Cryptographic signature verification fallback (survives database restarts or ephemeral clears)
+    try:
+        parts = token.split(":")
+        if len(parts) == 4:
+            user_id, exp_ts_str, nonce, sig = parts
+            exp_ts = int(exp_ts_str)
+            if datetime.now().timestamp() < exp_ts:
+                expected_sig = hmac.new(AUTH_SECRET, f"{user_id}:{exp_ts_str}:{nonce}".encode("utf-8"), hashlib.sha256).hexdigest()
+                if hmac.compare_digest(sig, expected_sig):
+                    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+                    u_row = cursor.fetchone()
+                    if not u_row:
+                        # Auto-restore user row if ephemeral db restarted
+                        clean_name = user_id.replace("usr_", "").capitalize() or "Friend"
+                        cursor.execute("""
+                            INSERT INTO users (id, name, given_name, preferred_name, email, onboarding_completed, created_at, last_login)
+                            VALUES (?, ?, ?, ?, '', 1, ?, ?)
+                        """, (user_id, clean_name, clean_name, clean_name, now, now))
+                        conn.commit()
+                        cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+                        u_row = cursor.fetchone()
+
+                    if u_row:
+                        # Re-index into user_sessions
+                        exp_dt = datetime.fromtimestamp(exp_ts)
+                        cursor.execute("""
+                            INSERT OR REPLACE INTO user_sessions (session_token, user_id, created_at, expires_at)
+                            VALUES (?, ?, ?, ?)
+                        """, (token, user_id, now, exp_dt.isoformat()))
+                        conn.commit()
+                        conn.close()
+                        return _enrich_user_dict(u_row)
+    except Exception as e:
+        print(f"[!] Token verification notice: {e}")
+
     conn.close()
-    return _enrich_user_dict(row)
+    return None
 
 def revoke_auth_session(token: str) -> bool:
     if not token:
@@ -368,13 +421,13 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # SESSION PERSISTENCE & MULTI-USER ISOLATION
 # ---------------------------------------------------------------------------
-def create_session(session_id: str, title: str = "New Assessment", user_id: str = "primary_user") -> Dict[str, Any]:
+def create_session(session_id: str, title: str = "New Reflection", user_id: str = "primary_user") -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
     now = datetime.now().isoformat()
     cursor.execute("""
         INSERT INTO sessions (session_id, title, created_at, last_active, overall_wellness, dominant_emotion, summary, user_id)
-        VALUES (?, ?, ?, ?, 75, 'Calm', 'Initial conversation started.', ?)
+        VALUES (?, ?, ?, ?, NULL, 'Awaiting Reflection', 'New reflection started.', ?)
     """, (session_id, title, now, now, user_id))
     conn.commit()
     conn.close()
@@ -382,8 +435,8 @@ def create_session(session_id: str, title: str = "New Assessment", user_id: str 
         "session_id": session_id,
         "title": title,
         "created_at": now,
-        "overall_wellness": 75,
-        "dominant_emotion": "Calm",
+        "overall_wellness": None,
+        "dominant_emotion": "Awaiting Reflection",
         "user_id": user_id
     }
 
@@ -684,16 +737,19 @@ def get_aggregated_mental_health_insights(session_id: Optional[str] = None, user
     if session_wellness_vals:
         session_avg = int(round(float(np.mean(session_wellness_vals))))
     else:
-        session_avg = 75
+        session_avg = None
 
     # Calculate All-Time Global Average Wellness
     all_wellness_vals = [r["overall_wellness"] for r in all_time_rows if r.get("overall_wellness") is not None]
-    all_time_avg = int(round(float(np.mean(all_wellness_vals)))) if all_wellness_vals else session_avg
+    all_time_avg = int(round(float(np.mean(all_wellness_vals)))) if all_wellness_vals else None
 
     # Calculate Confidence based on exchanges and sessions
     n_exchanges = len(active_records)
     n_all_time = len(all_wellness_vals)
-    confidence = round(min(1.0, max(0.35, (n_exchanges * 0.15) + (n_all_time * 0.04))), 2)
+    if n_exchanges == 0 and n_all_time == 0:
+        confidence = 0.0
+    else:
+        confidence = round(min(1.0, max(0.35, (n_exchanges * 0.15) + (n_all_time * 0.04))), 2)
 
     # Compile Reasons & Quotes Across All Exchanges
     dim_map = {
@@ -775,7 +831,9 @@ def get_aggregated_mental_health_insights(session_id: Optional[str] = None, user
     avg_semitone = round(float(np.mean(semitones)), 2) if semitones else None
 
     # Status badge text
-    if session_avg >= 70:
+    if session_avg is None:
+        badge_text = "Awaiting Reflection"
+    elif session_avg >= 70:
         badge_text = "Grounded & Balanced"
     elif session_avg >= 50:
         badge_text = "Mild Emotional Strain"
@@ -809,7 +867,7 @@ def get_session_report(session_id: str, user_id: Optional[str] = None) -> Option
         "session_id": session_id,
         "title": sess.get("title", "Check-in"),
         "created_at": sess.get("created_at"),
-        "overall_wellness": aggregated.get("overall_wellness", sess.get("overall_wellness", 75)),
+        "overall_wellness": aggregated.get("overall_wellness") if aggregated.get("overall_wellness") is not None else sess.get("overall_wellness"),
         "all_time_wellness": aggregated.get("all_time_wellness"),
         "confidence": aggregated.get("confidence", 0.5),
         "dominant_state": aggregated.get("dominant_state", sess.get("dominant_emotion", "Reflective")),
@@ -1064,7 +1122,7 @@ def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
 
-    # 1. Fetch all sessions in chronological order for this user
+    # 1. Fetch all sessions in chronological order for this user (strictly isolated per user_id)
     cursor.execute("""
         SELECT session_id, title, created_at, last_active, overall_wellness, dominant_emotion, summary
         FROM sessions
@@ -1072,20 +1130,6 @@ def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
         ORDER BY created_at ASC
     """, (user_id,))
     session_rows = [dict(r) for r in cursor.fetchall()]
-
-    # If authenticated user has no direct sessions yet, adopt guest/primary_user sessions
-    if not session_rows and user_id != "primary_user":
-        cursor.execute("""
-            SELECT session_id, title, created_at, last_active, overall_wellness, dominant_emotion, summary
-            FROM sessions
-            WHERE user_id = 'primary_user'
-            ORDER BY created_at ASC
-        """)
-        fallback_rows = [dict(r) for r in cursor.fetchall()]
-        if fallback_rows:
-            cursor.execute("UPDATE sessions SET user_id = ? WHERE user_id = 'primary_user'", (user_id,))
-            conn.commit()
-            session_rows = fallback_rows
 
     # 2. Fetch all mental health records for this user's sessions
     cursor.execute("""
@@ -1177,7 +1221,7 @@ def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
                 elif k == "emotional_heaviness":
                     session_heaviness.append(score)
 
-        session_wellness = int(round(float(np.mean(w_scores)))) if w_scores else s.get("overall_wellness", 75)
+        session_wellness = int(round(float(np.mean(w_scores)))) if w_scores else s.get("overall_wellness")
         avg_pitch = round(float(np.mean(s_semis)), 2) if s_semis else None
 
         timeline_points.append({
@@ -1197,27 +1241,34 @@ def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
             "quotes": session_quotes[:4]
         })
 
-    # Overall KPIs
+    # Overall KPIs (Strictly per user, no hardcoded fake scores)
     total_sessions = len(session_rows)
     total_reflections = len(all_records)
-    all_wellness = [p["wellness"] for p in timeline_points]
-    lifetime_avg = int(round(float(np.mean(all_wellness)))) if all_wellness else 75
+    valid_wellness = [p["wellness"] for p in timeline_points if p.get("wellness") is not None]
 
-    recent_slice = all_wellness[-3:] if len(all_wellness) >= 3 else all_wellness
-    recent_avg = int(round(float(np.mean(recent_slice)))) if recent_slice else lifetime_avg
+    if valid_wellness:
+        lifetime_avg = int(round(float(np.mean(valid_wellness))))
+        recent_slice = valid_wellness[-3:] if len(valid_wellness) >= 3 else valid_wellness
+        recent_avg = int(round(float(np.mean(recent_slice))))
+        baseline = profile.get("baseline_wellness", 75.0)
+        delta = round(recent_avg - baseline, 1)
 
-    baseline = profile.get("baseline_wellness", 75.0)
-    delta = round(recent_avg - baseline, 1)
-
-    if delta >= 3.0:
-        trajectory_status = "Improving"
-        trajectory_desc = f"+{delta} pts vs baseline. Emotional regulation and vitality are trending positively."
-    elif delta <= -3.0:
-        trajectory_status = "Elevated Strain"
-        trajectory_desc = f"{delta} pts vs baseline. Recent dialogues indicate notable stressors or fatigue."
+        if delta >= 3.0:
+            trajectory_status = "Improving"
+            trajectory_desc = f"+{delta} pts vs baseline. Emotional regulation and vitality are trending positively."
+        elif delta <= -3.0:
+            trajectory_status = "Elevated Strain"
+            trajectory_desc = f"{delta} pts vs baseline. Recent dialogues indicate notable stressors or fatigue."
+        else:
+            trajectory_status = "Steady & Balanced"
+            trajectory_desc = f"{delta:+} pts vs baseline. Consistent emotional equilibrium maintained."
     else:
-        trajectory_status = "Steady & Balanced"
-        trajectory_desc = f"{delta:+} pts vs baseline. Consistent emotional equilibrium maintained."
+        baseline = None
+        lifetime_avg = None
+        recent_avg = None
+        delta = 0.0
+        trajectory_status = "New Account"
+        trajectory_desc = "No check-ins recorded yet for your account. Complete your first reflection with Arogya to generate your personal score."
 
     # Compiled symptom distribution metrics
     symptom_distributions = []
@@ -1234,7 +1285,7 @@ def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
             "quotes": q_list[:3]
         })
 
-    avg_semitone_lifetime = round(float(np.mean(semitones_all)), 2) if semitones_all else 1.85
+    avg_semitone_lifetime = round(float(np.mean(semitones_all)), 2) if semitones_all else None
 
     return {
         "kpis": {

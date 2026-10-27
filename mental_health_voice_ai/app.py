@@ -113,15 +113,28 @@ app.mount("/audio", StaticFiles(directory=CACHE_DIR), name="audio")
 # AUTHENTICATION DEPENDENCIES & HELPERS
 # ---------------------------------------------------------------------------
 def get_current_user(request: Request) -> Optional[dict]:
-    token = request.cookies.get("arogya_session")
-    if not token:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header.split(" ", 1)[1].strip()
-    if not token:
-        token = request.query_params.get("token")
-    if token:
-        return get_user_by_session_token(token)
+    # 1. Bearer Header (highest priority from localStorage in client requests)
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        bearer_token = auth_header.split(" ", 1)[1].strip()
+        user = get_user_by_session_token(bearer_token)
+        if user:
+            return user
+
+    # 2. HTTP-only Session Cookie
+    cookie_token = request.cookies.get("arogya_session")
+    if cookie_token:
+        user = get_user_by_session_token(cookie_token)
+        if user:
+            return user
+
+    # 3. Query Param Token (for report downloads / media links)
+    query_token = request.query_params.get("token")
+    if query_token:
+        user = get_user_by_session_token(query_token)
+        if user:
+            return user
+
     return None
 
 def get_effective_user(request: Request) -> dict:
@@ -190,8 +203,8 @@ def get_analytics(request: Request):
     if not user:
         return {
             "total_sessions": 0,
-            "overall_wellness": 75,
-            "dominant_emotion": "Calm",
+            "overall_wellness": None,
+            "dominant_emotion": "Awaiting Reflection",
             "trend_points": [],
             "symptom_averages": {},
             "clinical_profile": {}
@@ -742,7 +755,7 @@ async def process_voice_chat(
     update_session_meta(
         session_id=session_id,
         title=new_title,
-        wellness=aggregated.get("overall_wellness", 75),
+        wellness=aggregated.get("overall_wellness"),
         emotion=aggregated.get("dominant_state", "Reflective"),
         summary=eval_result.get("summary_snippet", "")
     )
@@ -755,7 +768,7 @@ async def process_voice_chat(
         "user_emotion": eval_result.get("user_emotion", tone_emotion["user_emotion"]),
         "listening_face": eval_result.get("listening_face", tone_emotion["listening_face"]),
         "speaking_face": eval_result.get("speaking_face", tone_emotion["speaking_face"]),
-        "overall_wellness": aggregated.get("overall_wellness", 75),
+        "overall_wellness": aggregated.get("overall_wellness"),
         "evaluation": aggregated,
         "suggest_grounding": eval_result.get("suggest_grounding", False),
         "grounding_mode": eval_result.get("grounding_mode", "box"),
@@ -867,7 +880,7 @@ async def process_text_chat(
     update_session_meta(
         session_id=session_id,
         title=new_title,
-        wellness=aggregated.get("overall_wellness", 75),
+        wellness=aggregated.get("overall_wellness"),
         emotion=aggregated.get("dominant_state", "Reflective"),
         summary=eval_result.get("summary_snippet", "")
     )
@@ -879,7 +892,7 @@ async def process_text_chat(
         "user_emotion": eval_result.get("user_emotion", "calm"),
         "listening_face": eval_result.get("listening_face", "calm"),
         "speaking_face": eval_result.get("speaking_face", "caring"),
-        "overall_wellness": aggregated.get("overall_wellness", 75),
+        "overall_wellness": aggregated.get("overall_wellness"),
         "evaluation": aggregated,
         "suggest_grounding": eval_result.get("suggest_grounding", False),
         "grounding_mode": eval_result.get("grounding_mode", "box"),
@@ -983,13 +996,13 @@ def download_analytics_report(request: Request):
         f"**Context:** {profile.get('key_context', 'General wellbeing')}",
         "",
         "## 1. Executive Telemetry & Longitudinal KPIs",
-        f"- **Lifetime Wellness Baseline:** {kpis.get('lifetime_wellness', 75)}/100",
-        f"- **Recent Wellness Average:** {kpis.get('recent_wellness', 75)}/100",
+        f"- **Lifetime Wellness Baseline:** {kpis.get('lifetime_wellness') if kpis.get('lifetime_wellness') is not None else 'Awaiting Data'}/100",
+        f"- **Recent Wellness Average:** {kpis.get('recent_wellness') if kpis.get('recent_wellness') is not None else 'Awaiting Data'}/100",
         f"- **Trajectory Delta:** {kpis.get('trajectory_delta', 0.0):+} pts ({kpis.get('trajectory_status', 'Stable')})",
         f"- **Trajectory Assessment:** {kpis.get('trajectory_desc', '')}",
         f"- **Total Monitored Sessions:** {kpis.get('total_sessions', 0)}",
         f"- **Total Reflection Turns:** {kpis.get('total_reflections', 0)}",
-        f"- **Average Pitch Variation:** {kpis.get('average_voice_semitones', 1.85)} semitones (pYIN normal)",
+        f"- **Average Pitch Variation:** {kpis.get('average_voice_semitones', '--')} semitones",
         "",
         "## 2. Long-Term Clinical Profile & Stressor Memory",
         f"**Recurring Stressor Themes:**",
@@ -1014,7 +1027,8 @@ def download_analytics_report(request: Request):
     lines.append("## 4. Multi-Session Chronological Timeline")
     for item in timeline:
         lines.append(f"### Session: {item.get('title', 'Reflection')} ({item.get('date', '')})")
-        lines.append(f"- **Wellness:** {item.get('wellness', 75)}/100 | **Dominant State:** {item.get('dominant_emotion', 'Reflective')}")
+        w_val = item.get('wellness')
+        lines.append(f"- **Wellness:** {w_val if w_val is not None else 'N/A'}/100 | **Dominant State:** {item.get('dominant_emotion', 'Reflective')}")
         lines.append(f"- **Stress:** {item.get('stress_avg', 0)}/3 | **Worry:** {item.get('worry_avg', 0)}/3 | **Fatigue:** {item.get('fatigue_avg', 0)}/3")
         if item.get("quotes"):
             quoted_strs = ['"' + str(q) + '"' for q in item.get('quotes', [])]
