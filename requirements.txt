@@ -20,4 +20,5 @@ numpy>=1.26.0
 imageio-ffmpeg>=0.4.9
 faster-whisper>=1.0.0
 pyserial>=3.5
+psycopg2-binary>=2.9.9
 

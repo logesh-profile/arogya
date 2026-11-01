@@ -38,6 +38,43 @@ REF_TEXT = (
 whisper_model = None
 f5tts_instance = None
 
+def transcribe_with_gemini(audio_path: str) -> Optional[str]:
+    """
+    Sub-second, cloud-based audio transcription via Gemini 3.8 Flash.
+    Uses 0 MB server memory, completely avoiding local Whisper memory spikes on Render.
+    """
+    try:
+        from google import genai
+        from google.genai import types
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return None
+        client = genai.Client(api_key=api_key)
+        with open(audio_path, "rb") as f:
+            audio_bytes = f.read()
+        if not audio_bytes or len(audio_bytes) < 400:
+            return ""
+
+        ext = os.path.splitext(audio_path)[1].lower()
+        mime_type = "audio/wav" if ext == ".wav" else ("audio/webm" if ext == ".webm" else "audio/mp3")
+
+        response = client.models.generate_content(
+            model="gemini-3.8-flash",
+            contents=[
+                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
+                "Transcribe this speech accurately word-for-word in natural Indian English. If the audio is silent or only has background noise, reply with nothing. Output ONLY the transcribed text, nothing else."
+            ]
+        )
+        if response and response.text:
+            text = response.text.strip()
+            if text.lower() in ["none", "silence", "empty", "[silence]", "[music]", "[applause]"]:
+                return ""
+            return text
+        return ""
+    except Exception as e:
+        print(f"[!] Gemini audio transcription notice: {e}")
+        return None
+
 def get_whisper_model():
     global whisper_model
     if whisper_model is None:
@@ -45,8 +82,9 @@ def get_whisper_model():
             from faster_whisper import WhisperModel
             device = "cuda" if (HAS_TORCH and torch and torch.cuda.is_available()) else "cpu"
             compute_type = "float16" if device == "cuda" else "int8"
-            print(f"[*] Initializing faster-whisper on {device} ({compute_type})...")
-            whisper_model = WhisperModel("base", device=device, compute_type=compute_type)
+            print(f"[*] Initializing lightweight faster-whisper tiny on {device} ({compute_type})...")
+            # Uses 'tiny' (39MB) to keep RAM well under 100MB on Render
+            whisper_model = WhisperModel("tiny", device=device, compute_type=compute_type)
         except Exception as e:
             print(f"[!] Whisper model initialization notice: {e}")
             whisper_model = None
@@ -54,29 +92,41 @@ def get_whisper_model():
 
 def transcribe_audio(audio_path: str) -> str:
     """
-    Transcribes audio file to text using faster-whisper with VAD (Voice Activity Detection)
-    to prevent silence hallucinations like 'You You You' or 'Thank you'.
+    Transcribes audio file with zero memory spike:
+    1. Checks audio energy (skips silent audio).
+    2. Cloud STT with Gemini 3.8 Flash (0 MB RAM).
+    3. Lightweight Whisper tiny fallback only if Gemini is unavailable.
     """
     import numpy as np
+    import gc
     try:
         data, sr = sf.read(audio_path)
         if len(data) == 0:
             return ""
-        # Check maximum amplitude and RMS volume (calibrated for Bluetooth headsets and laptop mic arrays)
+        # Check maximum amplitude and RMS volume
         max_amp = float(np.max(np.abs(data)))
         rms = float(np.sqrt(np.mean(data**2)))
         if max_amp < 0.0008 or rms < 0.0002:
-            print(f"[!] Audio is silent (max_amp={max_amp:.4f}, rms={rms:.4f}). Skipping Whisper.")
+            print(f"[!] Audio is silent (max_amp={max_amp:.4f}, rms={rms:.4f}). Skipping STT.")
             return ""
     except Exception as e:
         print(f"[!] Audio energy check warning: {e}")
 
+    # Primary: Fast, 0-RAM Gemini Cloud Transcription
+    gemini_text = transcribe_with_gemini(audio_path)
+    if gemini_text is not None:
+        gc.collect()
+        return gemini_text
+
+    # Fallback: Lightweight local Whisper tiny
     model = get_whisper_model()
-    # vad_filter=True discards non-speech and silence chunks
-    # initial_prompt guides Whisper for natural Indian English conversation and emotional reflections
+    if not model:
+        gc.collect()
+        return ""
+
     segments, _ = model.transcribe(
         audio_path,
-        beam_size=2,
+        beam_size=1,
         language="en",
         initial_prompt="Natural Indian English conversation, emotional reflection, mental health, thoughts, and feelings.",
         vad_filter=True,
@@ -87,12 +137,12 @@ def transcribe_audio(audio_path: str) -> str:
     # Filter out common Whisper silence hallucinations
     clean_lower = transcript.lower().strip(" .,!?-")
     hallucinations = ["you", "thank you", "you you", "you you you", "subtitles by", "watching", "amara.org", "subscribe"]
-    # Check if text is just repeating 'you'
     words = clean_lower.split()
     if all(w == "you" for w in words) or clean_lower in hallucinations:
         print(f"[!] Detected Whisper silence hallucination '{transcript}'. Filtering out.")
-        return ""
+        transcript = ""
 
+    gc.collect()
     return transcript
 
 

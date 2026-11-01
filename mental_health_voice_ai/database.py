@@ -11,10 +11,88 @@ import numpy as np
 
 AUTH_SECRET = os.getenv("SESSION_SECRET", "arogya_clinical_voice_companion_secret_2026_secure").encode("utf-8")
 
-DB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+# Persistent Directory Configuration:
+# 1. Custom DATA_DIR env var if set
+# 2. Render Persistent Disk mounted at /var/data (if running on Render with attached disk)
+# 3. Local data directory
+DATA_DIR_ENV = os.getenv("DATA_DIR")
+if DATA_DIR_ENV:
+    DB_DIR = DATA_DIR_ENV
+elif os.path.isdir("/var/data"):
+    DB_DIR = "/var/data"
+else:
+    DB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+
 DB_PATH = os.path.join(DB_DIR, "mental_health.db")
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+class PostgresCursorWrapper:
+    def __init__(self, cur):
+        self.cur = cur
+        self.lastrowid = None
+
+    def execute(self, query, params=None):
+        pg_query = query.replace("?", "%s")
+        if "INTEGER PRIMARY KEY AUTOINCREMENT" in pg_query:
+            pg_query = pg_query.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+
+        # Capture returning ID on inserts for SQLite compatibility
+        if pg_query.strip().upper().startswith("INSERT INTO") and "RETURNING" not in pg_query.upper():
+            if "INSERT INTO messages" in pg_query or "INSERT INTO mental_health_records" in pg_query:
+                pg_query = pg_query.rstrip("; ") + " RETURNING id"
+                self.cur.execute(pg_query, params or ())
+                row = self.cur.fetchone()
+                if row:
+                    self.lastrowid = row["id"] if isinstance(row, dict) else row[0]
+                return
+
+        if params is not None:
+            self.cur.execute(pg_query, params)
+        else:
+            self.cur.execute(pg_query)
+
+    def fetchone(self):
+        row = self.cur.fetchone()
+        if row is None:
+            return None
+        return dict(row)
+
+    def fetchall(self):
+        rows = self.cur.fetchall()
+        return [dict(r) for r in rows]
+
+    def close(self):
+        self.cur.close()
+
+class PostgresConnectionWrapper:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def cursor(self):
+        import psycopg2.extras
+        return PostgresCursorWrapper(self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor))
+
+    def commit(self):
+        self.conn.commit()
+
+    def rollback(self):
+        self.conn.rollback()
+
+    def close(self):
+        self.conn.close()
+
 def get_connection():
+    if DATABASE_URL:
+        try:
+            import psycopg2
+            conn = psycopg2.connect(DATABASE_URL)
+            return PostgresConnectionWrapper(conn)
+        except Exception as e:
+            print(f"[!] PostgreSQL connection fallback notice: {e}, using SQLite at {DB_PATH}")
+
     os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row

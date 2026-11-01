@@ -102,16 +102,24 @@ def normalize_text_for_speech(text: str) -> str:
 # ---------------------------------------------------------------------------
 def extract_acoustic_features(audio_path: str) -> Dict[str, Any]:
     """
-    Scientific voice feature extraction (Code-only DSP, NOT passed to LLM):
-    - librosa.pyin: fundamental frequency estimation.
-    - Semitone deviation: 12 * log2(f0 / median(f0)), gender-neutral & pitch-invariant.
-    - Pause ratio: silence vs voiced speech.
-    - RMS energy & spectral centroid: vocal intensity and tonal brightness.
+    Lightweight, low-memory scientific voice feature extraction:
+    - soundfile + numpy (avoids heavy librosa spectrogram allocation on 512MB RAM).
+    - RMS energy, vocal duration, pause/silence ratio.
+    - Normalized autocorrelation pitch estimation (semitone deviation).
     """
     try:
-        import librosa
-        y, sr = librosa.load(audio_path, sr=16000)
-        duration = float(librosa.get_duration(y=y, sr=sr))
+        import soundfile as sf
+        import gc
+        data, sr = sf.read(audio_path)
+        if data is None or len(data) == 0:
+            return {"duration": 0.0, "pitch_semitone_std": None, "median_f0": None, "rms_energy": 0.0, "pause_ratio": 0.0, "is_valid_speech": False, "note": "Empty audio"}
+
+        if data.ndim > 1:
+            y = np.mean(data, axis=1)
+        else:
+            y = data.astype(np.float32)
+
+        duration = float(len(y) / sr) if sr > 0 else 0.0
         if duration < 0.6:
             return {
                 "duration": round(duration, 2),
@@ -123,46 +131,76 @@ def extract_acoustic_features(audio_path: str) -> Dict[str, Any]:
                 "note": "Audio sample too brief for stable pitch estimation"
             }
 
-        # For feature extraction speed: cap analysis to first 8.0s of audio if longer
+        # Cap analysis to first 8.0s for speed & RAM efficiency
         analysis_y = y[:int(sr * 8.0)] if duration > 8.0 else y
-
-        # RMS Energy (Vocal Power / Loudness)
         rms_energy = float(np.sqrt(np.mean(analysis_y**2)))
 
-        # Fast Probabilistic YIN (pyin) with hop_length=1024 (15x faster than hop=512, ~0.25s)
-        f0, voiced_flag, _ = librosa.pyin(analysis_y, fmin=75, fmax=400, sr=sr, hop_length=1024)
-        valid_f0 = f0[voiced_flag & ~np.isnan(f0)]
-
-        # Check voiced frame threshold (at least ~0.25s of voiced speech)
-        min_voiced_frames = int((sr / 1024) * 2.5)
-        if len(valid_f0) < min_voiced_frames:
-            semitone_std = None
-            median_f0 = None
-            note = "Insufficient voiced frames detected"
+        # Frame-based pause ratio (100ms frames)
+        frame_len = max(1, int(sr * 0.1))
+        n_frames = len(analysis_y) // frame_len
+        if n_frames > 0:
+            frames = analysis_y[:n_frames * frame_len].reshape(n_frames, frame_len)
+            frame_rms = np.sqrt(np.mean(frames**2, axis=1))
+            silent_frames = np.sum(frame_rms < (0.15 * (np.max(frame_rms) + 1e-6)))
+            pause_ratio = round(float(silent_frames / n_frames), 2)
         else:
+            pause_ratio = 0.0
+
+        # Fast pitch estimation via autocorrelation on 30ms voiced frames
+        frame_size = int(sr * 0.03)
+        hop_size = int(sr * 0.015)
+        fmin, fmax = 75, 400
+        min_lag = max(1, int(sr / fmax))
+        max_lag = min(frame_size - 1, int(sr / fmin))
+
+        pitches = []
+        for start_idx in range(0, len(analysis_y) - frame_size, hop_size):
+            frame = analysis_y[start_idx:start_idx + frame_size]
+            frame_power = np.sum(frame**2)
+            if frame_power < (rms_energy**2 * 0.2):
+                continue
+            corr = np.correlate(frame, frame, mode='full')
+            corr = corr[len(corr)//2:]
+            if max_lag < len(corr):
+                lag = min_lag + np.argmax(corr[min_lag:max_lag])
+                if corr[lag] > 0.35 * corr[0]:
+                    pitches.append(float(sr / lag))
+
+        if len(pitches) >= 10:
+            valid_f0 = np.array(pitches)
             median_f0 = float(np.median(valid_f0))
             if median_f0 > 0:
-                # Semitones relative to speaker's own median: 12 * log2(f0 / median)
                 semitones = 12.0 * np.log2(valid_f0 / median_f0)
                 semitone_std = round(float(np.std(semitones)), 2)
                 note = f"Median F0: {round(median_f0, 1)} Hz, Semitone Std: {semitone_std} st"
             else:
                 semitone_std = None
-                note = "Median pitch calculation invalid"
+                note = "Pitch median invalid"
+        else:
+            median_f0 = None
+            semitone_std = None
+            note = "Insufficient voiced frames detected"
 
-        # Silence / Pause ratio
-        non_silent_intervals = librosa.effects.split(y, top_db=25)
-        non_silent_duration = sum([(end - start) / sr for start, end in non_silent_intervals])
-        pause_ratio = max(0.0, float((duration - non_silent_duration) / duration)) if duration > 0 else 0.0
-
+        gc.collect()
         return {
             "duration": round(duration, 2),
             "pitch_semitone_std": semitone_std,
             "median_f0": round(median_f0, 1) if median_f0 else None,
             "rms_energy": round(rms_energy, 4),
-            "pause_ratio": round(pause_ratio, 2),
+            "pause_ratio": pause_ratio,
             "is_valid_speech": semitone_std is not None,
             "note": note
+        }
+    except Exception as e:
+        print(f"[!] Lightweight acoustic extraction fallback: {e}")
+        return {
+            "duration": 0.0,
+            "pitch_semitone_std": None,
+            "median_f0": None,
+            "rms_energy": 0.0,
+            "pause_ratio": 0.0,
+            "is_valid_speech": False,
+            "note": f"Extraction error: {e}"
         }
     except Exception as e:
         print(f"[!] Acoustic extraction error: {e}")
@@ -834,7 +872,7 @@ Produce the requested JSON:
 
     # 2. Cloud Gemini Flash Lite (sub-second high-quota cloud models)
     if not data and client:
-        candidate_models = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite"]
+        candidate_models = ["gemini-3.8-flash", "gemini-flash-lite-latest", "gemini-3.5-flash-lite"]
         for model_name in candidate_models:
             try:
                 cfg = types.GenerateContentConfig(
@@ -862,8 +900,8 @@ Produce the requested JSON:
     if not data:
         # Context-aware fallback: Personalize with user's actual name
         t_lower = current_transcript.lower().strip()
-        if any(w in t_lower for w in ["hi", "hello", "hey", "vanakkam"]):
-            fallback_reply = f"Vanakkam {first_name}! I'm right here with you. How is your day going so far?"
+        if any(w in t_lower for w in ["hi", "hello", "hey"]):
+            fallback_reply = f"Hello {first_name}! I'm right here with you. How is your day going so far?"
         elif any(w in t_lower for w in ["bad", "sad", "upset", "depress", "tired", "exhaust", "stress"]):
             fallback_reply = f"I'm so sorry you're having a tough time today, {first_name}. I'm right here with you—tell me more about what happened."
         elif any(w in t_lower for w in ["happy", "good", "great", "fine", "super"]):
