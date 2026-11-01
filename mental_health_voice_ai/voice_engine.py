@@ -73,12 +73,12 @@ def transcribe_audio(audio_path: str) -> str:
 
     model = get_whisper_model()
     # vad_filter=True discards non-speech and silence chunks
-    # initial_prompt guides Whisper for Indian English & conversational Tanglish loanwords
+    # initial_prompt guides Whisper for natural Indian English conversation and emotional reflections
     segments, _ = model.transcribe(
         audio_path,
         beam_size=2,
         language="en",
-        initial_prompt="Indian English conversation, Tanglish, inaiku ennode day epdi irundhuchi, romba stress, tension, seri, yaar, enna aachu, eppadi irukkeenga.",
+        initial_prompt="Natural Indian English conversation, emotional reflection, mental health, thoughts, and feelings.",
         vad_filter=True,
         condition_on_previous_text=False
     )
@@ -149,49 +149,156 @@ async def synthesize_fast_speech(
     wellness_score: int = 75,
     dominant_state: str = "Calm",
     voice: Optional[str] = None,
-    language_mode: str = "tanglish"
+    language_mode: str = "indian_english"
 ) -> str:
     """
-    Sub-second neural speech synthesis via edge-tts (~0.4s).
-    Intelligently routes:
-    - Tamil / Tanglish / Code-Switched -> ta-IN-PallaviNeural (Native high-fidelity Tamil voice with natural cadence)
-    - Indian English -> en-IN-NeerjaNeural
+    Sub-second neural speech synthesis via edge-tts (~0.35s).
+    High-fidelity Indian English neural voices (Neerja Expressive, Prabhat, Jenny, Guy).
     Dynamically modulates prosodic rate and pitch based on user emotional state:
-    - Distress / low wellness: -10% rate, -3Hz pitch (vagus grounding cadence)
-    - Loneliness / mild strain: -5% rate, -1Hz pitch (warm intimate presence)
-    - Balanced / calm: +3% rate, +0Hz pitch (fluid conversational rhythm)
+    - Distress / low wellness: -6% rate, -2Hz pitch (soothing grounding cadence)
+    - Loneliness / mild strain: -3% rate, -1Hz pitch (warm intimate presence)
+    - Balanced / calm: +0% rate, +0Hz pitch (natural conversational human rhythm)
     """
     import edge_tts
     out_filename = f"reply_fast_{uuid.uuid4().hex[:8]}.mp3"
     out_path = os.path.join(CACHE_DIR, out_filename)
 
-    # Dynamic Prosodic Modulation
+    # Dynamic Prosodic Modulation for human warmth
     if wellness_score < 55 or dominant_state in ["Overwhelmed", "Exhausted", "Crisis Alert"]:
-        rate = "-10%"
-        pitch = "-3Hz"
+        rate = "-6%"
+        pitch = "-2Hz"
     elif wellness_score < 68 or dominant_state in ["Lonely", "Reflective"]:
-        rate = "-5%"
+        rate = "-3%"
         pitch = "-1Hz"
     else:
-        rate = "+3%"
+        rate = "+0%"
         pitch = "+0Hz"
 
-    # Select Optimal Voice: ta-IN-PallaviNeural for Tamil/Tanglish, en-IN-NeerjaNeural for English
-    if not voice:
-        has_tamil_script = bool(re.search(r'[\u0B80-\u0BFF]', text))
-        if has_tamil_script or language_mode in ["tanglish", "tamil", "code_switched"]:
-            target_voice = "ta-IN-PallaviNeural"
-        else:
-            target_voice = "en-IN-NeerjaNeural"
+# Curated ChatGPT-Style Natural Voices (Indian English primary, distinct expressive personas)
+AVAILABLE_VOICES = [
+    {
+        "id": "en-IN-NeerjaExpressiveNeural",
+        "name": "Neerja",
+        "label": "Neerja (Expressive)",
+        "gender": "Female",
+        "accent": "Indian English",
+        "description": "Warm, empathetic and expressive tone",
+        "sample_text": "Hello, I am your Arogya companion. I'm here to listen and reflect with you.",
+        "default": True
+    },
+    {
+        "id": "en-IN-PrabhatNeural",
+        "name": "Prabhat",
+        "label": "Prabhat (Grounded)",
+        "gender": "Male",
+        "accent": "Indian English",
+        "description": "Calm, deep and grounding reassurance",
+        "sample_text": "Take a gentle breath. I am right here with you whenever you are ready.",
+        "default": False
+    },
+    {
+        "id": "en-IN-NeerjaNeural",
+        "name": "Neerja Soft",
+        "label": "Neerja (Gentle)",
+        "gender": "Female",
+        "accent": "Indian English",
+        "description": "Soft-spoken, peaceful and mindful presence",
+        "sample_text": "You can speak freely here without any judgment. How are you feeling today?",
+        "default": False
+    },
+    {
+        "id": "en-US-JennyNeural",
+        "name": "Jenny",
+        "label": "Jenny (Conversational)",
+        "gender": "Female",
+        "accent": "Conversational English",
+        "description": "Clear, friendly and upbeat companion",
+        "sample_text": "Hi there! I am ready whenever you want to share what is on your mind.",
+        "default": False
+    },
+    {
+        "id": "en-US-GuyNeural",
+        "name": "Guy",
+        "label": "Guy (Thoughtful)",
+        "gender": "Male",
+        "accent": "Calm English",
+        "description": "Thoughtful, gentle and steady presence",
+        "sample_text": "I am here to support you. Let's take it one step at a time.",
+        "default": False
+    }
+]
+
+DEFAULT_VOICE = "en-IN-NeerjaExpressiveNeural"
+VALID_VOICE_IDS = {v["id"] for v in AVAILABLE_VOICES}
+
+async def generate_voice_preview(voice_id: str) -> Optional[str]:
+    """Generates and caches a preview audio snippet for a given voice persona."""
+    import edge_tts
+    if voice_id not in VALID_VOICE_IDS:
+        voice_id = DEFAULT_VOICE
+
+    voice_meta = next((v for v in AVAILABLE_VOICES if v["id"] == voice_id), AVAILABLE_VOICES[0])
+    preview_filename = f"preview_{voice_id}.mp3"
+    preview_path = os.path.join(CACHE_DIR, preview_filename)
+
+    if os.path.exists(preview_path) and os.path.getsize(preview_path) > 1000:
+        return f"/audio/{preview_filename}"
+
+    sample = voice_meta.get("sample_text", "Hello, I am your Arogya companion. I'm here to listen and reflect with you.")
+    try:
+        communicate = edge_tts.Communicate(sample, voice=voice_id, rate="+0%", pitch="+0Hz")
+        await asyncio.wait_for(communicate.save(preview_path), timeout=8.0)
+        return f"/audio/{preview_filename}"
+    except Exception as e:
+        print(f"[!] Voice preview generation notice: {e}")
+        return None
+
+async def synthesize_fast_speech(
+    text: str,
+    wellness_score: int = 75,
+    dominant_state: str = "Calm",
+    voice: Optional[str] = None,
+    language_mode: str = "indian_english"
+) -> str:
+    """
+    Sub-second neural speech synthesis via edge-tts (~0.35s).
+    High-fidelity Indian English neural voices (Neerja Expressive, Prabhat, Jenny, Guy).
+    Dynamically modulates prosodic rate and pitch based on user emotional state:
+    - Distress / low wellness: -6% rate, -2Hz pitch (soothing grounding cadence)
+    - Loneliness / mild strain: -3% rate, -1Hz pitch (warm intimate presence)
+    - Balanced / calm: +0% rate, +0Hz pitch (natural conversational human rhythm)
+    """
+    import edge_tts
+    out_filename = f"reply_fast_{uuid.uuid4().hex[:8]}.mp3"
+    out_path = os.path.join(CACHE_DIR, out_filename)
+
+    # Dynamic Prosodic Modulation for human warmth
+    if wellness_score < 55 or dominant_state in ["Overwhelmed", "Exhausted", "Crisis Alert"]:
+        rate = "-6%"
+        pitch = "-2Hz"
+    elif wellness_score < 68 or dominant_state in ["Lonely", "Reflective"]:
+        rate = "-3%"
+        pitch = "-1Hz"
     else:
-        target_voice = voice
+        rate = "+0%"
+        pitch = "+0Hz"
+
+    target_voice = voice if (voice and voice in VALID_VOICE_IDS) else DEFAULT_VOICE
 
     try:
         communicate = edge_tts.Communicate(text, voice=target_voice, rate=rate, pitch=pitch)
         await asyncio.wait_for(communicate.save(out_path), timeout=8.0)
         return f"/audio/{out_filename}"
     except Exception as e:
-        print(f"[!] Fast speech synthesis timeout or warning: {e}")
+        print(f"[!] Fast speech synthesis notice for {target_voice}: {e}")
+        # Fallback to standard Neerja if expressive voice encounters delay
+        if target_voice == "en-IN-NeerjaExpressiveNeural":
+            try:
+                communicate = edge_tts.Communicate(text, voice="en-IN-NeerjaNeural", rate=rate, pitch=pitch)
+                await asyncio.wait_for(communicate.save(out_path), timeout=6.0)
+                return f"/audio/{out_filename}"
+            except Exception:
+                pass
         return None
 
 async def synthesize_speech(
@@ -199,27 +306,21 @@ async def synthesize_speech(
     mode: str = "fast",
     wellness_score: int = 75,
     dominant_state: str = "Calm",
-    language_mode: str = "tanglish",
+    language_mode: str = "indian_english",
     spoken_text: Optional[str] = None,
     voice: Optional[str] = None
 ) -> str:
     """
     Unified speech synthesis router:
-    - 'fast': Native sub-second Tamil/English neural voice via edge-tts (0.35s - 0.45s)
-    - 'cloned': Authentic reference cloned voice on RTX 3050 GPU via F5-TTS
-    Uses 'spoken_text' (phonetically prepared with breath pauses & script representation)
-    while the chat UI displays the clean conversational Tanglish 'text'.
+    Synthesizes natural, human-like Indian English voice via Microsoft neural TTS.
     """
     active_text = spoken_text if (spoken_text and len(spoken_text.strip()) > 0) else text
-
-    # Standardized on Fast Native Neural Voice for instant sub-second responses (~0.35s).
-    # Cloned voice model and audio files are preserved on disk for future activation if needed.
 
     return await synthesize_fast_speech(
         active_text,
         wellness_score=wellness_score,
         dominant_state=dominant_state,
         voice=voice,
-        language_mode=language_mode
+        language_mode="indian_english"
     )
 

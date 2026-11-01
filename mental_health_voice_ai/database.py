@@ -59,7 +59,7 @@ def init_db():
             overall_wellness INTEGER DEFAULT 75,
             dominant_emotion TEXT DEFAULT 'Calm',
             summary TEXT DEFAULT '',
-            user_id TEXT DEFAULT 'primary_user'
+            user_id TEXT DEFAULT 'guest_user'
         )
     """)
 
@@ -102,10 +102,10 @@ def init_db():
 
     # Attempt migration if columns missing
     try:
-        cursor.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT DEFAULT 'primary_user'")
+        cursor.execute("ALTER TABLE sessions ADD COLUMN user_id TEXT DEFAULT 'guest_user'")
     except Exception: pass
     try:
-        cursor.execute("UPDATE sessions SET user_id = 'primary_user' WHERE user_id IS NULL OR user_id = ''")
+        cursor.execute("UPDATE sessions SET user_id = 'guest_user' WHERE user_id IS NULL OR user_id = '' OR user_id = 'primary_user'")
     except Exception: pass
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN preferred_name TEXT")
@@ -138,53 +138,6 @@ def init_db():
             last_updated TIMESTAMP
         )
     """)
-
-    # Seed default primary profile
-    cursor.execute("SELECT user_id, user_name FROM user_clinical_profile WHERE user_id = 'primary_user'")
-    row = cursor.fetchone()
-    now = datetime.now().isoformat()
-    if not row:
-        cursor.execute("""
-            INSERT INTO user_clinical_profile (user_id, user_name, key_context, recurring_stressors, effective_coping, baseline_wellness, last_updated)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (
-            "primary_user",
-            "Friend",
-            "Seeking conversational companionship and emotional support",
-            json.dumps([]),
-            json.dumps([]),
-            75.0,
-            now
-        ))
-    elif row["user_name"] == "Friend" or not row["user_name"]:
-        cursor.execute("""
-            UPDATE user_clinical_profile 
-            SET user_name = 'Friend',
-                key_context = 'Seeking conversational companionship and emotional support',
-                recurring_stressors = ?,
-                effective_coping = ?
-            WHERE user_id = 'primary_user'
-        """, (
-            json.dumps([]),
-            json.dumps([])
-        ))
-
-    # Ensure default primary_user exists in users table
-    cursor.execute("SELECT id FROM users WHERE id = 'primary_user'")
-    if not cursor.fetchone():
-        cursor.execute("""
-            INSERT INTO users (id, google_id, email, name, given_name, picture, created_at, last_login)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            "primary_user",
-            "primary_user_google",
-            "logeshwaran@example.com",
-            "Logeshwaran",
-            "Logeshwaran",
-            "",
-            now,
-            now
-        ))
 
     conn.commit()
     conn.close()
@@ -421,7 +374,7 @@ def get_user_by_id(user_id: str) -> Optional[Dict[str, Any]]:
 # ---------------------------------------------------------------------------
 # SESSION PERSISTENCE & MULTI-USER ISOLATION
 # ---------------------------------------------------------------------------
-def create_session(session_id: str, title: str = "New Reflection", user_id: str = "primary_user") -> Dict[str, Any]:
+def create_session(session_id: str, title: str = "New Reflection", user_id: str = "guest_user") -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
     now = datetime.now().isoformat()
@@ -531,7 +484,7 @@ def save_message(session_id: str, role: str, text: str, audio_path: Optional[str
     metrics_str = json.dumps(speech_metrics) if speech_metrics else None
 
     # Guarantee session exists in sessions table for foreign key and history integrity
-    target_user = user_id or 'primary_user'
+    target_user = user_id or 'guest_user'
     cursor.execute("""
         INSERT OR IGNORE INTO sessions (session_id, title, created_at, last_active, user_id)
         VALUES (?, 'Check-in', ?, ?, ?)
@@ -878,7 +831,7 @@ def get_session_report(session_id: str, user_id: Optional[str] = None) -> Option
         "transcript": [{"role": m["role"], "text": m["text"], "timestamp": m["timestamp"]} for m in messages]
     }
 
-def get_user_clinical_profile(user_id: str = "primary_user") -> Dict[str, Any]:
+def get_user_clinical_profile(user_id: str = "guest_user") -> Dict[str, Any]:
     """
     Retrieves the persistent longitudinal clinical profile, recurring stressors,
     and effective coping mechanisms across all sessions for a specific user.
@@ -928,7 +881,7 @@ def get_user_clinical_profile(user_id: str = "primary_user") -> Dict[str, Any]:
     return d
 
 def update_user_clinical_profile(
-    user_id: str = "primary_user",
+    user_id: str = "guest_user",
     user_name: Optional[str] = None,
     key_context: Optional[str] = None,
     new_stressor: Optional[str] = None,
@@ -979,7 +932,7 @@ def update_user_clinical_profile(
 
     return get_user_clinical_profile(user_id)
 
-def get_recent_session_memory_anchor(user_id: str = "primary_user", exclude_session_id: Optional[str] = None) -> Dict[str, Any]:
+def get_recent_session_memory_anchor(user_id: str = "guest_user", exclude_session_id: Optional[str] = None) -> Dict[str, Any]:
     """
     Retrieves the most recent meaningful session topic, user quotes, and recurring stressors
     for memory-anchored greeting recall across days.
@@ -1042,7 +995,7 @@ def get_recent_session_memory_anchor(user_id: str = "primary_user", exclude_sess
         "recent_remarks": key_remarks
     }
 
-def get_historical_context(current_session_id: Optional[str] = None, user_id: str = "primary_user", limit: int = 4) -> str:
+def get_historical_context(current_session_id: Optional[str] = None, user_id: str = "guest_user", limit: int = 4) -> str:
     """
     Retrieves cross-session memory and clinical trends across past conversations,
     incorporating the persistent clinical profile so Arogya naturally references long-term stressors.
@@ -1111,7 +1064,7 @@ def get_historical_context(current_session_id: Optional[str] = None, user_id: st
     conn.close()
     return "\n".join(lines)
 
-def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
+def get_analytics_summary(user_id: str = "guest_user") -> Dict[str, Any]:
     """
     Computes comprehensive longitudinal clinical analytics across all sessions for a specific user:
     - Multi-session time-series scores & trajectories

@@ -127,7 +127,7 @@
                                 <label for="signupPreferredNameInput" class="auth-field-label">Preferred Name / Username</label>
                                 <div class="auth-field-input-wrap">
                                     <svg class="field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                                    <input type="text" id="signupPreferredNameInput" class="auth-input-element" placeholder="e.g. Logesh" maxlength="30" autocomplete="off" />
+                                    <input type="text" id="signupPreferredNameInput" class="auth-input-element" placeholder="e.g. Maya" maxlength="30" autocomplete="off" />
                                 </div>
                                 <span class="auth-field-hint">Arogya will greet you and personalize conversations with this name.</span>
                             </div>
@@ -255,7 +255,7 @@
                 <form id="onboardingNameForm" class="onboarding-form" onsubmit="return false;">
                     <div class="onboarding-input-wrap">
                         <label for="onboardingNameInput" class="onboarding-label">Your Preferred Name</label>
-                        <input type="text" id="onboardingNameInput" class="onboarding-input" placeholder="e.g. Logesh" maxlength="30" required autocomplete="off" />
+                        <input type="text" id="onboardingNameInput" class="onboarding-input" placeholder="e.g. Maya" maxlength="30" required autocomplete="off" />
                     </div>
                     <button type="submit" id="submitOnboardingBtn" class="btn-onboarding-submit">
                         <span>Continue to Arogya →</span>
@@ -356,7 +356,7 @@
                         <span id="modalVoiceStateText">Arogya is listening... speak freely</span>
                     </div>
                     <div class="voice-live-caption-area">
-                        <div class="voice-user-live-text" id="modalUserLiveText">Speak naturally in English or Tanglish...</div>
+                        <div class="voice-user-live-text" id="modalUserLiveText">Speak naturally in English...</div>
                         <div class="voice-ai-live-text" id="modalAiLiveText"></div>
                     </div>
                     <div class="voice-interrupt-tip" id="voiceInterruptTip">
@@ -576,6 +576,17 @@
                         <span>Insights</span>
                     </button>
 
+                    <!-- ChatGPT-Style Voice Selector Button -->
+                    <button id="openVoiceSelectorBtn" class="btn-voice-selector" title="Change Voice Model (ChatGPT-style voice switch)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="23"/>
+                            <line x1="8" y1="23" x2="16" y2="23"/>
+                        </svg>
+                        <span id="headerVoiceLabel">Voice: Neerja</span>
+                    </button>
+
                     <!-- Theme Toggle (Light / Dark) -->
                     <button id="themeToggleBtn" class="theme-toggle-btn" title="Toggle Light / Dark Mode">
                         <svg class="theme-icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -683,7 +694,7 @@
                     <div class="inline-voice-meta">
                         <div class="inline-voice-status">
                             <span class="voice-pulsing-dot"></span>
-                            <span id="inlineVoiceStatusText">Arogya is listening... speak naturally in English or Tanglish</span>
+                            <span id="inlineVoiceStatusText">Arogya is listening... speak naturally in English</span>
                         </div>
                         <div class="inline-voice-tone" id="inlineVoiceToneText">Tone: Calm &amp; Steady</div>
                     </div>
@@ -726,7 +737,7 @@
 
                     <!-- Text Input -->
                     <div class="text-input-wrap">
-                        <input type="text" id="textInput" placeholder="Speak through microphone or type your thoughts in English or Tanglish..." autocomplete="off">
+                        <input type="text" id="textInput" placeholder="Speak through microphone or type your thoughts in English..." autocomplete="off">
                         <button id="sendBtn" class="btn-send" title="Send message">
                             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -823,6 +834,42 @@
 
     <!-- Hidden audio element for speech playback -->
     <audio id="audioPlayer" preload="auto"></audio>
+    <audio id="previewAudioPlayer" preload="auto"></audio>
+
+    <!-- ChatGPT-Style Voice Selector Modal -->
+    <div id="voiceSelectorModal" class="voice-selector-modal hidden">
+        <div class="voice-selector-backdrop" id="voiceSelectorBackdrop"></div>
+        <div class="voice-selector-card">
+            <div class="voice-selector-header">
+                <div class="voice-selector-title-wrap">
+                    <div class="voice-selector-icon">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+                            <line x1="12" y1="19" x2="12" y2="23"/>
+                            <line x1="8" y1="23" x2="16" y2="23"/>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="voice-selector-title">Choose Voice</h3>
+                        <p class="voice-selector-desc">Select how Arogya speaks with you. Listen to samples and choose your favorite companion voice.</p>
+                    </div>
+                </div>
+                <button id="closeVoiceSelectorBtn" class="voice-selector-close-btn" title="Close">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+
+            <div class="voice-selector-list" id="voiceSelectorList">
+                <!-- Dynamically populated voice items with Play Sample and Select Radio -->
+            </div>
+
+            <div class="voice-selector-footer">
+                <span class="voice-footer-note">Natural Indian English Neural Speech</span>
+                <button type="button" id="confirmVoiceBtn" class="btn-confirm-voice">Done</button>
+            </div>
+        </div>
+    </div>
 
     <script src="/static/app.js"></script>
 </body>

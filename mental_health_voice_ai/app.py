@@ -14,7 +14,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response, Query
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -63,7 +63,13 @@ from mental_health_engine import (
     generate_memory_greeting,
     classify_user_emotion_from_voice_tone
 )
-from voice_engine import transcribe_audio, synthesize_speech
+from voice_engine import (
+    transcribe_audio,
+    synthesize_speech,
+    AVAILABLE_VOICES,
+    DEFAULT_VOICE,
+    generate_voice_preview
+)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -140,10 +146,7 @@ def get_effective_user(request: Request) -> dict:
     user = get_current_user(request)
     if user:
         return user
-    primary = get_user_by_id("primary_user")
-    if primary:
-        return primary
-    return {"id": "primary_user", "name": "User", "display_name": "Friend", "email": ""}
+    return {"id": "guest_user", "name": "", "display_name": "Friend", "email": ""}
 
 def prune_audio_cache(max_age_hours: int = 84):
     """Deletes temporary audio cache files older than max_age_hours (default 84 hours)."""
@@ -353,18 +356,50 @@ def get_user_profiles():
 # ---------------------------------------------------------------------------
 # SESSIONS & CLINICAL CONVERSATIONS (USER ISOLATED)
 # ---------------------------------------------------------------------------
+@app.get("/api/voices")
+def get_available_voices():
+    """Returns curated natural ChatGPT-style voice models for user selection."""
+    return {
+        "voices": AVAILABLE_VOICES,
+        "default_voice": DEFAULT_VOICE
+    }
+
+@app.get("/api/voice/preview")
+async def get_voice_preview_endpoint(voice: Optional[str] = None):
+    """Returns or generates a cached preview audio clip for a given voice persona."""
+    target_voice = voice or DEFAULT_VOICE
+    audio_url = await generate_voice_preview(target_voice)
+    if not audio_url:
+        raise HTTPException(status_code=500, detail="Voice preview generation failed")
+    return {"voice": target_voice, "audio_url": audio_url}
+
+@app.post("/api/synthesize")
+async def standalone_synthesize(
+    text: str = Form(...),
+    voice_mode: str = Form("fast"),
+    voice: Optional[str] = Form(None)
+):
+    """Synthesizes on-demand speech for an existing text message."""
+    audio_url = await synthesize_speech(
+        text=text,
+        mode=voice_mode,
+        language_mode="indian_english",
+        voice=voice
+    )
+    if not audio_url:
+        raise HTTPException(status_code=500, detail="Speech synthesis failed")
+    return {"audio_url": audio_url}
+
 @app.get("/api/sessions")
 def list_sessions(request: Request):
     user = get_effective_user(request)
-    if not user:
+    if not user or user["id"] in ["guest_user", "usr_guest"]:
         return []
     return get_all_sessions(user_id=user["id"])
 
 @app.post("/api/sessions")
 def new_session(request: Request):
     user = get_effective_user(request)
-    if not user:
-        raise HTTPException(status_code=401, detail="Please sign in with Google to create a session")
     session_id = f"sess_{uuid.uuid4().hex[:10]}"
     title = "New Reflection"
     sess = create_session(session_id, title, user_id=user["id"])
@@ -378,6 +413,9 @@ def load_session(session_id: str, request: Request):
         sess = get_session(session_id)
         if not sess:
             raise HTTPException(status_code=404, detail="Session not found")
+        # Restrict cross-user access if session belongs to a different registered user
+        if sess.get("user_id") and sess.get("user_id") not in ["guest_user", "usr_guest", user["id"]]:
+            raise HTTPException(status_code=403, detail="Access denied")
     messages = get_session_messages(session_id)
     aggregated = get_aggregated_mental_health_insights(session_id, user_id=user["id"])
     return {
@@ -400,7 +438,12 @@ def remove_session(session_id: str, request: Request):
     return {"status": "deleted", "session_id": session_id}
 
 @app.get("/api/greeting")
-async def get_initial_greeting(request: Request, session_id: Optional[str] = None, voice_mode: str = "fast"):
+async def get_initial_greeting(
+    request: Request,
+    session_id: Optional[str] = None,
+    voice_mode: str = "fast",
+    voice: Optional[str] = Query(None)
+):
     """
     Dynamic memory-anchored greeting: Proactively connects with authenticated user's name and past clinical journey.
     """
@@ -409,22 +452,23 @@ async def get_initial_greeting(request: Request, session_id: Optional[str] = Non
     if isinstance(greeting_info, dict):
         greeting_text = greeting_info.get("reply_text", "")
         spoken_text = greeting_info.get("spoken_text", greeting_text)
-        lang_mode = greeting_info.get("language_mode", "tanglish")
+        lang_mode = greeting_info.get("language_mode", "indian_english")
     else:
         greeting_text = str(greeting_info)
         spoken_text = greeting_text
-        lang_mode = "tanglish"
+        lang_mode = "indian_english"
 
     audio_url = await synthesize_speech(
         text=greeting_text,
         mode=voice_mode,
         language_mode=lang_mode,
-        spoken_text=spoken_text
+        spoken_text=spoken_text,
+        voice=voice
     )
 
-    # Save to session if session_id provided
+    # Save to session if session_id provided with actual user_id
     if session_id:
-        save_message(session_id, "assistant", greeting_text, audio_path=audio_url)
+        save_message(session_id, "assistant", greeting_text, audio_path=audio_url, user_id=user["id"])
 
     return {
         "greeting_text": greeting_text,
@@ -515,7 +559,8 @@ async def process_voice_chat(
     file: UploadFile = File(...),
     session_id: str = Form(...),
     voice_mode: str = Form("fast"),
-    client_transcript: Optional[str] = Form(None)
+    client_transcript: Optional[str] = Form(None),
+    voice: Optional[str] = Form(None)
 ):
     """
     Core speech-to-speech loop:
@@ -638,7 +683,7 @@ async def process_voice_chat(
 
     reply_text = eval_result.get("reply_text", "I'm listening and I'm right here with you.")
     spoken_text = eval_result.get("spoken_text")
-    language_mode = eval_result.get("language_mode", "tanglish")
+    language_mode = eval_result.get("language_mode", "indian_english")
 
     speaking_face = eval_result.get("speaking_face", tone_emotion["speaking_face"])
     bridge.current_emotion = speaking_face
@@ -654,7 +699,8 @@ async def process_voice_chat(
         wellness_score=user_wellness if user_wellness is not None else 75, 
         dominant_state=user_state,
         language_mode=language_mode,
-        spoken_text=spoken_text
+        spoken_text=spoken_text,
+        voice=voice
     )
 
     # 8. Save Assistant Message (Stores canonical colloquial text & turn metrics for chat history)
@@ -704,7 +750,7 @@ async def process_voice_chat(
         "suggest_grounding": eval_result.get("suggest_grounding", False),
         "grounding_mode": eval_result.get("grounding_mode", "box"),
         "language_mode": language_mode,
-        "speech_register": eval_result.get("speech_register", "warm_tanglish"),
+        "speech_register": eval_result.get("speech_register", "warm_conversational"),
         "new_title": new_title
     }
 
@@ -713,7 +759,8 @@ async def process_text_chat(
     request: Request,
     text: str = Form(...),
     session_id: str = Form(...),
-    voice_mode: str = Form("fast")
+    voice_mode: str = Form("fast"),
+    voice: Optional[str] = Form(None)
 ):
     """
     Instant text chat with grounded evidence scoring and immediate titling.
@@ -767,8 +814,8 @@ async def process_text_chat(
 
     reply_text = eval_result.get("reply_text", "I hear you, and thank you for sharing that with me.")
     spoken_text = eval_result.get("spoken_text")
-    language_mode = eval_result.get("language_mode", "tanglish")
-    speech_register = eval_result.get("speech_register", "warm_tanglish")
+    language_mode = eval_result.get("language_mode", "indian_english")
+    speech_register = eval_result.get("speech_register", "warm_conversational")
     
     user_wellness = eval_result.get("overall_wellness", 75)
     user_state = eval_result.get("dominant_state", "Calm")
@@ -781,7 +828,8 @@ async def process_text_chat(
                 wellness_score=user_wellness if user_wellness is not None else 75, 
                 dominant_state=user_state,
                 language_mode=language_mode,
-                spoken_text=spoken_text
+                spoken_text=spoken_text,
+                voice=voice
             )
         except Exception as e:
             print(f"[!] Speech synthesis notice: {e}")

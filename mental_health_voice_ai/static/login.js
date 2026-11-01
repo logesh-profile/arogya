@@ -185,6 +185,7 @@ async function handleGoogleCredentialResponse(response) {
         if (user) {
             localStorage.setItem("arogya_active_user", JSON.stringify(user));
         }
+        localStorage.removeItem("arogya_active_session_id");
         const displayName = user.preferred_name || user.given_name || user.name || "Friend";
 
         showToast(`Welcome, ${displayName}! Entering Arogya...`, false);
@@ -296,6 +297,7 @@ async function loginWithLocalUsername(username) {
         if (data.user) {
             localStorage.setItem("arogya_active_user", JSON.stringify(data.user));
         }
+        localStorage.removeItem("arogya_active_session_id");
         showToast(`Welcome, ${username.trim()}! Entering Arogya...`, false);
         setTimeout(() => {
             window.location.href = "/";

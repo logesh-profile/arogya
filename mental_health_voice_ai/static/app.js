@@ -127,6 +127,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
 
     updateAuthUI(true, currentUser);
+    await initVoiceSelector();
 
     // Always restore the user's active conversation on page reload (never erase chats!)
     const sessions = await loadSessions();
@@ -528,12 +529,14 @@ function setupAuthEvents() {
                 currentUser = null;
                 localStorage.removeItem("arogya_active_user");
                 localStorage.removeItem("arogya_session_token");
+                localStorage.removeItem("arogya_active_session_id");
                 updateAuthUI(false, null);
                 window.location.href = "/login";
             } catch (e) {
                 console.warn("Logout notice:", e);
                 localStorage.removeItem("arogya_active_user");
                 localStorage.removeItem("arogya_session_token");
+                localStorage.removeItem("arogya_active_session_id");
                 window.location.href = "/login";
             }
         });
@@ -608,6 +611,172 @@ function setVoiceMode(mode) {
 
     const badge = document.getElementById("currentEngineBadge");
     if (badge) badge.textContent = "INSTANT (~0.4s)";
+}
+
+// ==========================================================================
+// CHATGPT-STYLE VOICE SELECTOR CONTROLLER
+// ==========================================================================
+let selectedVoice = localStorage.getItem("arogya_selected_voice") || "en-IN-NeerjaExpressiveNeural";
+let availableVoices = [];
+let previewAudio = null;
+
+async function initVoiceSelector() {
+    const openBtn = document.getElementById("openVoiceSelectorBtn");
+    const closeBtn = document.getElementById("closeVoiceSelectorBtn");
+    const backdrop = document.getElementById("voiceSelectorBackdrop");
+    const modal = document.getElementById("voiceSelectorModal");
+    const confirmBtn = document.getElementById("confirmVoiceBtn");
+    const headerLabel = document.getElementById("headerVoiceLabel");
+    const listContainer = document.getElementById("voiceSelectorList");
+
+    previewAudio = document.getElementById("previewAudioPlayer") || new Audio();
+
+    // Fetch voice list from backend
+    try {
+        const res = await apiFetch("/api/voices");
+        if (res.ok) {
+            const data = await res.json();
+            availableVoices = data.voices || [];
+            if (!availableVoices.some(v => v.id === selectedVoice)) {
+                selectedVoice = data.default_voice || "en-IN-NeerjaExpressiveNeural";
+                localStorage.setItem("arogya_selected_voice", selectedVoice);
+            }
+        }
+    } catch (e) {
+        console.warn("Voices fetch notice:", e);
+    }
+
+    // Update header label
+    const currVoiceObj = availableVoices.find(v => v.id === selectedVoice);
+    if (headerLabel && currVoiceObj) {
+        headerLabel.textContent = `Voice: ${currVoiceObj.name}`;
+    }
+
+    function renderVoiceList() {
+        if (!listContainer) return;
+        listContainer.innerHTML = "";
+
+        availableVoices.forEach(v => {
+            const isSelected = v.id === selectedVoice;
+            const card = document.createElement("div");
+            card.className = `voice-option-card ${isSelected ? "selected" : ""}`;
+            card.setAttribute("data-voice-id", v.id);
+
+            const initial = v.name.charAt(0).toUpperCase();
+
+            card.innerHTML = `
+                <div class="voice-option-info">
+                    <div class="voice-avatar-badge">${initial}</div>
+                    <div class="voice-option-text">
+                        <div class="voice-name-row">
+                            <span class="voice-name">${escapeHtml(v.label || v.name)}</span>
+                            <span class="voice-tag">${escapeHtml(v.accent)}</span>
+                        </div>
+                        <span class="voice-desc">${escapeHtml(v.description)}</span>
+                    </div>
+                </div>
+                <div class="voice-option-actions">
+                    <button type="button" class="btn-voice-preview" title="Play voice sample" data-voice-id="${v.id}">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5 3 19 12 5 21 5 3"/>
+                        </svg>
+                    </button>
+                    <div class="voice-radio-check"></div>
+                </div>
+            `;
+
+            // Selection
+            card.onclick = (e) => {
+                if (e.target.closest(".btn-voice-preview")) return;
+                selectVoice(v.id);
+            };
+
+            // Preview Play button
+            const playBtn = card.querySelector(".btn-voice-preview");
+            playBtn.onclick = (e) => {
+                e.stopPropagation();
+                playVoicePreview(v.id, playBtn);
+            };
+
+            listContainer.appendChild(card);
+        });
+    }
+
+    function selectVoice(voiceId) {
+        selectedVoice = voiceId;
+        localStorage.setItem("arogya_selected_voice", voiceId);
+        const voiceObj = availableVoices.find(v => v.id === voiceId);
+        if (headerLabel && voiceObj) {
+            headerLabel.textContent = `Voice: ${voiceObj.name}`;
+        }
+        renderVoiceList();
+    }
+
+    async function playVoicePreview(voiceId, buttonEl) {
+        if (!previewAudio) return;
+
+        // If this button is already playing, stop
+        if (!previewAudio.paused && buttonEl.classList.contains("playing")) {
+            previewAudio.pause();
+            previewAudio.currentTime = 0;
+            buttonEl.classList.remove("playing");
+            buttonEl.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+            return;
+        }
+
+        // Reset any other playing buttons
+        document.querySelectorAll(".btn-voice-preview.playing").forEach(btn => {
+            btn.classList.remove("playing");
+            btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+        });
+
+        buttonEl.innerHTML = `<span style="font-size:10px;">...</span>`;
+
+        try {
+            const res = await apiFetch(`/api/voice/preview?voice=${encodeURIComponent(voiceId)}`);
+            if (!res.ok) throw new Error("Preview fetch failed");
+            const data = await res.json();
+            if (data.audio_url) {
+                previewAudio.src = data.audio_url;
+                await previewAudio.play();
+                buttonEl.classList.add("playing");
+                buttonEl.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`;
+
+                previewAudio.onended = () => {
+                    buttonEl.classList.remove("playing");
+                    buttonEl.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+                };
+            }
+        } catch (err) {
+            console.warn("Preview error:", err);
+            buttonEl.classList.remove("playing");
+            buttonEl.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+        }
+    }
+
+    function openModal() {
+        if (!modal) return;
+        modal.classList.remove("hidden");
+        renderVoiceList();
+    }
+
+    function closeModal() {
+        if (!modal) return;
+        modal.classList.add("hidden");
+        if (previewAudio && !previewAudio.paused) {
+            previewAudio.pause();
+            previewAudio.currentTime = 0;
+        }
+        document.querySelectorAll(".btn-voice-preview.playing").forEach(btn => {
+            btn.classList.remove("playing");
+            btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
+        });
+    }
+
+    if (openBtn) openBtn.addEventListener("click", openModal);
+    if (closeBtn) closeBtn.addEventListener("click", closeModal);
+    if (backdrop) backdrop.addEventListener("click", closeModal);
+    if (confirmBtn) confirmBtn.addEventListener("click", closeModal);
 }
 
 // --- CONTROLS SETUP ---
@@ -1561,7 +1730,23 @@ async function deleteSessionConfirm(sessionId) {
 async function loadSessionData(sessionId) {
     try {
         const res = await apiFetch(`/api/sessions/${sessionId}`);
+        if (!res.ok) {
+            console.warn("Session not found or forbidden, switching cleanly:", sessionId);
+            localStorage.removeItem("arogya_active_session_id");
+            const sessions = await loadSessions();
+            if (sessions && sessions.length > 0) {
+                currentSessionId = sessions[0].session_id;
+                localStorage.setItem("arogya_active_session_id", currentSessionId);
+                return await loadSessionData(currentSessionId);
+            } else {
+                return await startNewSession(true);
+            }
+        }
         const data = await res.json();
+        if (!data || !data.session) {
+            localStorage.removeItem("arogya_active_session_id");
+            return await startNewSession(true);
+        }
 
         if (currentSessionTitle) currentSessionTitle.textContent = data.session.title || "Emotional Wellness Reflection";
         
@@ -1613,7 +1798,7 @@ async function fetchInitialGreeting() {
     setLiveStatus("Connecting...", "");
     orbCaption.textContent = "Arogya is welcoming you...";
     try {
-        const res = await apiFetch(`/api/greeting?session_id=${currentSessionId}&voice_mode=${voiceMode}`);
+        const res = await apiFetch(`/api/greeting?session_id=${currentSessionId}&voice_mode=${voiceMode}&voice=${encodeURIComponent(selectedVoice)}`);
         const data = await res.json();
 
         currentSpeakingFace = data.speaking_face || "happy";
@@ -1771,6 +1956,7 @@ async function synthesizeAndPlay(text, btnEl) {
         const formData = new FormData();
         formData.append("text", text);
         formData.append("voice_mode", voiceMode || "fast");
+        formData.append("voice", selectedVoice);
         const res = await apiFetch("/api/synthesize", {
             method: "POST",
             body: formData
@@ -1945,7 +2131,7 @@ async function startRecording() {
             inlineStage.classList.remove("hidden");
         }
 
-        orbCaption.textContent = "Listening... Speak naturally in English or Tanglish";
+        orbCaption.textContent = "Listening... Speak naturally in English";
         setLiveStatus("Listening...", "listening");
 
         if (isVoiceModalActive) {
@@ -2038,6 +2224,7 @@ async function handleTextSubmit(overrideText = null) {
             formData.append("file", audioToSend, "user_speech.webm");
             formData.append("session_id", currentSessionId);
             formData.append("voice_mode", voiceMode);
+            formData.append("voice", selectedVoice);
             formData.append("client_transcript", text === "Voice reflection..." ? "" : text);
 
             res = await apiFetch("/api/chat/voice", {

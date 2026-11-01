@@ -4457,11 +4457,358 @@ body:not(.user-authenticated) .btn-corner-signin {
     color: #f59e0b;
 }
 
-.turn-score-badge.score-low {
-    border-color: rgba(239, 68, 68, 0.4);
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
+/* ==========================================================================
+   CHATGPT-STYLE VOICE SELECTOR MODAL & TRIGGER STYLES
+   ========================================================================== */
+.btn-voice-selector {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.16));
+    background: var(--bg-card, rgba(255, 255, 255, 0.05));
+    color: var(--text-primary, #ffffff);
+    font-size: 12.5px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+.btn-voice-selector:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.3);
+    transform: translateY(-1px);
+}
+
+.voice-selector-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 99999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    opacity: 1;
+    transition: opacity 0.25s ease;
+}
+
+.voice-selector-modal.hidden {
+    display: none !important;
+}
+
+.voice-selector-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.voice-selector-card {
+    position: relative;
+    width: 100%;
+    max-width: 520px;
+    background: var(--bg-main, #0d0d0f);
+    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
+    border-radius: 20px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    display: flex;
+    flex-direction: column;
+    max-height: 88vh;
+    overflow: hidden;
+    animation: voiceModalIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes voiceModalIn {
+    from { opacity: 0; transform: scale(0.96) translateY(12px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.voice-selector-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 22px 24px 16px;
+    border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+}
+
+.voice-selector-title-wrap {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.voice-selector-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-primary, #ffffff);
+    flex-shrink: 0;
+}
+
+.voice-selector-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-primary, #ffffff);
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+}
+
+.voice-selector-desc {
+    font-size: 12.5px;
+    color: var(--text-muted, #9ca3af);
+    margin: 0;
+    line-height: 1.45;
+}
+
+.voice-selector-close-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted, #9ca3af);
+    cursor: pointer;
+    padding: 6px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.voice-selector-close-btn:hover {
+    color: var(--text-primary, #ffffff);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.voice-selector-list {
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+}
+
+.voice-option-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-radius: 14px;
+    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.1));
+    background: var(--bg-card, rgba(255, 255, 255, 0.03));
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.voice-option-card:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-1px);
+}
+
+.voice-option-card.selected {
+    border-color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 0 16px rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="light"] .voice-option-card.selected {
+    border-color: #000000;
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.voice-option-info {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex: 1;
+}
+
+.voice-avatar-badge {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary, #ffffff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    flex-shrink: 0;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.voice-option-card.selected .voice-avatar-badge {
+    background: #ffffff;
+    color: #000000;
+}
+
+[data-theme="light"] .voice-option-card.selected .voice-avatar-badge {
+    background: #000000;
+    color: #ffffff;
+}
+
+.voice-option-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.voice-name-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.voice-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary, #ffffff);
+}
+
+.voice-tag {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-muted, #9ca3af);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.voice-desc {
+    font-size: 12px;
+    color: var(--text-muted, #9ca3af);
+    line-height: 1.35;
+}
+
+.voice-option-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.btn-voice-preview {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: transparent;
+    color: var(--text-primary, #ffffff);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-voice-preview:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: rgba(255, 255, 255, 0.4);
+    transform: scale(1.05);
+}
+
+.btn-voice-preview.playing {
+    background: #ffffff;
+    color: #000000;
+    animation: voicePlayPulse 1s infinite alternate;
+}
+
+@keyframes voicePlayPulse {
+    from { box-shadow: 0 0 4px rgba(255, 255, 255, 0.4); }
+    to { box-shadow: 0 0 16px rgba(255, 255, 255, 0.9); }
+}
+
+.voice-radio-check {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.voice-option-card.selected .voice-radio-check {
+    border-color: #ffffff;
+    background: #ffffff;
+}
+
+[data-theme="light"] .voice-option-card.selected .voice-radio-check {
+    border-color: #000000;
+    background: #000000;
+}
+
+.voice-radio-check::after {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #000000;
+    display: none;
+}
+
+[data-theme="light"] .voice-radio-check::after {
+    background: #ffffff;
+}
+
+.voice-option-card.selected .voice-radio-check::after {
+    display: block;
+}
+
+.voice-selector-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.voice-footer-note {
+    font-size: 11.5px;
+    color: var(--text-muted, #71717a);
+}
+
+.btn-confirm-voice {
+    padding: 8px 22px;
+    border-radius: 999px;
+    background: #ffffff;
+    color: #000000;
+    font-size: 13px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-confirm-voice:hover {
+    background: #e4e4e7;
+    transform: translateY(-1px);
+}
+
+[data-theme="light"] .btn-confirm-voice {
+    background: #000000;
+    color: #ffffff;
+}
+
+[data-theme="light"] .btn-confirm-voice:hover {
+    background: #27272a;
+}
+
 
 
 
