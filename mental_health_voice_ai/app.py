@@ -1028,16 +1028,6 @@ def download_analytics_report(request: Request):
     )
 
 
-@app.post("/api/synthesize")
-async def standalone_synthesize(
-    text: str = Form(...),
-    voice_mode: str = Form("cloned")
-):
-    """
-    On-demand speech synthesis for any text message.
-    """
-    audio_url = await synthesize_speech(text, mode=voice_mode)
-    return {"audio_url": audio_url}
 
 if __name__ == "__main__":
     import uvicorn

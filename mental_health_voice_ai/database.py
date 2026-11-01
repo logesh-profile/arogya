@@ -99,10 +99,20 @@ class PostgresCursorWrapper:
         except Exception:
             pass
 
+_pg_pool = None
+
+def get_pg_pool(clean_url: str):
+    global _pg_pool
+    if _pg_pool is None:
+        import psycopg2.pool
+        _pg_pool = psycopg2.pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=clean_url)
+    return _pg_pool
+
 class PostgresConnectionWrapper:
-    def __init__(self, conn):
+    def __init__(self, conn, pool=None):
         self.conn = conn
         self.conn.autocommit = True
+        self.pool = pool
 
     def cursor(self):
         import psycopg2.extras
@@ -119,7 +129,10 @@ class PostgresConnectionWrapper:
 
     def close(self):
         try:
-            self.conn.close()
+            if self.pool and self.conn:
+                self.pool.putconn(self.conn)
+            else:
+                self.conn.close()
         except Exception:
             pass
 
@@ -127,11 +140,11 @@ def get_connection():
     clean_url = _clean_database_url(os.getenv("DATABASE_URL"))
     if clean_url:
         try:
-            import psycopg2
-            conn = psycopg2.connect(clean_url)
-            return PostgresConnectionWrapper(conn)
+            pool = get_pg_pool(clean_url)
+            conn = pool.getconn()
+            return PostgresConnectionWrapper(conn, pool=pool)
         except Exception as e:
-            print(f"[!] PostgreSQL connection notice: {e}, using SQLite at {DB_PATH}")
+            print(f"[!] PostgreSQL pool connection notice: {e}, using SQLite at {DB_PATH}")
 
     os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)

@@ -1208,7 +1208,6 @@ function startVisualizer(stream) {
     function render(timestamp) {
         if (!isRecording && (!audioPlayer || audioPlayer.paused)) {
             if (animFrameId) {
-                clearTimeout(animFrameId);
                 cancelAnimationFrame(animFrameId);
                 animFrameId = null;
             }
@@ -1216,15 +1215,17 @@ function startVisualizer(stream) {
             return;
         }
 
+        // Always schedule next frame
+        animFrameId = requestAnimationFrame(render);
+
         // Strict 30 FPS Hardware Limiter to eliminate CPU/GPU drain
         if (timestamp) {
             if (!lastRenderTime) lastRenderTime = timestamp;
             const elapsed = timestamp - lastRenderTime;
             if (elapsed < 33.3) {
-                animFrameId = requestAnimationFrame(render);
                 return;
             }
-            lastRenderTime = timestamp;
+            lastRenderTime = timestamp - (elapsed % 33.3);
         }
 
         analyser.getByteFrequencyData(freqData);
