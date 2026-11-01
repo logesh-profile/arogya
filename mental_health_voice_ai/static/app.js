@@ -629,6 +629,9 @@ async function initVoiceSelector() {
     const headerLabel = document.getElementById("headerVoiceLabel");
     const listContainer = document.getElementById("voiceSelectorList");
 
+    const sidebarVoiceBtn = document.getElementById("sidebarVoiceSelectorBtn");
+    const sidebarVoiceLabel = document.getElementById("sidebarVoiceLabel");
+
     previewAudio = document.getElementById("previewAudioPlayer") || new Audio();
 
     // Fetch voice list from backend
@@ -646,10 +649,13 @@ async function initVoiceSelector() {
         console.warn("Voices fetch notice:", e);
     }
 
-    // Update header label
+    // Update labels
     const currVoiceObj = availableVoices.find(v => v.id === selectedVoice);
     if (headerLabel && currVoiceObj) {
         headerLabel.textContent = `Voice: ${currVoiceObj.name}`;
+    }
+    if (sidebarVoiceLabel && currVoiceObj) {
+        sidebarVoiceLabel.textContent = `Voice: ${currVoiceObj.name}`;
     }
 
     function renderVoiceList() {
@@ -708,6 +714,9 @@ async function initVoiceSelector() {
         const voiceObj = availableVoices.find(v => v.id === voiceId);
         if (headerLabel && voiceObj) {
             headerLabel.textContent = `Voice: ${voiceObj.name}`;
+        }
+        if (sidebarVoiceLabel && voiceObj) {
+            sidebarVoiceLabel.textContent = `Voice: ${voiceObj.name}`;
         }
         renderVoiceList();
     }
@@ -774,6 +783,7 @@ async function initVoiceSelector() {
     }
 
     if (openBtn) openBtn.addEventListener("click", openModal);
+    if (sidebarVoiceBtn) sidebarVoiceBtn.addEventListener("click", openModal);
     if (closeBtn) closeBtn.addEventListener("click", closeModal);
     if (backdrop) backdrop.addEventListener("click", closeModal);
     if (confirmBtn) confirmBtn.addEventListener("click", closeModal);

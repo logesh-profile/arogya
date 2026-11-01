@@ -4481,6 +4481,28 @@ body:not(.user-authenticated) .btn-corner-signin {
     transform: translateY(-1px);
 }
 
+.btn-sidebar-voice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-radius: 10px;
+    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+    background: var(--bg-card, rgba(255, 255, 255, 0.04));
+    color: var(--text-primary, #ffffff);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-sidebar-voice:hover {
+    background: rgba(255, 255, 255, 0.09);
+    border-color: rgba(255, 255, 255, 0.25);
+}
+
 .voice-selector-modal {
     position: fixed;
     top: 0;
