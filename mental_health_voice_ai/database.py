@@ -1180,6 +1180,7 @@ def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
         session_fatigue = []
         session_heaviness = []
         session_quotes = []
+        session_reasons_detail = []
 
         for r in recs:
             if r.get("strengths"):
@@ -1203,6 +1204,23 @@ def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
                 k = r_item.get("key")
                 score = r_item.get("score", 0)
                 q = (r_item.get("quote") or "").strip()
+                lbl = r_item.get("label") or r_item.get("dimension") or k or "Indicator"
+
+                if score > 0:
+                    clean_quote = q if q.lower() not in ["no explicit mention in statement", "no explicit mention", ""] else ""
+                    existing_entry = next((x for x in session_reasons_detail if x["key"] == k), None)
+                    if existing_entry:
+                        if score > existing_entry["score"]:
+                            existing_entry["score"] = score
+                        if clean_quote and not existing_entry["quote"]:
+                            existing_entry["quote"] = clean_quote
+                    else:
+                        session_reasons_detail.append({
+                            "key": k,
+                            "label": lbl,
+                            "score": score,
+                            "quote": clean_quote
+                        })
 
                 if k in dim_accum:
                     dim_accum[k]["scores"].append(score)
@@ -1224,6 +1242,21 @@ def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
         session_wellness = int(round(float(np.mean(w_scores)))) if w_scores else s.get("overall_wellness")
         avg_pitch = round(float(np.mean(s_semis)), 2) if s_semis else None
 
+        # Build clear "Because of What" rationale
+        because_items = []
+        for r_det in sorted(session_reasons_detail, key=lambda x: x["score"], reverse=True):
+            if r_det["score"] > 0:
+                q_text = f' - "{r_det["quote"]}"' if r_det.get("quote") else ""
+                because_items.append(f'{r_det["label"]} (Level {r_det["score"]}/3){q_text}')
+
+        if not because_items:
+            if session_wellness is not None and session_wellness >= 75:
+                because_summary = "Healthy emotional equilibrium: No elevated stress, fatigue, or depressive symptoms detected."
+            else:
+                because_summary = "Mild strain / baseline dialogue check-in."
+        else:
+            because_summary = " • ".join(because_items[:3])
+
         timeline_points.append({
             "session_id": s_id,
             "title": s.get("title", "Reflection"),
@@ -1238,7 +1271,9 @@ def get_analytics_summary(user_id: str = "primary_user") -> Dict[str, Any]:
             "heaviness_avg": round(float(np.mean(session_heaviness)), 1) if session_heaviness else 0.0,
             "voice_semitone": avg_pitch,
             "summary": s.get("summary", ""),
-            "quotes": session_quotes[:4]
+            "quotes": session_quotes[:4],
+            "reasons": session_reasons_detail[:4],
+            "because_of_what": because_summary
         })
 
     # Overall KPIs (Strictly per user, no hardcoded fake scores)

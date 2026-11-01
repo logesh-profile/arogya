@@ -64,7 +64,6 @@ from mental_health_engine import (
     classify_user_emotion_from_voice_tone
 )
 from voice_engine import transcribe_audio, synthesize_speech
-from serial_bridge import get_esp32_bridge
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -172,6 +171,10 @@ def on_startup():
     prune_audio_cache(max_age_hours=84)
     print(f"[*] Arogya Mental Health Server started at http://localhost:8000 (Google OAuth configured: {bool(GOOGLE_CLIENT_ID and not GOOGLE_CLIENT_ID.startswith('your_'))})")
 
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "app": "Arogya Mental Health Voice AI"}
 
 @app.get("/")
 def index():
@@ -432,120 +435,38 @@ async def get_initial_greeting(request: Request, session_id: Optional[str] = Non
 # ---------------------------------------------------------------------------
 # ESP32 ROBOT DISPLAY & AFFECTIVE ATTUNEMENT SERIAL ENDPOINTS
 # ---------------------------------------------------------------------------
+class DummyBridge:
+    current_emotion = "neutral"
+    last_activity_time = 0.0
+    def send(self, *args, **kwargs):
+        pass
+
+_dummy_bridge = DummyBridge()
+def get_esp32_bridge():
+    return _dummy_bridge
+
+# Lightweight Web Companion State Endpoints (Hardware independent)
 @app.post("/api/esp32/speech_state")
 async def esp32_speech_state(request: Request):
-    """
-    Called by client audio player when speech begins (state=1) or finishes (state=0).
-    Synchronizes external ESP32 OLED face expressions and mouth movement opcodes.
-    """
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-    state = int(data.get("state", 0))
-    face = data.get("face")
-
-    bridge = get_esp32_bridge()
-    bridge.last_activity_time = time.time()
-    if state == 1:
-        if face:
-            clean_face = str(face).strip().lower()
-            bridge.current_emotion = clean_face
-            bridge.send(f"EMO:{clean_face}")
-        bridge.current_activity = "speaking"
-        bridge.send("SPK:1")
-    else:
-        bridge.current_activity = "idle"
-        bridge.send("SPK:0")
-
-    return {
-        "status": "ok",
-        "state": state,
-        "face": bridge.current_emotion,
-        "activity": bridge.current_activity,
-        "esp32_connected": bridge.is_connected()
-    }
+    return {"status": "ok", "state": 0}
 
 @app.post("/api/esp32/emotion")
 async def esp32_emotion(request: Request):
-    """
-    Direct emotion opcode dispatch to ESP32 display (e.g. EMO:caring, EMO:thinking).
-    """
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-    face = str(data.get("face", "calm")).strip().lower()
-    bridge = get_esp32_bridge()
-    bridge.current_emotion = face
-    bridge.last_activity_time = time.time()
-    bridge.send(f"EMO:{face}")
-    return {
-        "status": "ok",
-        "face": face,
-        "esp32_connected": bridge.is_connected()
-    }
+    return {"status": "ok", "face": "calm"}
 
 @app.get("/api/esp32/status")
 def esp32_status():
-    """
-    Diagnostic status endpoint for physical ESP32 connection (graceful fallback on cloud/Render).
-    """
-    bridge = get_esp32_bridge()
-    return bridge.get_status()
-
-
+    return {"connected": False, "port": None, "mode": "web_standalone"}
 
 @app.get("/api/expression")
 @app.get("/expression")
 def get_esp32_expression():
-    """
-    ESP32 Wi-Fi Polling Endpoint: Returns the active FACS emotion and activity state.
-    """
-    bridge = get_esp32_bridge()
-    now = time.time()
-    emo = getattr(bridge, "current_emotion", "calm")
-    act = getattr(bridge, "current_activity", "idle")
-    last_act = getattr(bridge, "last_activity_time", 0.0)
-
-    # Safe auto-timeout: if speaking for more than 4.5 seconds without refresh, return to idle
-    if act == "speaking" and (now - last_act > 4.5):
-        act = "idle"
-        bridge.current_activity = "idle"
-
-    return {
-        "emotion": emo,
-        "activity": act,
-        "keyword": emo.upper(),
-        "last_update": now
-    }
+    return {"emotion": "calm", "activity": "idle", "keyword": "CALM", "last_update": time.time()}
 
 @app.post("/api/expression")
 @app.post("/expression")
 async def set_esp32_expression(request: Request):
-    """
-    Sets the active FACS emotion and activity state for ESP32.
-    """
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-    emo = data.get("emotion") or data.get("face") or "calm"
-    act = data.get("activity") or "idle"
-    bridge = get_esp32_bridge()
-    bridge.current_emotion = str(emo).strip().lower()
-    bridge.current_activity = str(act).strip().lower()
-    bridge.last_activity_time = time.time()
-    bridge.send(f"EMO:{bridge.current_emotion}")
-    if bridge.current_activity == "speaking":
-        bridge.send("SPK:1")
-    elif bridge.current_activity == "idle":
-        bridge.send("SPK:0")
-    return {
-        "status": "ok",
-        "emotion": bridge.current_emotion,
-        "activity": bridge.current_activity
-    }
+    return {"status": "ok", "emotion": "calm", "activity": "idle"}
 
 
 @app.post("/api/transcribe")
@@ -849,11 +770,11 @@ async def process_text_chat(
     language_mode = eval_result.get("language_mode", "tanglish")
     speech_register = eval_result.get("speech_register", "warm_tanglish")
     
+    user_wellness = eval_result.get("overall_wellness", 75)
+    user_state = eval_result.get("dominant_state", "Calm")
     ai_audio_url = None
     if voice_mode and voice_mode != "none":
         try:
-            user_wellness = eval_result.get("overall_wellness", 75)
-            user_state = eval_result.get("dominant_state", "Calm")
             ai_audio_url = await synthesize_speech(
                 text=reply_text, 
                 mode=voice_mode, 

@@ -387,7 +387,21 @@ function populateTimeline(timeline) {
         const card = document.createElement("div");
         card.className = "session-timeline-card";
 
-        const quotesHtml = item.quotes && item.quotes.length > 0 
+        const scoreVal = item.wellness != null ? Math.round(item.wellness) : null;
+        const scoreClass = scoreVal != null ? (scoreVal >= 75 ? "score-good" : (scoreVal >= 55 ? "score-fair" : "score-strain")) : "";
+        const scoreDisplay = scoreVal != null ? `${scoreVal}/100` : "--";
+
+        let becauseHtml = "";
+        if (item.because_of_what) {
+            becauseHtml = `
+                <div class="session-because-box">
+                    <span class="because-tag-label">Evaluation Rationale (Because of):</span>
+                    <span class="because-tag-content">${escapeHtml(item.because_of_what)}</span>
+                </div>
+            `;
+        }
+
+        const quotesHtml = item.quotes && item.quotes.length > 0 && !item.because_of_what
             ? `<div class="session-log-quotes">Evidence: ${item.quotes.map(q => `"${escapeHtml(q)}"`).join(" • ")}</div>` 
             : "";
 
@@ -398,10 +412,11 @@ function populateTimeline(timeline) {
                     <span class="session-log-date tabular-num">${item.date || ""} ${item.time || ""}</span>
                 </div>
                 <p class="session-log-summary">${escapeHtml(item.summary || "Reflective check-in session completed.")}</p>
+                ${becauseHtml}
                 ${quotesHtml}
             </div>
             <div class="session-log-right">
-                <span class="session-log-score tabular-num">${item.wellness}/100</span>
+                <span class="session-log-score ${scoreClass} tabular-num">${scoreDisplay}</span>
                 <span class="session-log-emotion">${escapeHtml(item.dominant_emotion || "Calm")}</span>
             </div>
         `;

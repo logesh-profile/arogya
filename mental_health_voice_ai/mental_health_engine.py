@@ -793,11 +793,13 @@ def analyze_and_respond(
         # Note: We do NOT fabricate fake numerical scores on crisis!
         return {
             "reply_text": normalized_crisis_reply,
-            "overall_wellness": None, # Uncorrupted
+            "overall_wellness": 25, # Clear crisis distress level
             "confidence": 1.0,
             "dominant_state": "Crisis Alert",
             "conversation_title": "Crisis Support Alert",
             "is_crisis": True,
+            "suggest_grounding": True,
+            "grounding_mode": "478",
             "crisis_reason": crisis_reason,
             "user_emotion": "sad",
             "listening_face": "caring",
@@ -955,15 +957,18 @@ Produce the requested JSON:
     lonely_pt = evidence.get("loneliness_isolation", {}).get("score", 0)
     heavy_pt = evidence.get("emotional_heaviness", {}).get("score", 0)
     
-    suggest_grounding = bool(
-        calc["overall_wellness"] < 60 or 
+    user_txt_lower = (current_transcript or "").lower()
+    is_stressed_or_depressed = bool(
+        calc["overall_wellness"] < 65 or 
         stress_pt >= 2 or 
         worry_pt >= 2 or 
         overwhelm_pt >= 2 or
-        (heavy_pt >= 2 and calc["overall_wellness"] < 65) or
-        (lonely_pt >= 2 and calc["overall_wellness"] < 65)
+        heavy_pt >= 2 or
+        lonely_pt >= 2 or
+        any(k in user_txt_lower for k in ["depress", "suicid", "hopeless", "can't take this", "stressed", "overwhelm", "anxious", "panic", "sleepless", "worthless", "exhaust"])
     )
-    grounding_mode = "box" if (stress_pt >= 2 or overwhelm_pt >= 2) else "478"
+    suggest_grounding = is_stressed_or_depressed
+    grounding_mode = "box" if (stress_pt >= 2 or overwhelm_pt >= 2 or "stress" in user_txt_lower) else "478"
 
     # 5. Persistent Longitudinal Profile Extraction
     profile_updates = data.get("profile_updates", {})

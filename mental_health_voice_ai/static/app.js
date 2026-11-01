@@ -83,24 +83,10 @@ let voiceToneCentroid = 200;
 let currentAiReplyText = "";
 let currentSpeakingFace = "happy";
 
-// ESP32 Microcontroller Synchronizer (Non-blocking, cloud-safe)
-function notifyEsp32SpeechState(state, face = null) {
-    fetch("/api/esp32/speech_state", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ state: state, face: face })
-    }).catch(() => {});
-}
+// Web companion activity state stubs
+function notifyEsp32SpeechState(state, face = null) {}
+function notifyEsp32Emotion(face) {}
 
-function notifyEsp32Emotion(face) {
-    fetch("/api/esp32/emotion", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ face: face })
-    }).catch(() => {});
-}
-
-// Auth State Variables
 // Auth State Variables & API Helper
 let currentUser = null;
 let googleClientId = "";
@@ -134,11 +120,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     await initMicDeviceSelector();
     await initAuth();
 
-    if (currentUser) {
-        updateAuthUI(true, currentUser);
-    } else {
-        updateAuthUI(false, null);
+    // Requirement 1: New user enters -> sign up or login page first!
+    if (!currentUser) {
+        window.location.replace("/login");
+        return;
     }
+
+    updateAuthUI(true, currentUser);
 
     // Always restore the user's active conversation on page reload (never erase chats!)
     const sessions = await loadSessions();
@@ -779,6 +767,14 @@ function initVoiceModeControls() {
     const modalMicToggleBtn = document.getElementById("modalMicToggleBtn");
     if (modalMicToggleBtn) {
         modalMicToggleBtn.addEventListener("click", () => {
+            // Instant interruption: if AI is speaking, tap stops AI speech and starts user turn
+            if (audioPlayer && !audioPlayer.paused) {
+                audioPlayer.pause();
+                audioPlayer.currentTime = 0;
+                setLiveStatus("Listening...", "listening");
+                startRecording();
+                return;
+            }
             if (isRecording) {
                 stopRecording();
             } else {
@@ -806,6 +802,10 @@ function initVoiceModeControls() {
 }
 
 function enterVoiceMode() {
+    if (audioPlayer && !audioPlayer.paused) {
+        audioPlayer.pause();
+        audioPlayer.currentTime = 0;
+    }
     isVoiceModalActive = true;
     const modal = document.getElementById("chatgptVoiceModal");
     if (modal) modal.classList.remove("hidden");
@@ -1037,23 +1037,16 @@ function startVisualizer(stream) {
             return;
         }
 
-        // Strict 30 FPS Hardware Limiter decoupled from 144Hz monitors to prevent GPU overheating
-        const TARGET_FPS = 30;
-        const MIN_FRAME_INTERVAL = 1000 / TARGET_FPS; // 33.3ms
+        // Strict 30 FPS Hardware Limiter to eliminate CPU/GPU drain
         if (timestamp) {
             if (!lastRenderTime) lastRenderTime = timestamp;
             const elapsed = timestamp - lastRenderTime;
-            if (elapsed < MIN_FRAME_INTERVAL) {
-                animFrameId = setTimeout(() => {
-                    requestAnimationFrame(render);
-                }, MIN_FRAME_INTERVAL - elapsed);
+            if (elapsed < 33.3) {
+                animFrameId = requestAnimationFrame(render);
                 return;
             }
             lastRenderTime = timestamp;
         }
-        animFrameId = setTimeout(() => {
-            requestAnimationFrame(render);
-        }, MIN_FRAME_INTERVAL);
 
         analyser.getByteFrequencyData(freqData);
         analyser.getByteTimeDomainData(timeData);
@@ -1818,6 +1811,14 @@ function initSpeechRecognition() {
         speechRecognizer.lang = "en-IN";
 
         speechRecognizer.onresult = (event) => {
+            // Real-time interruption management: stop playback instantly if user starts speaking!
+            if (audioPlayer && !audioPlayer.paused) {
+                console.log("[*] Interruption detected: stopping AI speech playback.");
+                audioPlayer.pause();
+                audioPlayer.currentTime = 0;
+                setLiveStatus("Listening...", "listening");
+            }
+
             let interim = "";
             for (let i = event.resultIndex; i < event.results.length; ++i) {
                 if (event.results[i].isFinal) {
@@ -1845,6 +1846,10 @@ function initSpeechRecognition() {
 }
 
 async function toggleRecording() {
+    if (audioPlayer && !audioPlayer.paused) {
+        audioPlayer.pause();
+        audioPlayer.currentTime = 0;
+    }
     if (isRecording) {
         stopRecording();
     } else {
@@ -1853,6 +1858,10 @@ async function toggleRecording() {
 }
 
 async function startRecording() {
+    if (audioPlayer && !audioPlayer.paused) {
+        audioPlayer.pause();
+        audioPlayer.currentTime = 0;
+    }
     notifyEsp32Emotion("thinking");
     try {
         const selectedMicId = micDeviceSelect ? micDeviceSelect.value : "";

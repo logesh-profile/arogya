@@ -521,6 +521,48 @@
     color: var(--text-secondary, #d4d4d8);
 }
 
+.session-log-score.score-good {
+    color: #4ade80;
+}
+
+.session-log-score.score-fair {
+    color: #facc15;
+}
+
+.session-log-score.score-strain {
+    color: #f87171;
+}
+
+.session-because-box {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+[data-theme="light"] .session-because-box {
+    background: rgba(0, 0, 0, 0.03);
+    border-color: rgba(0, 0, 0, 0.08);
+}
+
+.because-tag-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-tertiary, #a1a1aa);
+}
+
+.because-tag-content {
+    font-size: 0.76rem;
+    color: var(--text-secondary, #d4d4d8);
+    line-height: 1.45;
+}
+
 /* Footer */
 .analytics-footer {
     padding: 24px 40px;

@@ -7,6 +7,22 @@ let googleClientId = "";
 let isGoogleConfigured = false;
 
 document.addEventListener("DOMContentLoaded", async () => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isSwitching = urlParams.get("action") === "switch";
+    if (!isSwitching) {
+        try {
+            const token = localStorage.getItem("arogya_session_token");
+            const headers = token ? { "Authorization": `Bearer ${token}` } : {};
+            const meRes = await fetch("/api/auth/me", { headers, credentials: "include" });
+            if (meRes.ok) {
+                const meData = await meRes.json();
+                if (meData.authenticated && meData.user) {
+                    window.location.replace("/");
+                    return;
+                }
+            }
+        } catch (e) {}
+    }
     initSlidingControls();
     initLocalAuthControls();
     await initGoogleAuth();
