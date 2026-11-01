@@ -25,9 +25,30 @@ else:
 
 DB_PATH = os.path.join(DB_DIR, "mental_health.db")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
-    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+import urllib.parse
+
+def _clean_database_url(url: Optional[str]) -> Optional[str]:
+    if not url:
+        return None
+    cleaned = url.strip().strip("'\"")
+    # Handle user pasting key=value or export statements
+    if "=" in cleaned and ("postgres://" in cleaned or "postgresql://" in cleaned):
+        parts = cleaned.split("=", 1)
+        if "postgres" in parts[1]:
+            cleaned = parts[1].strip().strip("'\"")
+    if cleaned.startswith("postgres://"):
+        cleaned = cleaned.replace("postgres://", "postgresql://", 1)
+
+    try:
+        parsed = urllib.parse.urlparse(cleaned)
+        qs = urllib.parse.parse_qs(parsed.query)
+        allowed = {"sslmode", "connect_timeout", "application_name", "target_session_attrs"}
+        clean_qs = {k: v[0] for k, v in qs.items() if k in allowed}
+        new_query = urllib.parse.urlencode(clean_qs)
+        cleaned = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', new_query, ''))
+    except Exception:
+        pass
+    return cleaned
 
 class PostgresCursorWrapper:
     def __init__(self, cur):
@@ -38,6 +59,14 @@ class PostgresCursorWrapper:
         pg_query = query.replace("?", "%s")
         if "INTEGER PRIMARY KEY AUTOINCREMENT" in pg_query:
             pg_query = pg_query.replace("INTEGER PRIMARY KEY AUTOINCREMENT", "SERIAL PRIMARY KEY")
+
+        # Handle SQLite conflict clauses for PostgreSQL
+        if "INSERT OR IGNORE INTO" in pg_query:
+            pg_query = pg_query.replace("INSERT OR IGNORE INTO", "INSERT INTO").rstrip("; ") + " ON CONFLICT DO NOTHING"
+        elif "INSERT OR REPLACE INTO user_sessions" in pg_query:
+            pg_query = pg_query.replace("INSERT OR REPLACE INTO user_sessions", "INSERT INTO user_sessions").rstrip("; ") + " ON CONFLICT (session_token) DO UPDATE SET user_id=EXCLUDED.user_id, created_at=EXCLUDED.created_at, expires_at=EXCLUDED.expires_at"
+        elif "INSERT OR REPLACE INTO" in pg_query:
+            pg_query = pg_query.replace("INSERT OR REPLACE INTO", "INSERT INTO").rstrip("; ") + " ON CONFLICT DO NOTHING"
 
         # Capture returning ID on inserts for SQLite compatibility
         if pg_query.strip().upper().startswith("INSERT INTO") and "RETURNING" not in pg_query.upper():
@@ -65,33 +94,44 @@ class PostgresCursorWrapper:
         return [dict(r) for r in rows]
 
     def close(self):
-        self.cur.close()
+        try:
+            self.cur.close()
+        except Exception:
+            pass
 
 class PostgresConnectionWrapper:
     def __init__(self, conn):
         self.conn = conn
+        self.conn.autocommit = True
 
     def cursor(self):
         import psycopg2.extras
         return PostgresCursorWrapper(self.conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor))
 
     def commit(self):
-        self.conn.commit()
+        pass
 
     def rollback(self):
-        self.conn.rollback()
+        try:
+            self.conn.rollback()
+        except Exception:
+            pass
 
     def close(self):
-        self.conn.close()
+        try:
+            self.conn.close()
+        except Exception:
+            pass
 
 def get_connection():
-    if DATABASE_URL:
+    clean_url = _clean_database_url(os.getenv("DATABASE_URL"))
+    if clean_url:
         try:
             import psycopg2
-            conn = psycopg2.connect(DATABASE_URL)
+            conn = psycopg2.connect(clean_url)
             return PostgresConnectionWrapper(conn)
         except Exception as e:
-            print(f"[!] PostgreSQL connection fallback notice: {e}, using SQLite at {DB_PATH}")
+            print(f"[!] PostgreSQL connection notice: {e}, using SQLite at {DB_PATH}")
 
     os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
