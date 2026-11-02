@@ -95,24 +95,6 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 os.makedirs(STATIC_DIR, exist_ok=True)
 os.makedirs(CACHE_DIR, exist_ok=True)
 
-def get_ffmpeg_executable() -> Optional[str]:
-    """Cross-platform FFmpeg resolver: checks system PATH, imageio-ffmpeg package, or local Windows root."""
-    # 1. System PATH (Render/Linux, Ubuntu, Mac, or Windows PATH)
-    sys_ffmpeg = shutil.which("ffmpeg")
-    if sys_ffmpeg:
-        return sys_ffmpeg
-    # 2. imageio-ffmpeg auto-downloaded wheel binary
-    try:
-        import imageio_ffmpeg
-        return imageio_ffmpeg.get_ffmpeg_exe()
-    except Exception:
-        pass
-    # 3. Local bundled Windows executable
-    local_ffmpeg = os.path.join(os.path.dirname(BASE_DIR), "ffmpeg.exe")
-    if os.path.exists(local_ffmpeg):
-        return local_ffmpeg
-    return None
-
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/audio", StaticFiles(directory=CACHE_DIR), name="audio")
 
