@@ -265,20 +265,44 @@ def naturalize_tanglish_response(
 
 
 # ==============================================================================
+# ==============================================================================
 # 3. PROSODY AND PHONETIC PREPARATION
 # ==============================================================================
 def select_tts_route(language_mode: str, voice_mode: str = "fast") -> str:
     """
     Selects the optimal TTS engine based on user preference and language mode:
     - 'cloned' -> 'f5_tts' (Local GPU Diffusion on RTX 3050)
-    - 'fast' + (tanglish / tamil / code_switched) -> 'edge_tamil' (ta-IN-PallaviNeural)
-    - 'fast' + indian_english -> 'edge_english' (en-IN-NeerjaNeural)
+    - 'fast' + 'tamil' (pure Tamil script) -> 'edge_tamil' (ta-IN-PallaviNeural)
+    - 'fast' + (tanglish / indian_english / code_switched) -> 'edge_english' (en-IN-NeerjaExpressiveNeural)
     """
     if voice_mode == "cloned":
         return "f5_tts"
-    if language_mode in ["tanglish", "tamil", "code_switched"]:
-        return "edge_tamil"
-    return "edge_english"
+    if language_mode == "tamil":
+        return "ta-IN-PallaviNeural"
+    return "en-IN-NeerjaExpressiveNeural"
+
+
+def convert_tamil_script_to_romanized(text: str) -> str:
+    """
+    Safely transliterates any Tamil Unicode words back into natural Romanized Tanglish
+    so English neural voices (Neerja, Ava, Prabhat) can pronounce them fluently with human cadence.
+    """
+    if not text:
+        return ""
+    if not re.search(r'[\u0B80-\u0BFF]', text):
+        return text
+
+    out = text
+    # Map Tamil script values from SPOKEN_LEXICON back to Romanized keys
+    sorted_lex = sorted(SPOKEN_LEXICON.items(), key=lambda x: len(x[1]), reverse=True)
+    for roman_key, tamil_val in sorted_lex:
+        if tamil_val in out:
+            out = out.replace(tamil_val, roman_key)
+
+    # Clean any remaining non-ASCII Tamil characters to prevent TTS stutter
+    out = re.sub(r'[\u0B80-\u0BFF]+', '', out)
+    out = re.sub(r'\s+', ' ', out).strip()
+    return out
 
 
 def stage_prosody_and_phonetics(
@@ -290,9 +314,9 @@ def stage_prosody_and_phonetics(
 ) -> Dict[str, str]:
     """
     Prepares text for TTS synthesis:
-    - display_text: Beautiful, natural colloquial text shown to the user on the chat stream.
-    - spoken_text: Phonetically staged text with breath pauses and intonation tailored for the target TTS engine.
-    - tts_voice: The exact voice identifier to be used (e.g. 'ta-IN-PallaviNeural' or 'en-IN-NeerjaNeural').
+    - display_text: Natural colloquial text shown to the user on the chat stream.
+    - spoken_text: Phonetically staged text tailored for the target TTS engine.
+    - tts_voice: The exact voice identifier to be used.
     """
     if tts_engine == "auto":
         tts_engine = select_tts_route(language_mode)
@@ -301,7 +325,6 @@ def stage_prosody_and_phonetics(
     clean_display = re.sub(r'\s+', ' ', clean_display).strip()
 
     # Prosodic pacing adjustments based on emotion
-    # Overwhelmed / Distress -> add gentle pause markers (ellipsis / commas) for slower cadence
     if emotion_state in ["Overwhelmed", "Exhausted", "Crisis Alert", "Tense"]:
         pause_marker = "... "
     elif emotion_state in ["Lonely", "Reflective"]:
@@ -309,19 +332,15 @@ def stage_prosody_and_phonetics(
     else:
         pause_marker = ". "
 
-    if tts_engine == "edge_tamil":
+    if tts_engine in ["edge_tamil", "ta-IN-PallaviNeural"]:
         # Native Tamil Voice: ta-IN-PallaviNeural
-        # If Gemini generated authentic spoken Tamil script, use it directly!
         if spoken_script and len(spoken_script.strip()) > 3:
             raw_target = re.sub(r'[*_#`~\[\]]', '', spoken_script)
-            # Normalize suffixes like 'stress - ஆ' -> 'stress-ஆ'
             raw_target = re.sub(r'\s*-\s*', '-', raw_target)
             spoken_script_clean = raw_target.strip()
         else:
-            # Fallback: Converts colloquial Tanglish to spoken Tamil script with preserved English loanwords
             spoken_script_clean = transliterate_tanglish_to_spoken_tamil(clean_display)
 
-        # Add natural intonation pauses for PallaviNeural
         spoken_text = spoken_script_clean.replace(". ", pause_marker).replace("! ", ". ")
         return {
             "display_text": clean_display,
@@ -331,7 +350,6 @@ def stage_prosody_and_phonetics(
 
     elif tts_engine == "f5_tts":
         # Local Cloned Diffusion TTS on RTX 3050 GPU
-        # Formats phonetic Latin Tanglish with natural pause markers
         spoken_text = clean_display
         spoken_text = re.sub(r'\b([A-Za-z]+)-ah\b', r'\1 aa', spoken_text)
         spoken_text = re.sub(r'\b([A-Za-z]+)-la\b', r'\1 la', spoken_text)
@@ -343,12 +361,13 @@ def stage_prosody_and_phonetics(
         }
 
     else:
-        # Indian English Voice: en-IN-NeerjaNeural
-        spoken_text = clean_display.replace(". ", pause_marker)
+        # Expressive Indian English & Romanized Tanglish: en-IN-NeerjaExpressiveNeural
+        spoken_text = convert_tamil_script_to_romanized(clean_display)
+        spoken_text = spoken_text.replace(". ", pause_marker)
         return {
             "display_text": clean_display,
             "spoken_text": spoken_text,
-            "tts_voice": "en-IN-NeerjaNeural"
+            "tts_voice": "en-IN-NeerjaExpressiveNeural"
         }
 
 

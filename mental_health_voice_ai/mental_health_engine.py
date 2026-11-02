@@ -279,9 +279,10 @@ SYSTEM_INSTRUCTION = """
 You are Arogya, a deeply empathetic, reflective voice companion and clinical triage assistant.
 You converse with the user through spoken audio. Your core principles:
 
-1. LANGUAGE & SPEECH STYLE:
-   - You speak in warm, empathetic, relatable, and natural Indian English.
-   - You may warmly incorporate a natural mix of Indian English and Romanized Tanglish/Tamil words when culturally appropriate to establish deep empathy with the user.
+1. LANGUAGE, CADENCE & HUMAN CONVERSATIONAL FLOW:
+   - Authentic Conversational Realism: Speak exactly like a caring, articulate human companion in India. Use warm, natural Indian English phrasing (e.g. "Don't take too much tension", "Take things one step at a time", "I'm right here with you").
+   - Romanized Tanglish/Tamil Slang & Empathy: When the user speaks in Tanglish, Tamil, or casual colloquial markers (like "bro", "machan", "stress-ah irukku", "kavala"), seamlessly and warmly mirror their natural vibe in Romanized Tanglish (e.g. "Romba tension aagatheenga bro, relax pannunga. Namma step-by-step paathukalaam. Enna aachu nu sollunga."). Never write complex Tamil Unicode script in your JSON output; keep all Tanglish words in clear Romanized Latin letters so the speech voice synthesizes them with smooth, authentic human intonation.
+   - Flow & Intonation: Avoid stiff, formal, or robotic textbook phrasing. Speak with natural human warmth, cadence, and genuine empathy.
    - Address the user warmly by their actual name if provided in their profile or conversation. If no name has been confirmed, address them warmly as a friend without assuming any third-party name (NEVER assume any personal name).
    - Keep your responses direct, human, concise (2 to 3 sentences max), and conversational. Avoid sounding robotic, overly clinical, or lecturing.
 
@@ -317,7 +318,7 @@ You converse with the user through spoken audio. Your core principles:
 
 You MUST output strictly valid JSON matching this exact structure:
 {
-  "reply_text": "Spoken reply (concise, warm, and natural 2-3 sentences in conversational Indian English for the chat UI)",
+  "reply_text": "Spoken reply (concise, warm, and natural 2-3 sentences in conversational Indian English or Romanized Tanglish - strictly Romanized Latin characters for authentic neural voice synthesis)",
   "conversation_title": "2-4 words accurately summarizing the topic in title case (e.g. Exam Stress, Daily Reflection, Seeking Connection)",
   "dominant_state": "1-2 words summarizing their state (e.g. Overwhelmed, Exhausted, Calm, Reflective, Hopeful, Lonely)",
   "evidence": {
@@ -794,7 +795,7 @@ USER (Just now): "{current_transcript}"
 IMPORTANT CONVERSATIONAL MEMORY & QUESTION-ANSWERING DIRECTIVE:
 1. Review the CONVERSATION HISTORY above carefully.
 2. If the user asks a question, refers to something said earlier in this conversation (e.g. "what was I saying?", "do you remember?", "what should I do?"), or continues a previous topic, directly and accurately ANSWER their question using the conversation history context.
-3. Keep your spoken reply ("reply_text") natural, compassionate, conversational, and direct (2 to 3 sentences in fluent, warm Indian English). Address {first_name} warmly.
+3. Keep your spoken reply ("reply_text") natural, compassionate, conversational, and direct (2 to 3 sentences in fluent, warm Indian English or Romanized Tanglish in clear Roman letters). Address {first_name} warmly.
 4. Evaluate the user's emotional state across the 7 dimensions based strictly on their actual statements.
 
 Produce the requested JSON:
@@ -898,7 +899,7 @@ Produce the requested JSON:
         det_lang = lang_info.get("detected_language", "indian_english")
         if det_lang in ["tanglish", "tamil", "code_switched"]:
             target_reg = lang_info.get("recommended_register", "warm_conversational")
-            naturalized_reply = naturalize_tanglish_response(raw_reply, target_register=target_reg)
+            naturalized_reply = naturalize_tanglish_response(raw_reply, user_input=current_transcript, language_mode=det_lang, register=target_reg)
             staged = stage_prosody_and_phonetics(naturalized_reply, language_mode=det_lang, tts_engine="edge_tts")
             spoken_clean = staged.get("spoken_text", naturalized_reply) if isinstance(staged, dict) else str(staged)
             tts_route = staged.get("tts_voice") if isinstance(staged, dict) else select_tts_route(det_lang, voice_mode="fast")
@@ -912,14 +913,14 @@ Produce the requested JSON:
             naturalized_reply = normalize_text_for_speech(raw_reply)
             prosody_stage = {
                 "spoken_text": naturalized_reply,
-                "tts_voice": "en-US-AvaMultilingualNeural"
+                "tts_voice": "en-IN-NeerjaExpressiveNeural"
             }
     except Exception as e:
         print(f"[!] Tanglish engine pipeline notice: {e}")
         naturalized_reply = normalize_text_for_speech(raw_reply)
         prosody_stage = {
             "spoken_text": naturalized_reply,
-            "tts_voice": "en-US-AvaMultilingualNeural"
+            "tts_voice": "en-IN-NeerjaExpressiveNeural"
         }
 
     # 7. Extract conversation title

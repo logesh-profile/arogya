@@ -294,7 +294,13 @@ function updateAuthUI(isAuthenticated, user) {
 
         // Sidebar card
         if (sidebarUserName) sidebarUserName.textContent = displayName;
-        if (sidebarUserAvatar) sidebarUserAvatar.textContent = initial;
+        if (sidebarUserAvatar) {
+            if (user && user.picture) {
+                sidebarUserAvatar.innerHTML = `<img src="${escapeHtml(user.picture)}" alt="${escapeHtml(displayName)}" class="sidebar-avatar-img" referrerpolicy="no-referrer" />`;
+            } else {
+                sidebarUserAvatar.innerHTML = `<span class="sidebar-avatar-initial">${escapeHtml(initial)}</span>`;
+            }
+        }
         if (sidebarUserEmail) sidebarUserEmail.textContent = email ? email : "Active Private Space";
 
         // Welcome Hero Card
@@ -312,9 +318,9 @@ function updateAuthUI(isAuthenticated, user) {
             cornerPillWrap.classList.add("hidden");
             cornerPillWrap.style.display = "none";
         }
-        if (sidebarUserName) sidebarUserName.textContent = "Guest";
-        if (sidebarUserAvatar) sidebarUserAvatar.textContent = "G";
-        if (sidebarUserEmail) sidebarUserEmail.textContent = "Sign in to persist chats";
+        if (sidebarUserName) sidebarUserName.textContent = "Guest Space";
+        if (sidebarUserAvatar) sidebarUserAvatar.innerHTML = `<span class="sidebar-avatar-initial">G</span>`;
+        if (sidebarUserEmail) sidebarUserEmail.textContent = "Sign in to save chats";
     }
 }
 
@@ -621,12 +627,85 @@ function setVoiceMode(mode) {
 // ==========================================================================
 // CHATGPT-STYLE VOICE SELECTOR CONTROLLER
 // ==========================================================================
-let selectedVoice = localStorage.getItem("arogya_selected_voice") || "en-US-AvaMultilingualNeural";
-if (selectedVoice === "en-IN-NeerjaExpressiveNeural") {
-    selectedVoice = "en-US-AvaMultilingualNeural";
+const DEFAULT_FALLBACK_VOICES = [
+    {
+        id: "en-IN-NeerjaExpressiveNeural",
+        name: "Neerja",
+        label: "Neerja (Expressive Indian English)",
+        gender: "Female",
+        accent: "Expressive Indian English",
+        description: "Warm, authentic Indian English companion with emotional empathy & conversational cadence",
+        sample_text: "Namaste! Don't worry bro, I am right here with you. Take a gentle breath and speak freely.",
+        default: true
+    },
+    {
+        id: "en-US-AvaMultilingualNeural",
+        name: "Ava",
+        label: "Ava (Human Conversational)",
+        gender: "Female",
+        accent: "Natural Human Voice",
+        description: "Ultra-realistic, warm, human conversational voice with fluid intonation",
+        sample_text: "Hello! I am your Arogya companion. I'm right here with you to listen and reflect.",
+        default: false
+    },
+    {
+        id: "en-IN-PrabhatNeural",
+        name: "Prabhat",
+        label: "Prabhat (Indian English Male)",
+        gender: "Male",
+        accent: "Indian English Male",
+        description: "Calm, reassuring human presence with steady Indian conversational cadence",
+        sample_text: "Take your time. I am listening to everything you wish to share with me.",
+        default: false
+    },
+    {
+        id: "en-US-AndrewMultilingualNeural",
+        name: "Andrew",
+        label: "Andrew (Conversational Male)",
+        gender: "Male",
+        accent: "Conversational Male",
+        description: "Deep, warm, and comforting human conversational tone",
+        sample_text: "Take a gentle breath. I am right here whenever you want to share what is on your mind.",
+        default: false
+    },
+    {
+        id: "en-US-EmmaMultilingualNeural",
+        name: "Emma",
+        label: "Emma (Empathetic Female)",
+        gender: "Female",
+        accent: "Warm & Gentle",
+        description: "Compassionate, gentle, and mindful human presence",
+        sample_text: "You can speak freely here without any judgment. How are you feeling right now?",
+        default: false
+    },
+    {
+        id: "en-US-BrianMultilingualNeural",
+        name: "Brian",
+        label: "Brian (Thoughtful Male)",
+        gender: "Male",
+        accent: "Calm & Grounded",
+        description: "Thoughtful, steady, and supportive human male companion",
+        sample_text: "I am here with you. Let's take things one step at a time.",
+        default: false
+    },
+    {
+        id: "ta-IN-PallaviNeural",
+        name: "Pallavi",
+        label: "Pallavi (Regional Tamil)",
+        gender: "Female",
+        accent: "Regional Tamil",
+        description: "Authentic regional Tamil voice for pure Tamil conversations",
+        sample_text: "வணக்கம், உங்க கூட பேசுறதுல எனக்கு ரொம்ப சந்தோஷம்.",
+        default: false
+    }
+];
+
+let selectedVoice = localStorage.getItem("arogya_selected_voice") || "en-IN-NeerjaExpressiveNeural";
+if (selectedVoice === "en-IN-NeerjaNeural") {
+    selectedVoice = "en-IN-NeerjaExpressiveNeural";
     localStorage.setItem("arogya_selected_voice", selectedVoice);
 }
-let availableVoices = [];
+let availableVoices = [...DEFAULT_FALLBACK_VOICES];
 let previewAudio = null;
 
 async function initVoiceSelector() {
@@ -643,32 +722,18 @@ async function initVoiceSelector() {
 
     previewAudio = document.getElementById("previewAudioPlayer") || new Audio();
 
-    // Fetch voice list from backend
-    try {
-        const res = await apiFetch("/api/voices");
-        if (res.ok) {
-            const data = await res.json();
-            availableVoices = data.voices || [];
-            if (!availableVoices.some(v => v.id === selectedVoice)) {
-                selectedVoice = data.default_voice || "en-US-AvaMultilingualNeural";
-                localStorage.setItem("arogya_selected_voice", selectedVoice);
-            }
+    function updateVoiceLabels() {
+        const currVoiceObj = availableVoices.find(v => v.id === selectedVoice) || availableVoices[0];
+        if (headerLabel && currVoiceObj) {
+            headerLabel.textContent = `Voice: ${currVoiceObj.name}`;
         }
-    } catch (e) {
-        console.warn("Voices fetch notice:", e);
-    }
-
-    // Update labels
-    const currVoiceObj = availableVoices.find(v => v.id === selectedVoice);
-    if (headerLabel && currVoiceObj) {
-        headerLabel.textContent = `Voice: ${currVoiceObj.name}`;
-    }
-    const menuVoiceLabel = document.getElementById("menuCurrentVoiceLabel");
-    if (menuVoiceLabel && currVoiceObj) {
-        menuVoiceLabel.textContent = `Voice: ${currVoiceObj.label || currVoiceObj.name}`;
-    }
-    if (sidebarVoiceLabel && currVoiceObj) {
-        sidebarVoiceLabel.textContent = `Voice: ${currVoiceObj.name}`;
+        const menuVoiceLabel = document.getElementById("menuCurrentVoiceLabel");
+        if (menuVoiceLabel && currVoiceObj) {
+            menuVoiceLabel.textContent = `Voice: ${currVoiceObj.label || currVoiceObj.name}`;
+        }
+        if (sidebarVoiceLabel && currVoiceObj) {
+            sidebarVoiceLabel.textContent = `Voice: ${currVoiceObj.name}`;
+        }
     }
 
     function renderVoiceList() {
@@ -724,17 +789,7 @@ async function initVoiceSelector() {
     function selectVoice(voiceId) {
         selectedVoice = voiceId;
         localStorage.setItem("arogya_selected_voice", voiceId);
-        const voiceObj = availableVoices.find(v => v.id === voiceId);
-        if (headerLabel && voiceObj) {
-            headerLabel.textContent = `Voice: ${voiceObj.name}`;
-        }
-        const menuVoiceLabel = document.getElementById("menuCurrentVoiceLabel");
-        if (menuVoiceLabel && voiceObj) {
-            menuVoiceLabel.textContent = `Voice: ${voiceObj.label || voiceObj.name}`;
-        }
-        if (sidebarVoiceLabel && voiceObj) {
-            sidebarVoiceLabel.textContent = `Voice: ${voiceObj.name}`;
-        }
+        updateVoiceLabels();
         renderVoiceList();
     }
 
@@ -782,8 +837,8 @@ async function initVoiceSelector() {
 
     function openModal() {
         if (!modal) return;
-        modal.classList.remove("hidden");
         renderVoiceList();
+        modal.classList.remove("hidden");
     }
 
     function closeModal() {
@@ -797,6 +852,33 @@ async function initVoiceSelector() {
             btn.classList.remove("playing");
             btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`;
         });
+    }
+
+    // Expose globally so dropdown menu and sidebar can both invoke it
+    window.openVoiceSelectorModal = openModal;
+    window.closeVoiceSelectorModal = closeModal;
+
+    // Pre-render immediately on load
+    updateVoiceLabels();
+    renderVoiceList();
+
+    // Fetch voice list from backend to merge latest updates
+    try {
+        const res = await apiFetch("/api/voices");
+        if (res.ok) {
+            const data = await res.json();
+            if (Array.isArray(data.voices) && data.voices.length > 0) {
+                availableVoices = data.voices;
+            }
+            if (!availableVoices.some(v => v.id === selectedVoice)) {
+                selectedVoice = data.default_voice || "en-IN-NeerjaExpressiveNeural";
+                localStorage.setItem("arogya_selected_voice", selectedVoice);
+            }
+            updateVoiceLabels();
+            renderVoiceList();
+        }
+    } catch (e) {
+        console.warn("Voices fetch notice:", e);
     }
 
     if (openBtn) openBtn.addEventListener("click", openModal);
@@ -3047,14 +3129,6 @@ function initHeaderDropdownMenu() {
         });
     }
 
-    const menuVoiceModeBtn = document.getElementById("menuVoiceModeBtn");
-    if (menuVoiceModeBtn) {
-        menuVoiceModeBtn.addEventListener("click", () => {
-            if (dropdown) dropdown.classList.add("hidden");
-            enterVoiceMode();
-        });
-    }
-
     const menuClinicalBtn = document.getElementById("menuClinicalBtn");
     if (menuClinicalBtn) {
         menuClinicalBtn.addEventListener("click", () => {
@@ -3094,8 +3168,12 @@ function initHeaderDropdownMenu() {
     if (menuVoiceSelectorBtn) {
         menuVoiceSelectorBtn.addEventListener("click", () => {
             if (dropdown) dropdown.classList.add("hidden");
-            const modal = document.getElementById("voiceSelectorModal");
-            if (modal) modal.classList.remove("hidden");
+            if (typeof window.openVoiceSelectorModal === "function") {
+                window.openVoiceSelectorModal();
+            } else {
+                const modal = document.getElementById("voiceSelectorModal");
+                if (modal) modal.classList.remove("hidden");
+            }
         });
     }
 

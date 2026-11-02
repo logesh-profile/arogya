@@ -221,21 +221,41 @@ def synthesize_cloned_speech(text: str, wellness_score: int = 75, dominant_state
 # Curated ChatGPT-Style Human Natural Voices (Ultra-expressive, authentic human cadence)
 AVAILABLE_VOICES = [
     {
+        "id": "en-IN-NeerjaExpressiveNeural",
+        "name": "Neerja",
+        "label": "Neerja (Expressive Indian English)",
+        "gender": "Female",
+        "accent": "Expressive Indian English",
+        "description": "Warm, authentic Indian English companion with emotional empathy & conversational cadence",
+        "sample_text": "Namaste! Don't worry bro, I am right here with you. Take a gentle breath and speak freely.",
+        "default": True
+    },
+    {
         "id": "en-US-AvaMultilingualNeural",
         "name": "Ava",
         "label": "Ava (Human Conversational)",
         "gender": "Female",
-        "accent": "Natural Human English",
-        "description": "Ultra-realistic, warm, human conversational voice with authentic emotional intonation",
+        "accent": "Natural Human Voice",
+        "description": "Ultra-realistic, warm, human conversational voice with fluid intonation",
         "sample_text": "Hello! I am your Arogya companion. I'm right here with you to listen and reflect.",
-        "default": True
+        "default": False
+    },
+    {
+        "id": "en-IN-PrabhatNeural",
+        "name": "Prabhat",
+        "label": "Prabhat (Indian English Male)",
+        "gender": "Male",
+        "accent": "Indian English Male",
+        "description": "Calm, reassuring human presence with steady Indian conversational cadence",
+        "sample_text": "Take your time. I am listening to everything you wish to share with me.",
+        "default": False
     },
     {
         "id": "en-US-AndrewMultilingualNeural",
         "name": "Andrew",
-        "label": "Andrew (Human Conversational)",
+        "label": "Andrew (Conversational Male)",
         "gender": "Male",
-        "accent": "Natural Human English",
+        "accent": "Conversational Male",
         "description": "Deep, warm, and comforting human conversational tone",
         "sample_text": "Take a gentle breath. I am right here whenever you want to share what is on your mind.",
         "default": False
@@ -243,7 +263,7 @@ AVAILABLE_VOICES = [
     {
         "id": "en-US-EmmaMultilingualNeural",
         "name": "Emma",
-        "label": "Emma (Empathetic)",
+        "label": "Emma (Empathetic Female)",
         "gender": "Female",
         "accent": "Warm & Gentle",
         "description": "Compassionate, gentle, and mindful human presence",
@@ -253,7 +273,7 @@ AVAILABLE_VOICES = [
     {
         "id": "en-US-BrianMultilingualNeural",
         "name": "Brian",
-        "label": "Brian (Thoughtful)",
+        "label": "Brian (Thoughtful Male)",
         "gender": "Male",
         "accent": "Calm & Grounded",
         "description": "Thoughtful, steady, and supportive human male companion",
@@ -261,39 +281,19 @@ AVAILABLE_VOICES = [
         "default": False
     },
     {
-        "id": "en-IN-NeerjaNeural",
-        "name": "Neerja",
-        "label": "Neerja (Indian English)",
-        "gender": "Female",
-        "accent": "Indian English",
-        "description": "Smooth, clear, and comforting Indian English neural voice",
-        "sample_text": "Namaste. I am here to listen to your thoughts and support you.",
-        "default": False
-    },
-    {
-        "id": "en-IN-PrabhatNeural",
-        "name": "Prabhat",
-        "label": "Prabhat (Indian English)",
-        "gender": "Male",
-        "accent": "Indian English",
-        "description": "Calm, grounding reassurance in an Indian English accent",
-        "sample_text": "Take your time. I am listening to everything you wish to share.",
-        "default": False
-    },
-    {
         "id": "ta-IN-PallaviNeural",
         "name": "Pallavi",
-        "label": "Pallavi (Tamil / Tanglish)",
+        "label": "Pallavi (Regional Tamil)",
         "gender": "Female",
-        "accent": "Tamil / Tanglish",
-        "description": "Authentic, warm colloquial Tamil and Tanglish voice",
-        "sample_text": "Vanakkam, unga kooda pesurathula enakku romba santhosham.",
+        "accent": "Regional Tamil",
+        "description": "Authentic regional Tamil voice for pure Tamil conversations",
+        "sample_text": "வணக்கம், உங்க கூட பேசுறதுல எனக்கு ரொம்ப சந்தோஷம்.",
         "default": False
     }
 ]
 
-DEFAULT_VOICE = "en-US-AvaMultilingualNeural"
-VALID_VOICE_IDS = {v["id"] for v in AVAILABLE_VOICES}
+DEFAULT_VOICE = "en-IN-NeerjaExpressiveNeural"
+VALID_VOICE_IDS = {v["id"] for v in AVAILABLE_VOICES} | {"en-IN-NeerjaNeural"}
 
 async def generate_voice_preview(voice_id: str) -> Optional[str]:
     """Generates and caches a preview audio snippet for a given voice persona."""
@@ -329,8 +329,18 @@ async def stream_edge_tts_chunks(
     """
     import edge_tts
     target_voice = voice if (voice and voice in VALID_VOICE_IDS) else DEFAULT_VOICE
+
+    # Sanitize text for English target voices (convert stray Tamil script to fluent Romanized Tanglish)
+    clean_text = text
+    if target_voice.startswith("en-"):
+        try:
+            from tanglish_engine import convert_tamil_script_to_romanized
+            clean_text = convert_tamil_script_to_romanized(text)
+        except Exception:
+            clean_text = text
+
     try:
-        communicate = edge_tts.Communicate(text, voice=target_voice, rate=rate, pitch=pitch)
+        communicate = edge_tts.Communicate(clean_text, voice=target_voice, rate=rate, pitch=pitch)
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 yield chunk["data"]
@@ -339,7 +349,7 @@ async def stream_edge_tts_chunks(
         # Fallback to standard Neerja if expressive voice has delay
         if target_voice == "en-IN-NeerjaExpressiveNeural":
             try:
-                fallback_comm = edge_tts.Communicate(text, voice="en-IN-NeerjaNeural", rate=rate, pitch=pitch)
+                fallback_comm = edge_tts.Communicate(clean_text, voice="en-IN-NeerjaNeural", rate=rate, pitch=pitch)
                 async for chunk in fallback_comm.stream():
                     if chunk["type"] == "audio":
                         yield chunk["data"]
@@ -358,15 +368,12 @@ async def synthesize_fast_speech(
     Collects raw audio chunks in pure RAM and returns a high-speed Base64 Data URI.
     Completely eliminates disk I/O, file locks, and ephemeral disk accumulation on Render.
     """
-    # Dynamic Prosodic Modulation for human warmth
+    # Natural human conversational prosody
     if wellness_score < 55 or dominant_state in ["Overwhelmed", "Exhausted", "Crisis Alert"]:
-        rate = "-6%"
-        pitch = "-1Hz"
-    elif wellness_score < 68 or dominant_state in ["Lonely", "Reflective"]:
-        rate = "-4%"
+        rate = "-3%"
         pitch = "+0Hz"
     else:
-        rate = "-2%"  # Natural human conversational cadence
+        rate = "+0%"  # Natural fluid human cadence
         pitch = "+0Hz"
 
     target_voice = voice if (voice and voice in VALID_VOICE_IDS) else DEFAULT_VOICE
