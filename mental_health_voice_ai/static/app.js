@@ -68,10 +68,14 @@ const crisisModal = document.getElementById("crisisModal");
 const closeCrisisBtn = document.getElementById("closeCrisisBtn");
 const crisisHelplineGrid = document.getElementById("crisisHelplineGrid");
 
-// Phase 2: Hands-Free & Grounding Breathing State
+// Phase 2: Hands-Free, VAD Turn-Taking & Grounding State
 let isHandsFree = false;
 let vadSilenceTimer = null;
 let vadHasSpoken = false;
+let vadNoiseFloor = 6.0;
+let lastSpeechActivityTimestamp = 0;
+let lastFinalSpeechTimestamp = 0;
+let autoSubmitTriggered = false;
 let breathingInterval = null;
 let breathingMode = "box";
 let breathingCycle = 1;
@@ -962,6 +966,20 @@ function initVoiceModeControls() {
         });
     }
 
+    const voiceOrbWrapper = document.getElementById("voiceOrbWrapper");
+    if (voiceOrbWrapper) {
+        voiceOrbWrapper.addEventListener("click", () => {
+            // Instant interruption when tapping on the central orb
+            if (audioPlayer && !audioPlayer.paused) {
+                console.log("[*] Tap on voice orb: interrupting AI playback.");
+                audioPlayer.pause();
+                audioPlayer.currentTime = 0;
+                setLiveStatus("Listening...", "listening");
+                startRecording();
+            }
+        });
+    }
+
     const endConversationBtn = document.getElementById("endConversationBtn");
     if (endConversationBtn) {
         endConversationBtn.addEventListener("click", endVoiceConversation);
@@ -978,6 +996,24 @@ function initVoiceModeControls() {
     if (inlineExpandBtn) {
         inlineExpandBtn.addEventListener("click", enterVoiceMode);
     }
+
+    // Spacebar tap-to-interrupt / push-to-talk in voice mode
+    window.addEventListener("keydown", (e) => {
+        if (isVoiceModalActive && e.code === "Space" && e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA") {
+            e.preventDefault();
+            if (audioPlayer && !audioPlayer.paused) {
+                console.log("[*] Spacebar pressed: interrupting AI speech playback.");
+                audioPlayer.pause();
+                audioPlayer.currentTime = 0;
+                setLiveStatus("Listening...", "listening");
+                startRecording();
+            } else if (isRecording) {
+                stopRecording();
+            } else {
+                startRecording();
+            }
+        }
+    });
 }
 
 function enterVoiceMode() {
@@ -1349,35 +1385,44 @@ function startVisualizer(stream) {
             }
         }
 
-        // 4. Conversational Voice Activity Detection (VAD) & Natural Pause Pacing
+        // 4. Conversational Voice Activity Detection (VAD) & Fluid Auto-Turn Pacing
         if (isRecording) {
-            const hasRecognizedWords = Boolean(recognizedTranscript.trim().length > 0 || (textInput && textInput.value.trim().length > 0));
-            
-            // Speech active: vocalPercent >= 8 for 3 frames OR recognized words
-            if (vocalPercent >= 8 || hasRecognizedWords) {
+            // Adaptive noise floor tracking (smoothly adapts to room ambient noise, AC, and fans)
+            if (vocalPercent < 15) {
+                vadNoiseFloor = 0.96 * vadNoiseFloor + 0.04 * vocalPercent;
+            }
+            const speechThreshold = Math.max(16, Math.round(vadNoiseFloor + 10));
+            const isVocalEnergyActive = (vocalPercent >= speechThreshold);
+            const hasRecognizedWords = Boolean((recognizedTranscript && recognizedTranscript.trim().length > 0) || (textInput && textInput.value && textInput.value.trim().length > 0));
+
+            if (isVocalEnergyActive) {
+                // User is actively vocalizing right now
                 vadVoicedFrameCount = (typeof vadVoicedFrameCount !== "undefined" ? vadVoicedFrameCount : 0) + 1;
-                if (vadVoicedFrameCount >= 3 || hasRecognizedWords) {
+                if (vadVoicedFrameCount >= 2) {
                     vadHasSpoken = true;
                 }
-                if (vadSilenceTimer) {
-                    clearTimeout(vadSilenceTimer);
-                    vadSilenceTimer = null;
-                }
-            } else if (vocalPercent < 6) {
+                lastSpeechActivityTimestamp = performance.now();
+            } else {
                 if (typeof vadVoicedFrameCount !== "undefined") {
                     vadVoicedFrameCount = Math.max(0, vadVoicedFrameCount - 1);
                 }
-                if (vadHasSpoken) {
-                    if (!vadSilenceTimer) {
-                        // Natural 2.0s conversational pause window allows thoughtful, slow-cadence speech without premature cutoffs
-                        vadSilenceTimer = setTimeout(() => {
-                            if (isRecording && vadHasSpoken) {
-                                vadHasSpoken = false;
-                                vadVoicedFrameCount = 0;
-                                stopRecording();
-                            }
-                        }, 2000);
-                    }
+            }
+
+            // Continuous Turn-Taking: Auto-submit when user stops speaking (no button click needed!)
+            if (!autoSubmitTriggered && (vadHasSpoken || hasRecognizedWords) && lastSpeechActivityTimestamp > 0) {
+                const now = performance.now();
+                const quietMs = now - lastSpeechActivityTimestamp;
+                const isFinalized = (lastFinalSpeechTimestamp > 0 && (now - lastFinalSpeechTimestamp >= 700));
+                const isNaturalPause = (quietMs >= 1200);
+
+                if ((isFinalized || isNaturalPause) && (isVoiceModalActive || isHandsFree)) {
+                    console.log(`[*] Conversational turn complete (${Math.round(quietMs)}ms quiet, finalized=${isFinalized}). Auto-submitting speech!`);
+                    autoSubmitTriggered = true;
+                    vadHasSpoken = false;
+                    vadVoicedFrameCount = 0;
+                    lastSpeechActivityTimestamp = 0;
+                    lastFinalSpeechTimestamp = 0;
+                    stopRecording();
                 }
             }
         }
@@ -1547,6 +1592,11 @@ function setupAudioPlayerEvents() {
                 orbWrap.classList.add("speaking");
                 orbWrap.classList.remove("listening");
             }
+        }
+
+        // Keep speechRecognizer active during playback so voice barge-in is caught in real time!
+        if ((isVoiceModalActive || isHandsFree) && speechRecognizer) {
+            try { speechRecognizer.start(); } catch(e){}
         }
     });
 
@@ -2038,12 +2088,25 @@ function initSpeechRecognition() {
                 audioPlayer.pause();
                 audioPlayer.currentTime = 0;
                 setLiveStatus("Listening...", "listening");
+                if (isVoiceModalActive) {
+                    const modalState = document.getElementById("modalVoiceStateText");
+                    if (modalState) modalState.textContent = "Arogya paused • Listening to you...";
+                    const orbWrap = document.getElementById("voiceOrbWrapper");
+                    if (orbWrap) {
+                        orbWrap.classList.remove("speaking");
+                        orbWrap.classList.add("listening");
+                    }
+                }
+                if (!isRecording) {
+                    startRecording();
+                }
             }
 
             let interim = "";
             for (let i = event.resultIndex; i < event.results.length; ++i) {
                 if (event.results[i].isFinal) {
                     recognizedTranscript += event.results[i][0].transcript + " ";
+                    lastFinalSpeechTimestamp = performance.now();
                 } else {
                     interim += event.results[i][0].transcript;
                 }
@@ -2058,6 +2121,16 @@ function initSpeechRecognition() {
                     modalUserLive.textContent = `"${liveText}"`;
                 }
             }
+
+            if (liveText.length >= 2) {
+                vadHasSpoken = true;
+                lastSpeechActivityTimestamp = performance.now();
+            }
+        };
+
+        speechRecognizer.onspeechend = () => {
+            console.log("[*] Speech end detected by browser engine.");
+            lastFinalSpeechTimestamp = performance.now();
         };
 
         speechRecognizer.onerror = (e) => {
@@ -2108,6 +2181,15 @@ async function startRecording() {
         lastRecordedBlob = null;
         recognizedTranscript = "";
         if (textInput) textInput.value = "";
+        autoSubmitTriggered = false;
+        vadHasSpoken = false;
+        lastSpeechActivityTimestamp = 0;
+        lastFinalSpeechTimestamp = 0;
+        vadNoiseFloor = 6.0;
+        if (vadSilenceTimer) {
+            clearTimeout(vadSilenceTimer);
+            vadSilenceTimer = null;
+        }
 
         const options = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
             ? { mimeType: 'audio/webm;codecs=opus' }
@@ -2128,7 +2210,7 @@ async function startRecording() {
             const isBrowserHallucination = currentText.toLowerCase().split(/\s+/).every(w => w === "you" || w === "thank");
             const finalClientText = (!isBrowserHallucination && currentText.length >= 2) ? currentText : "";
 
-            if (lastRecordedBlob && lastRecordedBlob.size > 1500) {
+            if ((lastRecordedBlob && lastRecordedBlob.size > 800) || finalClientText.length >= 2) {
                 orbCaption.textContent = "Voice captured. Arogya is reflecting...";
                 setLiveStatus("Reflecting...", "listening");
                 if (isVoiceModalActive) {
@@ -2143,7 +2225,12 @@ async function startRecording() {
                 orbCaption.textContent = "Microphone captured silence. Speak into the mic or type.";
                 if (isVoiceModalActive) {
                     const modalState = document.getElementById("modalVoiceStateText");
-                    if (modalState) modalState.textContent = "Silence captured. Speak again when ready.";
+                    if (modalState) modalState.textContent = "Listening... Speak when ready.";
+                    setTimeout(() => {
+                        if (isVoiceModalActive && !isRecording && (audioPlayer.paused || audioPlayer.ended)) {
+                            startRecording();
+                        }
+                    }, 800);
                 }
                 setLiveStatus("Ready", "");
                 if (textInput) textInput.focus();
@@ -2189,6 +2276,15 @@ async function startRecording() {
 function stopRecording() {
     if (isRecording) {
         isRecording = false;
+        autoSubmitTriggered = true;
+        vadHasSpoken = false;
+        lastSpeechActivityTimestamp = 0;
+        lastFinalSpeechTimestamp = 0;
+        if (vadSilenceTimer) {
+            clearTimeout(vadSilenceTimer);
+            vadSilenceTimer = null;
+        }
+
         if (micBtn) micBtn.classList.remove("recording");
         const modalMic = document.getElementById("modalMicToggleBtn");
         if (modalMic) modalMic.classList.remove("recording");
@@ -2740,4 +2836,175 @@ window.addEventListener('appinstalled', () => {
     const installBtn = document.getElementById('installPwaBtn');
     if (installBtn) installBtn.classList.add('hidden');
 });
+
+// ---------------------------------------------------------------------------
+// STANDARDIZED CLINICAL SCREENING MODAL (PHQ-9 & GAD-7)
+// ---------------------------------------------------------------------------
+let activeClinicalTab = "phq9";
+let clinicalQuestionsCache = null;
+
+const clinicalModal = document.getElementById("clinicalAssessmentModal");
+const openClinicalBtn = document.getElementById("openClinicalModalBtn");
+const closeClinicalBtn = document.getElementById("closeClinicalModalBtn");
+const clinicalBackdrop = document.getElementById("clinicalModalBackdrop");
+const tabPhq9Btn = document.getElementById("tabPhq9Btn");
+const tabGad7Btn = document.getElementById("tabGad7Btn");
+const questionsContainer = document.getElementById("clinicalQuestionsContainer");
+const submitAssessmentBtn = document.getElementById("submitAssessmentBtn");
+const clinicalResultBox = document.getElementById("clinicalResultBox");
+
+function openClinicalModal() {
+    if (clinicalModal) clinicalModal.classList.remove("hidden");
+    if (!clinicalQuestionsCache) {
+        loadClinicalQuestions();
+    } else {
+        renderClinicalQuestions();
+    }
+}
+
+function closeClinicalModal() {
+    if (clinicalModal) clinicalModal.classList.add("hidden");
+}
+
+if (openClinicalBtn) openClinicalBtn.addEventListener("click", openClinicalModal);
+if (closeClinicalBtn) closeClinicalBtn.addEventListener("click", closeClinicalModal);
+if (clinicalBackdrop) clinicalBackdrop.addEventListener("click", closeClinicalModal);
+
+if (tabPhq9Btn) {
+    tabPhq9Btn.addEventListener("click", () => {
+        activeClinicalTab = "phq9";
+        tabPhq9Btn.classList.add("active");
+        tabPhq9Btn.style.background = "rgba(56,189,248,0.15)";
+        tabPhq9Btn.style.borderColor = "rgba(56,189,248,0.4)";
+        tabPhq9Btn.style.color = "#38bdf8";
+        if (tabGad7Btn) {
+            tabGad7Btn.classList.remove("active");
+            tabGad7Btn.style.background = "transparent";
+            tabGad7Btn.style.borderColor = "rgba(255,255,255,0.1)";
+            tabGad7Btn.style.color = "#94a3b8";
+        }
+        if (clinicalResultBox) clinicalResultBox.classList.add("hidden");
+        renderClinicalQuestions();
+    });
+}
+
+if (tabGad7Btn) {
+    tabGad7Btn.addEventListener("click", () => {
+        activeClinicalTab = "gad7";
+        tabGad7Btn.classList.add("active");
+        tabGad7Btn.style.background = "rgba(56,189,248,0.15)";
+        tabGad7Btn.style.borderColor = "rgba(56,189,248,0.4)";
+        tabGad7Btn.style.color = "#38bdf8";
+        if (tabPhq9Btn) {
+            tabPhq9Btn.classList.remove("active");
+            tabPhq9Btn.style.background = "transparent";
+            tabPhq9Btn.style.borderColor = "rgba(255,255,255,0.1)";
+            tabPhq9Btn.style.color = "#94a3b8";
+        }
+        if (clinicalResultBox) clinicalResultBox.classList.add("hidden");
+        renderClinicalQuestions();
+    });
+}
+
+async function loadClinicalQuestions() {
+    try {
+        const res = await apiFetch("/api/clinical/questions");
+        if (res.ok) {
+            clinicalQuestionsCache = await res.json();
+            renderClinicalQuestions();
+        }
+    } catch (e) {
+        console.warn("Could not load clinical questions:", e);
+    }
+}
+
+function renderClinicalQuestions() {
+    if (!questionsContainer || !clinicalQuestionsCache) return;
+    const data = clinicalQuestionsCache[activeClinicalTab];
+    if (!data) return;
+
+    const questions = data.questions || [];
+    const scale = data.scale || [
+        { score: 0, label: "Not at all" },
+        { score: 1, label: "Several days" },
+        { score: 2, label: "More than half the days" },
+        { score: 3, label: "Nearly every day" }
+    ];
+
+    let html = `<p style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 1rem; line-height: 1.4;">${data.description}</p>`;
+    
+    questions.forEach((q, idx) => {
+        html += `
+            <div class="clinical-question-item" style="margin-bottom: 1.25rem; padding-bottom: 1.25rem; border-bottom: 1px solid rgba(255,255,255,0.06);">
+                <div style="font-size: 0.88rem; font-weight: 600; color: #f1f5f9; margin-bottom: 0.6rem;">
+                    ${idx + 1}. ${escapeHtml(q.text)}
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+                    ${scale.map(s => `
+                        <label style="display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); padding: 8px 4px; border-radius: 6px; cursor: pointer; transition: all 0.15s ease;">
+                            <input type="radio" name="q_${q.id}" value="${s.score}" ${s.score === 0 ? "checked" : ""} style="margin-bottom: 4px;">
+                            <span style="font-size: 0.72rem; color: #cbd5e1; line-height: 1.2;">${s.label}</span>
+                        </label>
+                    `).join("")}
+                </div>
+            </div>
+        `;
+    });
+
+    questionsContainer.innerHTML = html;
+}
+
+if (submitAssessmentBtn) {
+    submitAssessmentBtn.addEventListener("click", async () => {
+        if (!clinicalQuestionsCache) return;
+        const data = clinicalQuestionsCache[activeClinicalTab];
+        if (!data) return;
+
+        const answers = {};
+        data.questions.forEach(q => {
+            const selected = document.querySelector(`input[name="q_${q.id}"]:checked`);
+            answers[q.id] = selected ? parseInt(selected.value, 10) : 0;
+        });
+
+        submitAssessmentBtn.disabled = true;
+        submitAssessmentBtn.textContent = "Calculating...";
+
+        try {
+            const res = await apiFetch("/api/clinical/assessment", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    assessment_type: activeClinicalTab,
+                    answers: answers,
+                    session_id: currentSessionId
+                })
+            });
+
+            if (res.ok) {
+                const result = await res.json();
+                if (clinicalResultBox) {
+                    clinicalResultBox.classList.remove("hidden");
+                    const severityClass = result.total_score >= 15 ? "color: #f87171;" : (result.total_score >= 10 ? "color: #fbbf24;" : "color: #4ade80;");
+                    clinicalResultBox.innerHTML = `
+                        <div style="display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem;">
+                            <span style="font-weight: 700; font-size: 0.95rem; color: #f8fafc;">${result.assessment} Score: ${result.total_score} / ${result.max_score}</span>
+                            <span style="font-weight: 700; font-size: 0.85rem; text-transform: uppercase; ${severityClass}">${result.severity}</span>
+                        </div>
+                        <p style="font-size: 0.82rem; color: #cbd5e1; line-height: 1.4; margin-bottom: 0.5rem;">${escapeHtml(result.clinical_action)}</p>
+                        ${result.is_crisis ? `
+                            <div style="background: rgba(239,68,68,0.15); border: 1px solid #ef4444; padding: 8px; border-radius: 6px; font-size: 0.8rem; color: #fca5a5; margin-top: 6px;">
+                                <strong>Safety Notice:</strong> An affirmative response was noted. Please connect with Tele-MANAS (14416) or a healthcare professional.
+                            </div>
+                        ` : ''}
+                    `;
+                }
+            }
+        } catch (err) {
+            console.error("Clinical submit error:", err);
+        } finally {
+            submitAssessmentBtn.disabled = false;
+            submitAssessmentBtn.textContent = "Calculate Score";
+        }
+    });
+}
 

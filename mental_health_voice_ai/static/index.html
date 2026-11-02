@@ -577,6 +577,18 @@
                         <span>Analytics</span>
                     </a>
 
+                    <!-- Clinical Screener (PHQ-9 / GAD-7) Modal Trigger -->
+                    <button id="openClinicalModalBtn" class="btn-header-tool" title="Take Validated Clinical Screener (PHQ-9 / GAD-7)">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                        <span>Clinical Screener</span>
+                    </button>
+
+                    <!-- Doctor & Therapist Clinical Report Export -->
+                    <a href="/api/clinical/report/doctor-summary" target="_blank" class="btn-header-tool" title="View Doctor & Therapist Clinical Triage Summary">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        <span>Doctor Summary</span>
+                    </a>
+
                     <!-- On-Demand Insights Drawer Toggle Button -->
                     <button id="toggleInsightsBtn" class="btn-insights-toggle" title="View Estimated Signals & Reasons">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -824,7 +836,7 @@
                 </div>
             </div>
 
-            <!-- Download Report Button -->
+            <!-- Download Report Button & Doctor Summary -->
             <div class="drawer-actions">
                 <button id="downloadReportBtn" class="btn-download-report" title="Download Session Report (Markdown)">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -834,6 +846,10 @@
                     </svg>
                     <span>Download Session Report</span>
                 </button>
+                <a href="/api/clinical/report/doctor-summary" target="_blank" class="btn-download-report" style="text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25); color: #38bdf8;" title="View Doctor & Therapist Clinical Summary">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span>Doctor / Therapist Summary</span>
+                </a>
                 <span class="ethical-disclaimer">
                     Estimated signals derived from self-reported dialogue and voice prosody. For personal reflection only, not a clinical diagnosis.
                 </span>
@@ -876,6 +892,50 @@
             <div class="voice-selector-footer">
                 <span class="voice-footer-note">Natural Indian English Neural Speech</span>
                 <button type="button" id="confirmVoiceBtn" class="btn-confirm-voice">Done</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Standardized Clinical Assessment Modal (PHQ-9 & GAD-7) -->
+    <div id="clinicalAssessmentModal" class="voice-selector-modal hidden">
+        <div class="voice-selector-backdrop" id="clinicalModalBackdrop"></div>
+        <div class="voice-selector-card clinical-modal-card" style="max-width: 680px; max-height: 85vh; display: flex; flex-direction: column;">
+            <div class="voice-selector-header">
+                <div class="voice-selector-title-wrap">
+                    <div class="voice-selector-icon" style="background: rgba(37,99,235,0.12); color: #38bdf8;">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="voice-selector-title">Standardized Clinical Screening</h3>
+                        <p class="voice-selector-desc">Scientifically validated depression (PHQ-9) and anxiety (GAD-7) screening tools.</p>
+                    </div>
+                </div>
+                <button id="closeClinicalModalBtn" class="voice-selector-close-btn" title="Close">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+
+            <!-- Tab Switcher (PHQ-9 vs GAD-7) -->
+            <div class="clinical-tabs" style="display: flex; gap: 8px; padding: 0.75rem 1.5rem; border-bottom: 1px solid rgba(255,255,255,0.08); background: rgba(0,0,0,0.15);">
+                <button id="tabPhq9Btn" class="clinical-tab-btn active" style="flex: 1; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 0.85rem; border: 1px solid rgba(56,189,248,0.4); background: rgba(56,189,248,0.15); color: #38bdf8; cursor: pointer;">PHQ-9 (Depression)</button>
+                <button id="tabGad7Btn" class="clinical-tab-btn" style="flex: 1; padding: 8px 14px; border-radius: 6px; font-weight: 600; font-size: 0.85rem; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #94a3b8; cursor: pointer;">GAD-7 (Anxiety)</button>
+            </div>
+
+            <div id="clinicalQuestionsContainer" style="overflow-y: auto; padding: 1.25rem 1.5rem; flex: 1;">
+                <!-- Dynamically rendered questions with 0-3 radio choices -->
+            </div>
+
+            <!-- Clinical Assessment Result Card (Shown after submit) -->
+            <div id="clinicalResultBox" class="hidden" style="margin: 0.75rem 1.5rem; padding: 1rem; border-radius: 8px; background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.25);">
+                <!-- Dynamically populated score & recommendations -->
+            </div>
+
+            <div class="voice-selector-footer" style="padding: 1rem 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+                <span class="voice-footer-note" style="color: #64748b; font-size: 0.78rem;">Confidential & Evidence-Based</span>
+                <div style="display: flex; gap: 8px;">
+                    <a href="/api/clinical/report/doctor-summary" target="_blank" class="btn-confirm-voice" style="background: transparent; border: 1px solid rgba(255,255,255,0.2); color: #cbd5e1; text-decoration: none; display: flex; align-items: center; justify-content: center;">Doctor Report</a>
+                    <button type="button" id="submitAssessmentBtn" class="btn-confirm-voice" style="background: #2563eb;">Calculate Score</button>
+                </div>
             </div>
         </div>
     </div>

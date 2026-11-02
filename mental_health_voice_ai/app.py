@@ -55,14 +55,22 @@ from database import (
     revoke_auth_session,
     get_user_by_id,
     switch_or_create_local_user,
-    get_all_profiles
+    get_all_profiles,
+    save_clinical_assessment,
+    get_user_clinical_assessments,
+    get_doctor_clinical_summary
 )
 from mental_health_engine import (
     extract_acoustic_features,
     analyze_and_respond,
     generate_quick_session_title,
     generate_memory_greeting,
-    classify_user_emotion_from_voice_tone
+    classify_user_emotion_from_voice_tone,
+    PHQ9_QUESTIONS,
+    GAD7_QUESTIONS,
+    RESPONSE_SCALE,
+    score_phq9,
+    score_gad7
 )
 from voice_engine import (
     transcribe_audio,
@@ -1027,6 +1035,474 @@ def download_analytics_report(request: Request):
         content=content,
         media_type="text/markdown",
         headers={"Content-Disposition": "attachment; filename=Arogya_Longitudinal_Report.md"}
+    )
+
+
+# ---------------------------------------------------------------------------
+# CLINICAL INTELLIGENCE: STANDARDIZED ASSESSMENTS & DOCTOR / THERAPIST EXPORT
+# ---------------------------------------------------------------------------
+@app.get("/api/clinical/questions")
+def get_clinical_questions():
+    """Returns standardized PHQ-9 and GAD-7 screening questionnaires."""
+    return {
+        "phq9": {
+            "title": "PHQ-9 (Patient Health Questionnaire - Depression)",
+            "description": "Over the last 2 weeks, how often have you been bothered by any of the following problems?",
+            "scale": RESPONSE_SCALE,
+            "questions": PHQ9_QUESTIONS
+        },
+        "gad7": {
+            "title": "GAD-7 (Generalized Anxiety Disorder Screener)",
+            "description": "Over the last 2 weeks, how often have you been bothered by the following problems?",
+            "scale": RESPONSE_SCALE,
+            "questions": GAD7_QUESTIONS
+        }
+    }
+
+@app.post("/api/clinical/assessment")
+async def submit_clinical_assessment(request: Request):
+    """Evaluates and persists standardized PHQ-9 or GAD-7 assessments."""
+    user = get_effective_user(request)
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid payload")
+
+    assessment_type = (data.get("assessment_type") or "phq9").lower().strip()
+    answers = data.get("answers", {})
+    session_id = data.get("session_id")
+
+    if assessment_type == "phq9":
+        result = score_phq9(answers)
+    elif assessment_type == "gad7":
+        result = score_gad7(answers)
+    else:
+        raise HTTPException(status_code=400, detail="Unsupported assessment type. Use 'phq9' or 'gad7'.")
+
+    saved = save_clinical_assessment(
+        user_id=user["id"],
+        session_id=session_id,
+        assessment_type=assessment_type,
+        total_score=result["total_score"],
+        severity=result["severity"],
+        answers=result["answers"],
+        clinical_notes=result.get("clinical_action", "")
+    )
+    result["saved_at"] = saved["created_at"]
+    return result
+
+@app.get("/api/clinical/assessments")
+def list_clinical_assessments(request: Request):
+    """Lists past standardized clinical assessments for the authenticated user."""
+    user = get_effective_user(request)
+    return {
+        "assessments": get_user_clinical_assessments(user["id"], limit=10)
+    }
+
+@app.get("/api/clinical/report/doctor-summary")
+def get_doctor_summary_html(request: Request, session_id: Optional[str] = None):
+    """
+    Returns a high-design, print-ready Clinical Summary Report HTML view
+    designed for psychiatrists, therapists, and medical healthcare providers.
+    """
+    from fastapi.responses import HTMLResponse
+    user = get_effective_user(request)
+    summary = get_doctor_clinical_summary(user_id=user["id"], session_id=session_id)
+    pat = summary.get("patient", {})
+    bw = summary.get("baseline_wellness", {})
+    std_ass = summary.get("standardized_assessments", {})
+    phq = std_ass.get("phq9")
+    gad = std_ass.get("gad7")
+    ac = summary.get("acoustic_biomarkers", {})
+    evidence = summary.get("evidence_symptoms", [])
+
+    phq_html = f"""
+        <div class="clinical-score-card">
+            <div class="card-tag">DEPRESSION SCREENER (PHQ-9)</div>
+            <div class="score-display">
+                <span class="score-big">{phq.get('total_score', '--')}</span>
+                <span class="score-scale">/27</span>
+            </div>
+            <div class="severity-pill {'severity-high' if phq.get('total_score', 0) >= 15 else ('severity-med' if phq.get('total_score', 0) >= 10 else 'severity-low')}">
+                {phq.get('severity', 'Not Taken Yet')}
+            </div>
+            <p class="action-note"><strong>Clinical Guidance:</strong> {phq.get('clinical_notes', 'Psychoeducation and supportive monitoring.')}</p>
+            {f'<div class="alert-suicide-flag"><strong>Safety Trigger:</strong> Affirmative response on Item 9 (Self-harm/Suicidal ideation). Urgent clinical assessment advised.</div>' if phq.get('answers', {}).get('9', 0) > 0 else ''}
+        </div>
+    """ if phq else """
+        <div class="clinical-score-card not-taken">
+            <div class="card-tag">DEPRESSION SCREENER (PHQ-9)</div>
+            <div class="score-display"><span class="score-big">--</span><span class="score-scale">/27</span></div>
+            <p class="action-note">Patient has not yet completed a formal PHQ-9 assessment.</p>
+        </div>
+    """
+
+    gad_html = f"""
+        <div class="clinical-score-card">
+            <div class="card-tag">ANXIETY SCREENER (GAD-7)</div>
+            <div class="score-display">
+                <span class="score-big">{gad.get('total_score', '--')}</span>
+                <span class="score-scale">/21</span>
+            </div>
+            <div class="severity-pill {'severity-high' if gad.get('total_score', 0) >= 15 else ('severity-med' if gad.get('total_score', 0) >= 10 else 'severity-low')}">
+                {gad.get('severity', 'Not Taken Yet')}
+            </div>
+            <p class="action-note"><strong>Clinical Guidance:</strong> {gad.get('clinical_notes', 'Grounding breathing, cognitive restructuring.')}</p>
+        </div>
+    """ if gad else """
+        <div class="clinical-score-card not-taken">
+            <div class="card-tag">ANXIETY SCREENER (GAD-7)</div>
+            <div class="score-display"><span class="score-big">--</span><span class="score-scale">/21</span></div>
+            <p class="action-note">Patient has not yet completed a formal GAD-7 assessment.</p>
+        </div>
+    """
+
+    evidence_rows = ""
+    for ev in evidence:
+        quotes = ev.get("quote", "")
+        evidence_rows += f"""
+            <tr>
+                <td style="font-weight: 600; width: 25%;">{ev.get('label', 'Indicator')}</td>
+                <td style="width: 15%; text-align: center;"><span class="badge-evidence-score">Level {ev.get('score', 0)}/3</span></td>
+                <td style="font-style: italic; color: #475569;">"{quotes}"</td>
+            </tr>
+        """
+    if not evidence_rows:
+        evidence_rows = "<tr><td colspan='3' style='text-align:center; color:#94a3b8; padding: 1.5rem;'>No explicit symptom indicators noted across recent dialogue.</td></tr>"
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Arogya • Clinical Summary & Triage Report</title>
+    <style>
+        :root {{
+            --primary: #0f172a;
+            --accent: #2563eb;
+            --border: #e2e8f0;
+            --bg-card: #f8fafc;
+            --text-dark: #0f172a;
+            --text-muted: #64748b;
+        }}
+        * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #f1f5f9;
+            color: var(--text-dark);
+            line-height: 1.5;
+            padding: 2rem 1rem;
+        }}
+        .report-page {{
+            max-width: 900px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06);
+            padding: 2.5rem 3rem;
+            border: 1px solid var(--border);
+        }}
+        .report-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 2px solid var(--border);
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }}
+        .brand-title {{ font-size: 1.35rem; font-weight: 800; letter-spacing: -0.02em; color: var(--primary); }}
+        .brand-sub {{ font-size: 0.85rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 0.2rem; }}
+        .header-actions {{ display: flex; gap: 0.75rem; }}
+        .btn-print {{
+            background: var(--accent);
+            color: #ffffff;
+            border: none;
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(37,99,235,0.2);
+        }}
+        .btn-print:hover {{ background: #1d4ed8; }}
+        .patient-grid {{
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 1rem;
+            background: var(--bg-card);
+            padding: 1.25rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            margin-bottom: 2rem;
+        }}
+        .meta-item .meta-label {{ font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }}
+        .meta-item .meta-value {{ font-size: 0.95rem; font-weight: 700; color: var(--primary); margin-top: 0.2rem; }}
+        
+        .section-heading {{
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--primary);
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.4rem;
+            margin-bottom: 1rem;
+            margin-top: 2rem;
+        }}
+        .scores-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.25rem;
+            margin-bottom: 2rem;
+        }}
+        .clinical-score-card {{
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1.25rem;
+            position: relative;
+        }}
+        .clinical-score-card.not-taken {{ opacity: 0.65; }}
+        .card-tag {{ font-size: 0.75rem; font-weight: 700; color: var(--text-muted); letter-spacing: 0.03em; }}
+        .score-display {{ display: flex; align-items: baseline; margin: 0.5rem 0; }}
+        .score-big {{ font-size: 2.2rem; font-weight: 800; color: var(--primary); }}
+        .score-scale {{ font-size: 1rem; color: var(--text-muted); margin-left: 0.25rem; }}
+        .severity-pill {{
+            display: inline-block;
+            padding: 0.2rem 0.65rem;
+            font-size: 0.75rem;
+            font-weight: 700;
+            border-radius: 9999px;
+            text-transform: uppercase;
+        }}
+        .severity-low {{ background: #dcfce7; color: #166534; }}
+        .severity-med {{ background: #fef9c3; color: #854d0e; }}
+        .severity-high {{ background: #fee2e2; color: #991b1b; }}
+        .action-note {{ font-size: 0.85rem; color: #334155; margin-top: 0.75rem; }}
+        .alert-suicide-flag {{
+            background: #fef2f2;
+            border: 1px solid #f87171;
+            color: #991b1b;
+            padding: 0.6rem;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            margin-top: 0.75rem;
+        }}
+        
+        .evidence-table {{
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+        }}
+        .evidence-table th {{
+            background: #f8fafc;
+            text-align: left;
+            padding: 0.6rem 0.75rem;
+            border-bottom: 2px solid var(--border);
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }}
+        .evidence-table td {{
+            padding: 0.75rem;
+            border-bottom: 1px solid var(--border);
+            vertical-align: top;
+        }}
+        .badge-evidence-score {{
+            display: inline-block;
+            background: #e2e8f0;
+            color: #334155;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.75rem;
+        }}
+        
+        .biomarkers-row {{
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-top: 0.75rem;
+            background: var(--bg-card);
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }}
+        
+        .helplines-box {{
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 2rem;
+            font-size: 0.85rem;
+            color: #166534;
+        }}
+        .helplines-box strong {{ color: #14532d; }}
+        .disclaimer-box {{
+            margin-top: 2rem;
+            padding-top: 1.25rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-align: justify;
+        }}
+        @media print {{
+            body {{ background: #ffffff; padding: 0; }}
+            .report-page {{ border: none; box-shadow: none; padding: 0; }}
+            .btn-print {{ display: none; }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="report-page">
+        <header class="report-header">
+            <div>
+                <div class="brand-title">Arogya • Clinical Intelligence Suite</div>
+                <div class="brand-sub">Comprehensive Affective & Psychiatric Triage Summary</div>
+            </div>
+            <div class="header-actions">
+                <button class="btn-print" onclick="window.print()">Print / Export PDF</button>
+            </div>
+        </header>
+
+        <section class="patient-grid">
+            <div class="meta-item">
+                <div class="meta-label">Patient Name</div>
+                <div class="meta-value">{pat.get('display_name', 'Patient')}</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">Patient ID / Reference</div>
+                <div class="meta-value">{pat.get('id', 'guest_user')[:14]}</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">Assessment Date</div>
+                <div class="meta-value">{summary.get('generated_at', '')}</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">Longitudinal Sessions</div>
+                <div class="meta-value">{pat.get('total_sessions', 1)} Completed</div>
+            </div>
+        </section>
+
+        <h3 class="section-heading">1. Validated Standardized Screening Instruments</h3>
+        <div class="scores-grid">
+            {phq_html}
+            {gad_html}
+        </div>
+
+        <h3 class="section-heading">2. Longitudinal Trajectory & Baseline Stability</h3>
+        <div class="patient-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 1.5rem;">
+            <div class="meta-item">
+                <div class="meta-label">Running Mean Wellness</div>
+                <div class="meta-value">{round(bw.get('mean', 75.0), 1)} / 100</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">Variance (Std Dev)</div>
+                <div class="meta-value">&plusmn;{round(bw.get('std', 10.0), 1)} pts</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">Dominant Affective State</div>
+                <div class="meta-value">{bw.get('dominant_state', 'Reflective')}</div>
+            </div>
+        </div>
+
+        <h3 class="section-heading">3. Objective Acoustic Biomarkers (Digital Signal Processing)</h3>
+        <div class="biomarkers-row">
+            <div class="meta-item">
+                <div class="meta-label">Pitch Variation (Semitones)</div>
+                <div class="meta-value">{f"{ac.get('semitone_std')} st" if ac.get('semitone_std') is not None else "Text Dialogue"}</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">Vocal Vitality Score</div>
+                <div class="meta-value">{ac.get('vitality_index', 80)}%</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">Prosodic Attunement</div>
+                <div class="meta-value">Continuous / In-Memory</div>
+            </div>
+        </div>
+
+        <h3 class="section-heading">4. Verbatim Quote-Backed Symptom Evidence</h3>
+        <table class="evidence-table">
+            <thead>
+                <tr>
+                    <th>Domain</th>
+                    <th style="text-align: center;">Evaluated Level</th>
+                    <th>Exact Patient Dialogue Evidence</th>
+                </tr>
+            </thead>
+            <tbody>
+                {evidence_rows}
+            </tbody>
+        </table>
+
+        <div class="helplines-box">
+            <strong>National Mental Health Emergency Contacts (India 24/7):</strong><br>
+            &bull; <strong>Tele-MANAS (Govt. of India):</strong> 14416 (Toll-free)<br>
+            &bull; <strong>KIRAN Mental Health Support:</strong> 1800-599-0019<br>
+            &bull; <strong>Vandrevala Foundation:</strong> +91 9999 666 555
+        </div>
+
+        <div class="disclaimer-box">
+            <strong>Clinical Disclaimer:</strong> {summary.get('disclaimer')}
+        </div>
+    </div>
+</body>
+</html>"""
+    return HTMLResponse(content=html)
+
+@app.get("/api/clinical/report/doctor-summary/download")
+def download_doctor_summary_markdown(request: Request, session_id: Optional[str] = None):
+    """Downloads doctor summary as formatted clinical Markdown."""
+    user = get_effective_user(request)
+    summary = get_doctor_clinical_summary(user_id=user["id"], session_id=session_id)
+    pat = summary.get("patient", {})
+    bw = summary.get("baseline_wellness", {})
+    std_ass = summary.get("standardized_assessments", {})
+    phq = std_ass.get("phq9")
+    gad = std_ass.get("gad7")
+    ac = summary.get("acoustic_biomarkers", {})
+    evidence = summary.get("evidence_symptoms", [])
+
+    lines = [
+        "# Arogya • Clinical Summary & Triage Report",
+        f"**Generated:** {summary.get('generated_at')}",
+        f"**Patient Name:** {pat.get('display_name', 'Patient')}",
+        f"**Patient ID:** {pat.get('id', 'guest_user')}",
+        f"**Total Sessions Monitored:** {pat.get('total_sessions', 1)}",
+        "",
+        "## 1. Validated Standardized Screening Scores",
+        f"- **PHQ-9 Depression Screener:** {phq.get('total_score', 'N/A') if phq else 'Not Taken'}/27 ({phq.get('severity', '') if phq else ''})",
+        f"  *Clinical Action:* {phq.get('clinical_notes', 'N/A') if phq else 'N/A'}",
+        f"- **GAD-7 Anxiety Screener:** {gad.get('total_score', 'N/A') if gad else 'Not Taken'}/21 ({gad.get('severity', '') if gad else ''})",
+        f"  *Clinical Action:* {gad.get('clinical_notes', 'N/A') if gad else 'N/A'}",
+        "",
+        "## 2. Longitudinal Trajectory & Baseline",
+        f"- **Running Baseline Mean:** {round(bw.get('mean', 75.0), 1)}/100",
+        f"- **Variance (Std Dev):** ±{round(bw.get('std', 10.0), 1)} pts",
+        f"- **Dominant Emotional State:** {bw.get('dominant_state', 'Reflective')}",
+        "",
+        "## 3. Objective Acoustic Biomarkers",
+        f"- **Pitch Variation:** {ac.get('semitone_std', 'N/A')} semitones",
+        f"- **Vocal Vitality Index:** {ac.get('vitality_index', 80)}%",
+        "",
+        "## 4. Grounded Quote-Backed Evidence",
+    ]
+    for ev in evidence:
+        lines.append(f"- **{ev.get('label')}:** Level {ev.get('score')}/3 | *Quote:* \"{ev.get('quote')}\"")
+
+    lines.append("")
+    lines.append("## 5. Emergency Support Resources")
+    lines.append("- **Tele-MANAS:** 14416 (Toll-free)")
+    lines.append("- **KIRAN:** 1800-599-0019")
+    lines.append("")
+    lines.append(f"*{summary.get('disclaimer')}*")
+
+    content = "\n".join(lines)
+    from fastapi.responses import Response
+    return Response(
+        content=content,
+        media_type="text/markdown",
+        headers={"Content-Disposition": "attachment; filename=Arogya_Doctor_Clinical_Summary.md"}
     )
 
 
