@@ -90,43 +90,6 @@ def transcribe_with_groq_whisper(audio_path: str) -> Optional[str]:
         print(f"[!] Groq Whisper transcription notice: {e}")
         return None
 
-def transcribe_with_gemini(audio_path: str) -> Optional[str]:
-    """
-    Sub-second, cloud-based audio transcription via Gemini 3.8 Flash.
-    Uses 0 MB server memory, completely avoiding local Whisper memory spikes on Render.
-    """
-    try:
-        from google import genai
-        from google.genai import types
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            return None
-        client = genai.Client(api_key=api_key)
-        with open(audio_path, "rb") as f:
-            audio_bytes = f.read()
-        if not audio_bytes or len(audio_bytes) < 400:
-            return ""
-
-        ext = os.path.splitext(audio_path)[1].lower()
-        mime_type = "audio/wav" if ext == ".wav" else ("audio/webm" if ext == ".webm" else "audio/mp3")
-
-        response = client.models.generate_content(
-            model="gemini-3.8-flash",
-            contents=[
-                types.Part.from_bytes(data=audio_bytes, mime_type=mime_type),
-                "Transcribe this speech accurately word-for-word in natural Indian English. If the audio is silent or only has background noise, reply with nothing. Output ONLY the transcribed text, nothing else."
-            ]
-        )
-        if response and response.text:
-            text = response.text.strip()
-            if text.lower() in ["none", "silence", "empty", "[silence]", "[music]", "[applause]"]:
-                return ""
-            return text
-        return ""
-    except Exception as e:
-        print(f"[!] Gemini audio transcription notice: {e}")
-        return None
-
 def get_whisper_model():
     global whisper_model
     if whisper_model is None:
@@ -169,12 +132,6 @@ def transcribe_audio(audio_path: str) -> str:
     if groq_text is not None:
         gc.collect()
         return groq_text
-
-    # 2. Secondary: Fast Gemini Cloud Transcription (0 RAM)
-    gemini_text = transcribe_with_gemini(audio_path)
-    if gemini_text is not None:
-        gc.collect()
-        return gemini_text
 
     # Fallback: Lightweight local Whisper tiny
     model = get_whisper_model()

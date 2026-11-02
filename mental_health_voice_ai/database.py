@@ -50,6 +50,20 @@ def _clean_database_url(url: Optional[str]) -> Optional[str]:
         pass
     return cleaned
 
+class RowWrapper(dict):
+    """
+    A dictionary subclass that supports both dict key access and integer indexing
+    to provide 100% compatibility with sqlite3.Row in PostgreSQL.
+    """
+    def __init__(self, data: dict):
+        super().__init__(data)
+        self._values = list(data.values())
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._values[key]
+        return super().__getitem__(key)
+
 class PostgresCursorWrapper:
     def __init__(self, cur):
         self.cur = cur
@@ -87,11 +101,11 @@ class PostgresCursorWrapper:
         row = self.cur.fetchone()
         if row is None:
             return None
-        return dict(row)
+        return RowWrapper(dict(row))
 
     def fetchall(self):
         rows = self.cur.fetchall()
-        return [dict(r) for r in rows]
+        return [RowWrapper(dict(r)) for r in rows]
 
     def close(self):
         try:
@@ -726,12 +740,18 @@ def get_session_count(user_id: Optional[str] = None) -> int:
     conn = get_connection()
     cursor = conn.cursor()
     if user_id:
-        cursor.execute("SELECT COUNT(*) FROM sessions WHERE user_id = ?", (user_id,))
+        cursor.execute("SELECT COUNT(*) AS cnt FROM sessions WHERE user_id = ?", (user_id,))
     else:
-        cursor.execute("SELECT COUNT(*) FROM sessions")
-    count = cursor.fetchone()[0]
+        cursor.execute("SELECT COUNT(*) AS cnt FROM sessions")
+    row = cursor.fetchone()
+    count = 0
+    if row is not None:
+        try:
+            count = row[0]
+        except Exception:
+            count = row.get("cnt") or row.get("count") or 0
     conn.close()
-    return count
+    return int(count or 0)
 
 def get_user_baseline_stats(user_id: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -1186,8 +1206,9 @@ def get_historical_context(current_session_id: Optional[str] = None, user_id: st
         if s_summary == "Initial conversation started.":
             s_summary = "Conversation underway."
 
+        c_date_str = str(s.get("created_at") or "")[:10]
         lines.append(
-            f"• Session '{s['title']}' ({s['created_at'][:10]}): "
+            f"• Session '{s['title']}' ({c_date_str}): "
             f"Wellness Score: {s['overall_wellness']}/100, Tone: {s['dominant_emotion']}. "
             f"Summary: {s_summary} "
             f"Key user remarks: {' | '.join(highlight_msgs) if highlight_msgs else 'None recorded'}"
@@ -1345,8 +1366,8 @@ def get_analytics_summary(user_id: str = "guest_user") -> Dict[str, Any]:
         timeline_points.append({
             "session_id": s_id,
             "title": s.get("title", "Reflection"),
-            "date": s.get("created_at", "")[:10],
-            "time": s.get("created_at", "")[11:16] if len(s.get("created_at", "")) >= 16 else "",
+            "date": str(s.get("created_at") or "")[:10],
+            "time": str(s.get("created_at") or "")[11:16] if len(str(s.get("created_at") or "")) >= 16 else "",
             "wellness": session_wellness,
             "dominant_emotion": s.get("dominant_emotion", "Reflective"),
             "reflections_count": len(recs),

@@ -6,8 +6,6 @@ import numpy as np
 from typing import Dict, Any, Tuple, Optional, List
 import soundfile as sf
 # import librosa (lazy-loaded for speed)
-from google import genai
-from google.genai import types
 from dotenv import load_dotenv
 
 # Ensure UTF-8 on Windows
@@ -21,9 +19,6 @@ if sys.platform == "win32":
 # Load configuration from .env
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
-
-API_KEY = os.getenv("GEMINI_API_KEY", "")
-client = genai.Client(api_key=API_KEY) if API_KEY else None
 
 # ---------------------------------------------------------------------------
 # 1. CRISIS SAFETY DETECTION (Decoupled - Never Touches or Fabricates Scores)
@@ -452,12 +447,13 @@ def get_groq_client():
 def query_groq_llm(prompt: str, system_instruction: str, max_tokens: int = 550) -> Optional[Dict[str, Any]]:
     """
     Sub-second conversational LLM reasoning via Groq LPU (~300ms).
-    Returns parsed JSON dictionary with clinical evaluation and reply_text.
+    Primary: qwen/qwen3.8-27b
+    Backup Safeguards: openai/gpt-oss-safeguard-20b, openai/gpt-oss-120b
     """
     client = get_groq_client()
     if not client:
         return None
-    for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"]:
+    for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-safeguard-20b", "openai/gpt-oss-120b"]:
         try:
             completion = client.chat.completions.create(
                 model=model_name,
@@ -610,29 +606,6 @@ Keep it simple, serene, and warm. Output strictly valid JSON.
             gdata = query_groq_llm(prompt, "You are Arogya, welcoming the user in warm Indian English.", max_tokens=150)
             if not gdata:
                 gdata = query_local_ollama(prompt, "You are Arogya, welcoming the user in warm Indian English.")
-            if not gdata and client:
-                for model_name in ["gemini-3.5-flash-lite", "gemini-flash-lite-latest"]:
-                    try:
-                        cfg = types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            temperature=0.3,
-                            max_output_tokens=200
-                        )
-                        resp = client.models.generate_content(
-                            model=model_name,
-                            contents=prompt,
-                            config=cfg
-                        )
-                        raw_text = (resp.text or "").strip()
-                        if raw_text.startswith("```"):
-                            raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
-                            raw_text = re.sub(r"\s*```$", "", raw_text)
-                        candidate = json.loads(raw_text.strip())
-                        if candidate and isinstance(candidate, dict) and "reply_text" in candidate:
-                            gdata = candidate
-                            break
-                    except Exception as em:
-                        print(f"[!] Greeting model {model_name} notice: {em}")
             if not gdata:
                 gdata = {}
             reply = gdata.get("reply_text", "").strip()
@@ -920,38 +893,11 @@ Produce the requested JSON:
     # 1. Primary: Ultra-fast Groq LPU Reasoning (~300ms)
     data = query_groq_llm(prompt, SYSTEM_INSTRUCTION, max_tokens=550)
 
-    # 2. Local GPU Ollama if explicitly enabled
+    # 2. Local GPU Ollama if explicitly enabled (ENABLE_LOCAL_OLLAMA=1)
     if not data:
         data = query_local_ollama(prompt, SYSTEM_INSTRUCTION)
         if data:
             print("[+] Processed via Local Ollama on GPU")
-
-    # 3. Cloud Gemini Flash Lite (sub-second high-quota cloud fallback)
-    if not data and client:
-        candidate_models = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest"]
-        for model_name in candidate_models:
-            try:
-                cfg = types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
-                    response_mime_type="application/json",
-                    temperature=0.0,
-                    max_output_tokens=550
-                )
-                response = client.models.generate_content(
-                    model=model_name,
-                    contents=prompt,
-                    config=cfg
-                )
-                raw_text = (response.text or "").strip()
-                if raw_text.startswith("```"):
-                    raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
-                    raw_text = re.sub(r"\s*```$", "", raw_text)
-                candidate_data = json.loads(raw_text.strip())
-                if candidate_data and isinstance(candidate_data, dict) and "reply_text" in candidate_data:
-                    data = candidate_data
-                    break
-            except Exception as e_model:
-                print(f"[!] Model {model_name} notice: {e_model}")
 
     if not data:
         # Context-aware fallback: Personalize with user's actual name

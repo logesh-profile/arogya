@@ -602,7 +602,14 @@ def _persist_turn(
             emotion=aggregated.get("dominant_state", user_state),
             summary=eval_result.get("summary_snippet", "")
         )
-        update_user_clinical_profile(user_id=user_id, latest_eval=eval_result)
+        stressor_candidate = eval_result.get("core_topic") or eval_result.get("conversation_title")
+        coping_candidate = eval_result.get("observed_resilience")
+        update_user_clinical_profile(
+            user_id=user_id,
+            new_stressor=stressor_candidate if (stressor_candidate and stressor_candidate not in ["Daily Reflection", "Check-in", "Personal Check-in"]) else None,
+            new_coping=coping_candidate,
+            baseline_wellness=float(user_wellness) if user_wellness else None
+        )
     except Exception as e:
         print(f"[!] Background turn save notice: {e}")
 
@@ -780,8 +787,8 @@ async def process_voice_chat(
         "user_emotion": eval_result.get("user_emotion", tone_emotion["user_emotion"]),
         "listening_face": eval_result.get("listening_face", tone_emotion["listening_face"]),
         "speaking_face": eval_result.get("speaking_face", tone_emotion["speaking_face"]),
-        "overall_wellness": aggregated.get("overall_wellness"),
-        "evaluation": aggregated,
+        "overall_wellness": user_wellness,
+        "evaluation": eval_result,
         "suggest_grounding": eval_result.get("suggest_grounding", False),
         "grounding_mode": eval_result.get("grounding_mode", "box"),
         "language_mode": language_mode,
@@ -899,8 +906,8 @@ async def process_text_chat(
         "user_emotion": eval_result.get("user_emotion", "calm"),
         "listening_face": eval_result.get("listening_face", "calm"),
         "speaking_face": eval_result.get("speaking_face", "caring"),
-        "overall_wellness": aggregated.get("overall_wellness"),
-        "evaluation": aggregated,
+        "overall_wellness": user_wellness,
+        "evaluation": eval_result,
         "suggest_grounding": eval_result.get("suggest_grounding", False),
         "grounding_mode": eval_result.get("grounding_mode", "box"),
         "language_mode": language_mode,
@@ -930,7 +937,7 @@ def download_session_report(session_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Session not found")
 
     title = report.get("title", "Check-in")
-    created = report.get("created_at", "N/A")[:10]
+    created = str(report.get("created_at") or "N/A")[:10]
     wellness = report.get("overall_wellness")
     conf = int(report.get("confidence", 0.5) * 100)
     dom_state = report.get("dominant_state", "Reflective")
