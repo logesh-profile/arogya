@@ -93,121 +93,32 @@ def normalize_text_for_speech(text: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 3. DSP ACOUSTIC EXTRACTION (Probabilistic YIN & Semitone Normalization)
+# 3. DSP ACOUSTIC EXTRACTION (Lightweight Jitter, Shimmer, Pitch & Prosody)
 # ---------------------------------------------------------------------------
-def extract_acoustic_features(audio_path: str) -> Dict[str, Any]:
+def extract_acoustic_features(audio_input: Any) -> Dict[str, Any]:
     """
-    Lightweight, low-memory scientific voice feature extraction:
-    - soundfile + numpy (avoids heavy librosa spectrogram allocation on 512MB RAM).
-    - RMS energy, vocal duration, pause/silence ratio.
-    - Normalized autocorrelation pitch estimation (semitone deviation).
+    Lightweight, low-memory scientific voice feature extraction via acoustic_biomarkers engine.
+    Extracts pitch semitone std, median f0, vocal Jitter (%), vocal Shimmer (%), RMS energy, and pause ratio.
     """
     try:
-        import soundfile as sf
-        import gc
-        data, sr = sf.read(audio_path)
-        if data is None or len(data) == 0:
-            return {"duration": 0.0, "pitch_semitone_std": None, "median_f0": None, "rms_energy": 0.0, "pause_ratio": 0.0, "is_valid_speech": False, "note": "Empty audio"}
-
-        if data.ndim > 1:
-            y = np.mean(data, axis=1)
-        else:
-            y = data.astype(np.float32)
-
-        duration = float(len(y) / sr) if sr > 0 else 0.0
-        if duration < 0.6:
+        from acoustic_biomarkers import extract_acoustic_features as _ext
+        return _ext(audio_input)
+    except Exception:
+        try:
+            from mental_health_voice_ai.acoustic_biomarkers import extract_acoustic_features as _ext
+            return _ext(audio_input)
+        except Exception as e:
             return {
-                "duration": round(duration, 2),
-                "pitch_semitone_std": None,
-                "median_f0": None,
+                "duration": 0.0,
+                "pitch_semitone_std": "insufficient_duration",
+                "median_f0": "insufficient_duration",
+                "jitter_percent": "insufficient_duration",
+                "shimmer_percent": "insufficient_duration",
                 "rms_energy": 0.0,
                 "pause_ratio": 0.0,
                 "is_valid_speech": False,
-                "note": "Audio sample too brief for stable pitch estimation"
+                "note": f"Acoustic extraction notice: {e}"
             }
-
-        # Cap analysis to first 8.0s for speed & RAM efficiency
-        analysis_y = y[:int(sr * 8.0)] if duration > 8.0 else y
-        rms_energy = float(np.sqrt(np.mean(analysis_y**2)))
-
-        # Frame-based pause ratio (100ms frames)
-        frame_len = max(1, int(sr * 0.1))
-        n_frames = len(analysis_y) // frame_len
-        if n_frames > 0:
-            frames = analysis_y[:n_frames * frame_len].reshape(n_frames, frame_len)
-            frame_rms = np.sqrt(np.mean(frames**2, axis=1))
-            silent_frames = np.sum(frame_rms < (0.15 * (np.max(frame_rms) + 1e-6)))
-            pause_ratio = round(float(silent_frames / n_frames), 2)
-        else:
-            pause_ratio = 0.0
-
-        # Fast pitch estimation via autocorrelation on 30ms voiced frames
-        frame_size = int(sr * 0.03)
-        hop_size = int(sr * 0.015)
-        fmin, fmax = 75, 400
-        min_lag = max(1, int(sr / fmax))
-        max_lag = min(frame_size - 1, int(sr / fmin))
-
-        pitches = []
-        for start_idx in range(0, len(analysis_y) - frame_size, hop_size):
-            frame = analysis_y[start_idx:start_idx + frame_size]
-            frame_power = np.sum(frame**2)
-            if frame_power < (rms_energy**2 * 0.2):
-                continue
-            corr = np.correlate(frame, frame, mode='full')
-            corr = corr[len(corr)//2:]
-            if max_lag < len(corr):
-                lag = min_lag + np.argmax(corr[min_lag:max_lag])
-                if corr[lag] > 0.35 * corr[0]:
-                    pitches.append(float(sr / lag))
-
-        if len(pitches) >= 10:
-            valid_f0 = np.array(pitches)
-            median_f0 = float(np.median(valid_f0))
-            if median_f0 > 0:
-                semitones = 12.0 * np.log2(valid_f0 / median_f0)
-                semitone_std = round(float(np.std(semitones)), 2)
-                note = f"Median F0: {round(median_f0, 1)} Hz, Semitone Std: {semitone_std} st"
-            else:
-                semitone_std = None
-                note = "Pitch median invalid"
-        else:
-            median_f0 = None
-            semitone_std = None
-            note = "Insufficient voiced frames detected"
-
-        gc.collect()
-        return {
-            "duration": round(duration, 2),
-            "pitch_semitone_std": semitone_std,
-            "median_f0": round(median_f0, 1) if median_f0 else None,
-            "rms_energy": round(rms_energy, 4),
-            "pause_ratio": pause_ratio,
-            "is_valid_speech": semitone_std is not None,
-            "note": note
-        }
-    except Exception as e:
-        print(f"[!] Lightweight acoustic extraction fallback: {e}")
-        return {
-            "duration": 0.0,
-            "pitch_semitone_std": None,
-            "median_f0": None,
-            "rms_energy": 0.0,
-            "pause_ratio": 0.0,
-            "is_valid_speech": False,
-            "note": f"Extraction error: {e}"
-        }
-    except Exception as e:
-        print(f"[!] Acoustic extraction error: {e}")
-        return {
-            "duration": 0.0,
-            "pitch_semitone_std": None,
-            "median_f0": None,
-            "rms_energy": 0.0,
-            "pause_ratio": 0.0,
-            "is_valid_speech": False,
-            "note": "Extraction error"
-        }
 
 
 # ---------------------------------------------------------------------------
@@ -368,9 +279,9 @@ SYSTEM_INSTRUCTION = """
 You are Arogya, a deeply empathetic, reflective voice companion and clinical triage assistant.
 You converse with the user through spoken audio. Your core principles:
 
-1. LANGUAGE & SPEECH STYLE (NATURAL INDIAN ENGLISH ONLY):
-   - You speak strictly in warm, empathetic, relatable, and natural INDIAN ENGLISH (the comforting, conversational Indian English spoken by a caring friend or trusted counsellor in India).
-   - DO NOT USE TANGLISH OR TAMIL SCRIPT TRANSLITERATIONS. Remove all Tanglish words. Speak purely in authentic Indian English.
+1. LANGUAGE & SPEECH STYLE:
+   - You speak in warm, empathetic, relatable, and natural Indian English.
+   - You may warmly incorporate a natural mix of Indian English and Romanized Tanglish/Tamil words when culturally appropriate to establish deep empathy with the user.
    - Address the user warmly by their actual name if provided in their profile or conversation. If no name has been confirmed, address them warmly as a friend without assuming any third-party name (NEVER assume any personal name).
    - Keep your responses direct, human, concise (2 to 3 sentences max), and conversational. Avoid sounding robotic, overly clinical, or lecturing.
 
@@ -448,12 +359,12 @@ def query_groq_llm(prompt: str, system_instruction: str, max_tokens: int = 550) 
     """
     Sub-second conversational LLM reasoning via Groq LPU (~300ms).
     Primary: qwen/qwen3.8-27b
-    Backup Safeguards: openai/gpt-oss-safeguard-20b, openai/gpt-oss-120b
+    Conversational Fallbacks: llama-3.3-70b-versatile, llama-3.1-8b-instant
     """
     client = get_groq_client()
     if not client:
         return None
-    for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-safeguard-20b", "openai/gpt-oss-120b"]:
+    for model_name in ["qwen/qwen3.8-27b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
         try:
             completion = client.chat.completions.create(
                 model=model_name,
@@ -526,6 +437,7 @@ def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "g
     and previous session reflections across days.
     Adapts language naturally: if user previously spoke Tanglish/Tamil, greets in conversational Tanglish & spoken Tamil script.
     """
+    client = get_groq_client()
     try:
         from database import get_recent_session_memory_anchor, get_user_clinical_profile, get_user_by_id
     except ImportError:
@@ -976,15 +888,37 @@ Produce the requested JSON:
         except Exception as pe:
             print(f"[!] Clinical profile auto-update notice: {pe}")
 
-    # 6. Natural Indian English Conversational Voice Pipeline
+    # 6. Conversational Voice Pipeline (Indian English & Romanized Tanglish/Tamil)
+    raw_reply = data.get("reply_text", "I'm listening, and I'm right here with you. Take your time.")
     language_mode = "indian_english"
     speech_register = "warm_indian_english"
-    raw_reply = data.get("reply_text", "I'm listening, and I'm right here with you. Take your time.")
-    naturalized_reply = normalize_text_for_speech(raw_reply)
-    prosody_stage = {
-        "spoken_text": naturalized_reply,
-        "tts_voice": "en-IN-NeerjaExpressiveNeural"
-    }
+    try:
+        from tanglish_engine import detect_language_and_register, naturalize_tanglish_response, stage_prosody_and_phonetics, select_tts_route
+        lang_info = detect_language_and_register(f"{current_transcript} {raw_reply}")
+        det_lang = lang_info.get("detected_language", "indian_english")
+        if det_lang in ["tanglish", "tamil", "code_switched"]:
+            target_reg = lang_info.get("recommended_register", "warm_conversational")
+            naturalized_reply = naturalize_tanglish_response(raw_reply, target_register=target_reg)
+            spoken_prep = stage_prosody_and_phonetics(naturalized_reply, language_mode=det_lang, tts_engine="edge_tts")
+            language_mode = det_lang
+            speech_register = target_reg
+            prosody_stage = {
+                "spoken_text": spoken_prep,
+                "tts_voice": select_tts_route(det_lang, voice_mode="fast")
+            }
+        else:
+            naturalized_reply = normalize_text_for_speech(raw_reply)
+            prosody_stage = {
+                "spoken_text": naturalized_reply,
+                "tts_voice": "en-IN-NeerjaExpressiveNeural"
+            }
+    except Exception as e:
+        print(f"[!] Tanglish engine pipeline notice: {e}")
+        naturalized_reply = normalize_text_for_speech(raw_reply)
+        prosody_stage = {
+            "spoken_text": naturalized_reply,
+            "tts_voice": "en-IN-NeerjaExpressiveNeural"
+        }
 
     # 7. Extract conversation title
     llm_title = (data.get("conversation_title") or "").strip().strip('"\'')

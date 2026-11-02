@@ -4,6 +4,7 @@ import uuid
 import shutil
 import asyncio
 import time
+import io
 from typing import Optional
 
 # Ensure UTF-8 on Windows
@@ -16,7 +17,7 @@ if sys.platform == "win32":
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response, Query, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
@@ -66,6 +67,7 @@ from mental_health_engine import (
 from voice_engine import (
     transcribe_audio,
     synthesize_speech,
+    stream_edge_tts_chunks,
     AVAILABLE_VOICES,
     DEFAULT_VOICE,
     generate_voice_preview
@@ -380,13 +382,34 @@ async def get_voice_preview_endpoint(voice: Optional[str] = None):
         raise HTTPException(status_code=500, detail="Voice preview generation failed")
     return {"voice": target_voice, "audio_url": audio_url}
 
+@app.get("/api/tts/stream")
+async def stream_tts_endpoint(text: str = Query(...), voice: Optional[str] = Query(None)):
+    """
+    In-memory Edge-TTS audio streaming endpoint.
+    Yields raw MP3 chunks directly with media_type='audio/mpeg' and zero disk I/O.
+    """
+    return StreamingResponse(
+        stream_edge_tts_chunks(text=text, voice=voice),
+        media_type="audio/mpeg"
+    )
+
 @app.post("/api/synthesize")
 async def standalone_synthesize(
+    request: Request,
     text: str = Form(...),
     voice_mode: str = Form("fast"),
     voice: Optional[str] = Form(None)
 ):
-    """Synthesizes on-demand speech for an existing text message."""
+    """
+    Synthesizes speech in-memory without creating physical disk files.
+    Returns StreamingResponse if requested by client, or instant Data URI.
+    """
+    if "audio/mpeg" in request.headers.get("accept", ""):
+        return StreamingResponse(
+            stream_edge_tts_chunks(text=text, voice=voice),
+            media_type="audio/mpeg"
+        )
+
     audio_url = await synthesize_speech(
         text=text,
         mode=voice_mode,
@@ -523,40 +546,20 @@ async def set_esp32_expression(request: Request):
 @app.post("/api/transcribe")
 async def transcribe_only(file: UploadFile = File(...)):
     """
-    Fast audio transcription endpoint for instant client-side preview.
+    Fast audio transcription endpoint directly in memory.
+    Completely eliminates local file saving and FFmpeg OS subprocess spikes.
     """
-    raw_filename = f"temp_tr_{uuid.uuid4().hex[:8]}.webm"
-    raw_path = os.path.join(CACHE_DIR, raw_filename)
-    with open(raw_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-
-    clean_filename = f"clean_tr_{uuid.uuid4().hex[:8]}.wav"
-    clean_path = os.path.join(CACHE_DIR, clean_filename)
-    ffmpeg_exe = get_ffmpeg_executable()
-
-    active_audio_path = raw_path
-    if ffmpeg_exe and os.path.exists(ffmpeg_exe):
-        import subprocess
-        try:
-            cmd = [ffmpeg_exe, "-y", "-i", raw_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", clean_path]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-            active_audio_path = clean_path
-        except Exception:
-            pass
+    audio_bytes = await file.read()
+    bio = io.BytesIO(audio_bytes)
+    bio.name = file.filename or "audio.webm"
 
     transcript = ""
     try:
-        t = transcribe_audio(active_audio_path)
+        t = transcribe_audio(bio)
         if t and t.lower() not in ["you", "thank you", "[gentle sigh]"]:
             transcript = t.strip()
     except Exception as e:
         print(f"[!] Transcribe error: {e}")
-
-    # Cleanup temporary transcribe audio
-    for p in [raw_path, clean_path]:
-        if os.path.exists(p):
-            try: os.remove(p)
-            except Exception: pass
 
     return {"transcript": transcript}
 
@@ -643,31 +646,12 @@ async def process_voice_chat(
     bridge = get_esp32_bridge()
     bridge.send("EMO:thinking")
 
-    # 1. Save uploaded raw audio
-    raw_filename = f"user_raw_{uuid.uuid4().hex[:8]}.webm"
-    raw_path = os.path.join(CACHE_DIR, raw_filename)
-    with open(raw_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    # 1. Read uploaded raw audio directly into memory (zero disk I/O, zero FFmpeg subprocess)
+    audio_bytes = await file.read()
+    bio = io.BytesIO(audio_bytes)
+    bio.name = file.filename or "audio.webm"
 
-    # 2. Normalize to 16kHz Mono PCM WAV via FFmpeg
-    clean_filename = f"user_speech_{uuid.uuid4().hex[:8]}.wav"
-    clean_path = os.path.join(CACHE_DIR, clean_filename)
-    ffmpeg_exe = get_ffmpeg_executable()
-    
-    if ffmpeg_exe and os.path.exists(ffmpeg_exe):
-        import subprocess
-        try:
-            cmd = [ffmpeg_exe, "-y", "-i", raw_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", clean_path]
-            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-            active_audio_path = clean_path
-        except Exception as e:
-            print(f"[!] FFmpeg conversion failed: {e}, using raw path")
-            active_audio_path = raw_path
-    else:
-        active_audio_path = raw_path
-
-    # 3. Determine Transcript & Acoustic Features Concurrently
-    # STT runs on RTX 3050 GPU (CUDA FP16), DSP runs on CPU in thread pool
+    # 2. Determine Transcript & Acoustic Features Concurrently in Memory
     transcript = ""
     if client_transcript and len(client_transcript.strip()) > 1:
         c_text = client_transcript.strip()
@@ -675,7 +659,7 @@ async def process_voice_chat(
         if not (all(w == "you" for w in words) or c_text.lower() in ["you", "thank you", "[gentle sigh]"]):
             transcript = c_text
 
-    # 4. Session History & Baseline Statistical Context
+    # 3. Session History & Baseline Statistical Context
     session_messages = get_session_messages(session_id)
     historical_context = get_historical_context(session_id, user_id=user["id"])
     n_sessions = get_session_count(user_id=user["id"])
@@ -688,8 +672,8 @@ async def process_voice_chat(
 
     loop = asyncio.get_event_loop()
     if transcript:
-        # High-Speed Parallel Pipeline: Run Librosa DSP and LLM concurrently
-        dsp_task = loop.run_in_executor(None, extract_acoustic_features, active_audio_path)
+        # High-Speed Parallel Pipeline: Run in-memory DSP and LLM concurrently
+        dsp_task = loop.run_in_executor(None, extract_acoustic_features, audio_bytes)
         llm_task = loop.run_in_executor(
             None,
             analyze_and_respond,
@@ -704,9 +688,9 @@ async def process_voice_chat(
         )
         acoustic_features, eval_result = await asyncio.gather(dsp_task, llm_task)
     else:
-        # Run Whisper STT and Librosa DSP concurrently
-        whisper_task = loop.run_in_executor(None, transcribe_audio, active_audio_path)
-        dsp_task = loop.run_in_executor(None, extract_acoustic_features, active_audio_path)
+        # Run in-memory Groq Whisper STT and DSP concurrently
+        whisper_task = loop.run_in_executor(None, transcribe_audio, bio)
+        dsp_task = loop.run_in_executor(None, extract_acoustic_features, audio_bytes)
         whisper_text, acoustic_features = await asyncio.gather(whisper_task, dsp_task)
         transcript = whisper_text or "I wanted to take a moment to reflect on my feelings."
         eval_result = analyze_and_respond(
@@ -722,7 +706,8 @@ async def process_voice_chat(
 
     # Attach acoustic telemetry
     eval_result["acoustic_features"] = acoustic_features
-    semitone_std = acoustic_features.get("pitch_semitone_std")
+    raw_semitone = acoustic_features.get("pitch_semitone_std")
+    semitone_std = float(raw_semitone) if isinstance(raw_semitone, (int, float)) else None
     voice_z = None
     if semitone_std is not None and baseline.get("voice_mean") is not None and baseline.get("voice_std"):
         voice_z = (semitone_std - baseline["voice_mean"]) / baseline["voice_std"]
@@ -768,7 +753,7 @@ async def process_voice_chat(
         session_id=session_id,
         user_id=user["id"],
         transcript=transcript,
-        user_audio_url=f"/audio/{clean_filename}",
+        user_audio_url=None, # In-memory processing (zero disk files)
         speech_metrics=acoustic_features,
         reply_text=reply_text,
         ai_audio_url=ai_audio_url,

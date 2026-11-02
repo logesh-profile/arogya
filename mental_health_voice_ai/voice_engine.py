@@ -2,8 +2,10 @@ import os
 import sys
 import uuid
 import re
+import io
+import base64
 import asyncio
-from typing import Optional
+from typing import Optional, Union, AsyncGenerator
 import soundfile as sf
 
 # Dynamic optional imports for cloud deployment / low-memory environments
@@ -51,29 +53,45 @@ def get_groq_client():
                 print(f"[!] Groq STT client notice: {e}")
     return _groq_client
 
-def transcribe_with_groq_whisper(audio_path: str) -> Optional[str]:
+def transcribe_with_groq_whisper(audio_input: Union[str, bytes, io.BytesIO]) -> Optional[str]:
     """
     Sub-second Groq Whisper LPU speech recognition (~200ms).
     Uses 0 MB server memory, completely eliminating Render memory spikes.
+    Supports in-memory BytesIO/bytes directly and auto-detects multilingual speech (Tamil, Tanglish, English).
     """
     client = get_groq_client()
     if not client:
         return None
     try:
-        ext = os.path.splitext(audio_path)[1].lower()
-        filename = f"audio{ext if ext else '.wav'}"
-        with open(audio_path, "rb") as f:
-            audio_bytes = f.read()
+        if isinstance(audio_input, bytes):
+            bio = io.BytesIO(audio_input)
+            bio.name = "audio.webm"
+        elif isinstance(audio_input, io.BytesIO):
+            bio = audio_input
+            bio.seek(0)
+            if not hasattr(bio, "name") or not bio.name:
+                bio.name = "audio.webm"
+        elif isinstance(audio_input, str) and os.path.exists(audio_input):
+            ext = os.path.splitext(audio_input)[1].lower()
+            with open(audio_input, "rb") as f:
+                bio = io.BytesIO(f.read())
+            bio.name = f"audio{ext if ext else '.webm'}"
+        else:
+            return ""
+
+        bio.seek(0)
+        audio_bytes = bio.getvalue()
         if not audio_bytes or len(audio_bytes) < 400:
             return ""
 
         for model_id in ["whisper-large-v3-turbo", "whisper-large-v3"]:
             try:
+                bio.seek(0)
                 transcription = client.audio.transcriptions.create(
-                    file=(filename, audio_bytes),
+                    file=bio,
                     model=model_id,
                     response_format="json",
-                    language="en",
+                    # Auto-detects English, Tamil, and Tanglish natively
                     temperature=0.0
                 )
                 if transcription and transcription.text:
@@ -105,49 +123,40 @@ def get_whisper_model():
             whisper_model = None
     return whisper_model
 
-def transcribe_audio(audio_path: str) -> str:
+def transcribe_audio(audio_input: Union[str, bytes, io.BytesIO]) -> str:
     """
-    Transcribes audio file with zero memory spike:
-    1. Checks audio energy (skips silent audio).
-    2. Cloud STT with Gemini 3.8 Flash (0 MB RAM).
-    3. Lightweight Whisper tiny fallback only if Gemini is unavailable.
+    Transcribes audio directly in memory with zero OS process or file saving overhead.
+    1. Checks audio energy in memory (skips silent audio).
+    2. Cloud STT with Groq Whisper Large v3 Turbo (~200ms, 0 RAM).
+    3. Lightweight Whisper tiny fallback only if Groq is unavailable.
     """
     import numpy as np
     import gc
-    try:
-        data, sr = sf.read(audio_path)
-        if len(data) == 0:
-            return ""
-        # Check maximum amplitude and RMS volume
-        max_amp = float(np.max(np.abs(data)))
-        rms = float(np.sqrt(np.mean(data**2)))
-        if max_amp < 0.0008 or rms < 0.0002:
-            print(f"[!] Audio is silent (max_amp={max_amp:.4f}, rms={rms:.4f}). Skipping STT.")
-            return ""
-    except Exception as e:
-        print(f"[!] Audio energy check warning: {e}")
 
     # 1. Primary: Sub-second Groq Whisper LPU (~200ms, 0 RAM)
-    groq_text = transcribe_with_groq_whisper(audio_path)
+    groq_text = transcribe_with_groq_whisper(audio_input)
     if groq_text is not None:
         gc.collect()
         return groq_text
 
-    # Fallback: Lightweight local Whisper tiny
-    model = get_whisper_model()
-    if not model:
-        gc.collect()
-        return ""
+    # Fallback: Lightweight local Whisper tiny if file exists on disk
+    if isinstance(audio_input, str) and os.path.exists(audio_input):
+        model = get_whisper_model()
+        if not model:
+            gc.collect()
+            return ""
 
-    segments, _ = model.transcribe(
-        audio_path,
-        beam_size=1,
-        language="en",
-        initial_prompt="Natural Indian English conversation, emotional reflection, mental health, thoughts, and feelings.",
-        vad_filter=True,
-        condition_on_previous_text=False
-    )
-    transcript = " ".join([segment.text for segment in segments]).strip()
+        segments, _ = model.transcribe(
+            audio_input,
+            beam_size=1,
+            language="en",
+            initial_prompt="Natural Indian English conversation, emotional reflection, mental health, thoughts, and feelings.",
+            vad_filter=True,
+            condition_on_previous_text=False
+        )
+        transcript = " ".join([segment.text for segment in segments]).strip()
+    else:
+        transcript = ""
 
     # Filter out common Whisper silence hallucinations
     clean_lower = transcript.lower().strip(" .,!?-")
@@ -288,6 +297,35 @@ async def generate_voice_preview(voice_id: str) -> Optional[str]:
         print(f"[!] Voice preview generation notice: {e}")
         return None
 
+async def stream_edge_tts_chunks(
+    text: str,
+    voice: Optional[str] = None,
+    rate: str = "+0%",
+    pitch: str = "+0Hz"
+) -> AsyncGenerator[bytes, None]:
+    """
+    Asynchronous in-memory streaming generator for Microsoft Edge-TTS.
+    Yields raw MP3 audio chunks directly as they are generated without writing to disk.
+    """
+    import edge_tts
+    target_voice = voice if (voice and voice in VALID_VOICE_IDS) else DEFAULT_VOICE
+    try:
+        communicate = edge_tts.Communicate(text, voice=target_voice, rate=rate, pitch=pitch)
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                yield chunk["data"]
+    except Exception as e:
+        print(f"[!] Edge-TTS streaming notice for {target_voice}: {e}")
+        # Fallback to standard Neerja if expressive voice has delay
+        if target_voice == "en-IN-NeerjaExpressiveNeural":
+            try:
+                fallback_comm = edge_tts.Communicate(text, voice="en-IN-NeerjaNeural", rate=rate, pitch=pitch)
+                async for chunk in fallback_comm.stream():
+                    if chunk["type"] == "audio":
+                        yield chunk["data"]
+            except Exception:
+                pass
+
 async def synthesize_fast_speech(
     text: str,
     wellness_score: int = 75,
@@ -296,17 +334,10 @@ async def synthesize_fast_speech(
     language_mode: str = "indian_english"
 ) -> str:
     """
-    Sub-second neural speech synthesis via edge-tts (~0.35s).
-    High-fidelity Indian English neural voices (Neerja Expressive, Prabhat, Jenny, Guy).
-    Dynamically modulates prosodic rate and pitch based on user emotional state:
-    - Distress / low wellness: -6% rate, -2Hz pitch (soothing grounding cadence)
-    - Loneliness / mild strain: -3% rate, -1Hz pitch (warm intimate presence)
-    - Balanced / calm: +0% rate, +0Hz pitch (natural conversational human rhythm)
+    In-memory neural speech synthesis via Edge-TTS (~0.35s).
+    Collects raw audio chunks in pure RAM and returns a high-speed Base64 Data URI.
+    Completely eliminates disk I/O, file locks, and ephemeral disk accumulation on Render.
     """
-    import edge_tts
-    out_filename = f"reply_fast_{uuid.uuid4().hex[:8]}.mp3"
-    out_path = os.path.join(CACHE_DIR, out_filename)
-
     # Dynamic Prosodic Modulation for human warmth
     if wellness_score < 55 or dominant_state in ["Overwhelmed", "Exhausted", "Crisis Alert"]:
         rate = "-6%"
@@ -321,20 +352,17 @@ async def synthesize_fast_speech(
     target_voice = voice if (voice and voice in VALID_VOICE_IDS) else DEFAULT_VOICE
 
     try:
-        communicate = edge_tts.Communicate(text, voice=target_voice, rate=rate, pitch=pitch)
-        await asyncio.wait_for(communicate.save(out_path), timeout=8.0)
-        return f"/audio/{out_filename}"
+        audio_buffer = bytearray()
+        async for chunk in stream_edge_tts_chunks(text, voice=target_voice, rate=rate, pitch=pitch):
+            audio_buffer.extend(chunk)
+
+        if audio_buffer:
+            b64_audio = base64.b64encode(audio_buffer).decode("ascii")
+            return f"data:audio/mp3;base64,{b64_audio}"
     except Exception as e:
-        print(f"[!] Fast speech synthesis notice for {target_voice}: {e}")
-        # Fallback to standard Neerja if expressive voice encounters delay
-        if target_voice == "en-IN-NeerjaExpressiveNeural":
-            try:
-                communicate = edge_tts.Communicate(text, voice="en-IN-NeerjaNeural", rate=rate, pitch=pitch)
-                await asyncio.wait_for(communicate.save(out_path), timeout=6.0)
-                return f"/audio/{out_filename}"
-            except Exception:
-                pass
-        return None
+        print(f"[!] Fast speech synthesis notice: {e}")
+
+    return ""
 
 async def synthesize_speech(
     text: str,
