@@ -899,25 +899,27 @@ Produce the requested JSON:
         if det_lang in ["tanglish", "tamil", "code_switched"]:
             target_reg = lang_info.get("recommended_register", "warm_conversational")
             naturalized_reply = naturalize_tanglish_response(raw_reply, target_register=target_reg)
-            spoken_prep = stage_prosody_and_phonetics(naturalized_reply, language_mode=det_lang, tts_engine="edge_tts")
+            staged = stage_prosody_and_phonetics(naturalized_reply, language_mode=det_lang, tts_engine="edge_tts")
+            spoken_clean = staged.get("spoken_text", naturalized_reply) if isinstance(staged, dict) else str(staged)
+            tts_route = staged.get("tts_voice") if isinstance(staged, dict) else select_tts_route(det_lang, voice_mode="fast")
             language_mode = det_lang
             speech_register = target_reg
             prosody_stage = {
-                "spoken_text": spoken_prep,
-                "tts_voice": select_tts_route(det_lang, voice_mode="fast")
+                "spoken_text": spoken_clean,
+                "tts_voice": tts_route
             }
         else:
             naturalized_reply = normalize_text_for_speech(raw_reply)
             prosody_stage = {
                 "spoken_text": naturalized_reply,
-                "tts_voice": "en-IN-NeerjaExpressiveNeural"
+                "tts_voice": "en-US-AvaMultilingualNeural"
             }
     except Exception as e:
         print(f"[!] Tanglish engine pipeline notice: {e}")
         naturalized_reply = normalize_text_for_speech(raw_reply)
         prosody_stage = {
             "spoken_text": naturalized_reply,
-            "tts_voice": "en-IN-NeerjaExpressiveNeural"
+            "tts_voice": "en-US-AvaMultilingualNeural"
         }
 
     # 7. Extract conversation title

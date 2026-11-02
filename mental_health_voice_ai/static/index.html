@@ -552,95 +552,95 @@
                     </div>
                 </div>
 
-                <div class="header-right">
-                    <!-- Live ChatGPT Voice Mode Button -->
-                    <button id="openVoiceModeBtn" class="btn-header-tool btn-voice-mode-pulse" title="Start ChatGPT-style Continuous Voice Dialogue">
-                        <span class="voice-mode-pulse-dot"></span>
-                        <span>Live Voice</span>
-                    </button>
-
-                    <!-- Grounding Breathing Trigger Button -->
-                    <button id="openGroundingBtn" class="btn-header-tool" title="Open Guided Calming Breathing">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>
-                        <span>Grounding</span>
-                    </button>
-
-                    <!-- Hands-Free VAD Mode Toggle -->
-                    <button id="handsFreeToggleBtn" class="btn-header-tool btn-hands-free" title="Toggle Hands-Free Continuous Dialogue">
-                        <span class="hands-free-dot"></span>
-                        <span id="handsFreeLabel">Hands-Free: OFF</span>
-                    </button>
-
-                    <!-- Dedicated Separate Analytics Page Link -->
-                    <a href="/analytics" class="btn-header-tool btn-analytics-nav" title="Open Multi-Session Analytics & Trajectory">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
-                        <span>Analytics</span>
-                    </a>
-
-                    <!-- Clinical Screener (PHQ-9 / GAD-7) Modal Trigger -->
-                    <button id="openClinicalModalBtn" class="btn-header-tool" title="Take Validated Clinical Screener (PHQ-9 / GAD-7)">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
-                        <span>Clinical Screener</span>
-                    </button>
-
-                    <!-- Doctor & Therapist Clinical Report Export -->
-                    <a href="/api/clinical/report/doctor-summary" target="_blank" class="btn-header-tool" title="View Doctor & Therapist Clinical Triage Summary">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                        <span>Doctor Summary</span>
-                    </a>
-
-                    <!-- On-Demand Insights Drawer Toggle Button -->
-                    <button id="toggleInsightsBtn" class="btn-insights-toggle" title="View Estimated Signals & Reasons">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M18 20V10M12 20V4M6 20v-6"/>
+                <div class="header-right header-menu-container">
+                    <!-- Single Consolidated Top-Right Menu Button -->
+                    <button id="headerMoreMenuBtn" class="btn-header-menu" title="Menu & Options" aria-label="Menu and Options">
+                        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="4" y1="6" x2="20" y2="6"></line>
+                            <line x1="4" y1="12" x2="20" y2="12"></line>
+                            <line x1="4" y1="18" x2="20" y2="18"></line>
                         </svg>
-                        <span>Insights</span>
+                        <span>Menu</span>
                     </button>
 
-                    <!-- ChatGPT-Style Voice Selector Button -->
-                    <button id="openVoiceSelectorBtn" class="btn-voice-selector" title="Change Voice Model (ChatGPT-style voice switch)">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-                            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-                            <line x1="12" y1="19" x2="12" y2="23"/>
-                            <line x1="8" y1="23" x2="16" y2="23"/>
-                        </svg>
-                        <span id="headerVoiceLabel">Voice: Neerja</span>
-                    </button>
+                    <!-- Floating Dropdown Menu -->
+                    <div id="headerDropdownMenu" class="header-dropdown-menu hidden">
+                        <button id="menuVoiceModeBtn" class="header-menu-item" type="button">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+                            <div class="header-menu-item-text">
+                                <span class="header-menu-item-title">Live Voice Mode</span>
+                                <span class="header-menu-item-desc">Full-duplex hands-free voice dialogue</span>
+                            </div>
+                        </button>
 
-                    <!-- Theme Toggle (Light / Dark) -->
-                    <button id="themeToggleBtn" class="theme-toggle-btn" title="Toggle Light / Dark Mode">
-                        <svg class="theme-icon-sun" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="5"></circle>
-                            <line x1="12" y1="1" x2="12" y2="3"></line>
-                            <line x1="12" y1="21" x2="12" y2="23"></line>
-                            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
-                            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
-                            <line x1="1" y1="12" x2="3" y2="12"></line>
-                            <line x1="21" y1="12" x2="23" y2="12"></line>
-                            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
-                            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
-                        </svg>
-                        <svg class="theme-icon-moon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
-                        </svg>
-                        <span class="theme-label" id="themeLabel">Dark</span>
-                    </button>
+                        <button id="menuClinicalBtn" class="header-menu-item" type="button">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                            <div class="header-menu-item-text">
+                                <span class="header-menu-item-title">Clinical Screener</span>
+                                <span class="header-menu-item-desc">PHQ-9 & GAD-7 validated screening</span>
+                            </div>
+                        </button>
 
-                    <!-- PWA Standalone App Install Button -->
-                    <button id="installPwaBtn" class="btn-header-tool btn-install-pwa hidden" title="Install Arogya as Standalone App on Desktop or Mobile">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-                            <polyline points="7 10 12 15 17 10"/>
-                            <line x1="12" y1="15" x2="12" y2="3"/>
-                        </svg>
-                        <span>Install App</span>
-                    </button>
+                        <a href="/api/clinical/report/doctor-summary" target="_blank" class="header-menu-item" id="menuDoctorReportBtn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                            <div class="header-menu-item-text">
+                                <span class="header-menu-item-title">Doctor & Therapist Report</span>
+                                <span class="header-menu-item-desc">Printable psychiatric triage summary</span>
+                            </div>
+                        </a>
 
-                    <div class="live-status-pill" id="liveStatusPill">
-                        <span class="status-indicator"></span>
-                        <span id="liveStatusText">Ready</span>
+                        <a href="/analytics" class="header-menu-item" id="menuAnalyticsBtn">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></svg>
+                            <div class="header-menu-item-text">
+                                <span class="header-menu-item-title">Longitudinal Analytics</span>
+                                <span class="header-menu-item-desc">Multi-session wellness trajectory</span>
+                            </div>
+                        </a>
+
+                        <button id="menuInsightsBtn" class="header-menu-item" type="button">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+                            <div class="header-menu-item-text">
+                                <span class="header-menu-item-title">Estimated Signals & Scorecard</span>
+                                <span class="header-menu-item-desc">View quote-backed evidence drawer</span>
+                            </div>
+                        </button>
+
+                        <div class="header-menu-divider"></div>
+
+                        <button id="menuVoiceSelectorBtn" class="header-menu-item" type="button">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                            <div class="header-menu-item-text">
+                                <span class="header-menu-item-title">Change Voice</span>
+                                <span class="header-menu-item-desc" id="menuCurrentVoiceLabel">Voice: Ava (Human Conversational)</span>
+                            </div>
+                        </button>
+
+                        <button id="menuThemeBtn" class="header-menu-item" type="button">
+                            <svg class="theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line></svg>
+                            <div class="header-menu-item-text">
+                                <span class="header-menu-item-title">Appearance</span>
+                                <span class="header-menu-item-desc" id="menuThemeDesc">Switch Light / Dark Theme</span>
+                            </div>
+                        </button>
+
+                        <button id="menuInstallAppBtn" class="header-menu-item hidden" type="button">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            <div class="header-menu-item-text">
+                                <span class="header-menu-item-title">Install Arogya App</span>
+                                <span class="header-menu-item-desc">Install standalone desktop or mobile app</span>
+                            </div>
+                        </button>
                     </div>
+
+                    <!-- Hidden alias anchors for programmatic triggers -->
+                    <button id="openVoiceModeBtn" class="hidden"></button>
+                    <button id="openClinicalModalBtn" class="hidden"></button>
+                    <button id="toggleInsightsBtn" class="hidden"></button>
+                    <button id="openVoiceSelectorBtn" class="hidden"></button>
+                    <button id="themeToggleBtn" class="hidden"></button>
+                    <button id="installPwaBtn" class="hidden"></button>
+                    <span id="headerVoiceLabel" class="hidden">Voice: Ava</span>
+                    <span id="themeLabel" class="hidden">Dark</span>
                 </div>
             </header>
 

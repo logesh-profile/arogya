@@ -218,61 +218,81 @@ def synthesize_cloned_speech(text: str, wellness_score: int = 75, dominant_state
     )
     return f"/audio/{out_filename}"
 
-# Curated ChatGPT-Style Natural Voices (Indian English primary, distinct expressive personas)
+# Curated ChatGPT-Style Human Natural Voices (Ultra-expressive, authentic human cadence)
 AVAILABLE_VOICES = [
     {
-        "id": "en-IN-NeerjaExpressiveNeural",
-        "name": "Neerja",
-        "label": "Neerja (Expressive)",
+        "id": "en-US-AvaMultilingualNeural",
+        "name": "Ava",
+        "label": "Ava (Human Conversational)",
         "gender": "Female",
-        "accent": "Indian English",
-        "description": "Warm, empathetic and expressive tone",
-        "sample_text": "Hello, I am your Arogya companion. I'm here to listen and reflect with you.",
+        "accent": "Natural Human English",
+        "description": "Ultra-realistic, warm, human conversational voice with authentic emotional intonation",
+        "sample_text": "Hello! I am your Arogya companion. I'm right here with you to listen and reflect.",
         "default": True
     },
     {
-        "id": "en-IN-PrabhatNeural",
-        "name": "Prabhat",
-        "label": "Prabhat (Grounded)",
+        "id": "en-US-AndrewMultilingualNeural",
+        "name": "Andrew",
+        "label": "Andrew (Human Conversational)",
         "gender": "Male",
-        "accent": "Indian English",
-        "description": "Calm, deep and grounding reassurance",
-        "sample_text": "Take a gentle breath. I am right here with you whenever you are ready.",
+        "accent": "Natural Human English",
+        "description": "Deep, warm, and comforting human conversational tone",
+        "sample_text": "Take a gentle breath. I am right here whenever you want to share what is on your mind.",
+        "default": False
+    },
+    {
+        "id": "en-US-EmmaMultilingualNeural",
+        "name": "Emma",
+        "label": "Emma (Empathetic)",
+        "gender": "Female",
+        "accent": "Warm & Gentle",
+        "description": "Compassionate, gentle, and mindful human presence",
+        "sample_text": "You can speak freely here without any judgment. How are you feeling right now?",
+        "default": False
+    },
+    {
+        "id": "en-US-BrianMultilingualNeural",
+        "name": "Brian",
+        "label": "Brian (Thoughtful)",
+        "gender": "Male",
+        "accent": "Calm & Grounded",
+        "description": "Thoughtful, steady, and supportive human male companion",
+        "sample_text": "I am here with you. Let's take things one step at a time.",
         "default": False
     },
     {
         "id": "en-IN-NeerjaNeural",
-        "name": "Neerja Soft",
-        "label": "Neerja (Gentle)",
+        "name": "Neerja",
+        "label": "Neerja (Indian English)",
         "gender": "Female",
         "accent": "Indian English",
-        "description": "Soft-spoken, peaceful and mindful presence",
-        "sample_text": "You can speak freely here without any judgment. How are you feeling today?",
+        "description": "Smooth, clear, and comforting Indian English neural voice",
+        "sample_text": "Namaste. I am here to listen to your thoughts and support you.",
         "default": False
     },
     {
-        "id": "en-US-JennyNeural",
-        "name": "Jenny",
-        "label": "Jenny (Conversational)",
-        "gender": "Female",
-        "accent": "Conversational English",
-        "description": "Clear, friendly and upbeat companion",
-        "sample_text": "Hi there! I am ready whenever you want to share what is on your mind.",
-        "default": False
-    },
-    {
-        "id": "en-US-GuyNeural",
-        "name": "Guy",
-        "label": "Guy (Thoughtful)",
+        "id": "en-IN-PrabhatNeural",
+        "name": "Prabhat",
+        "label": "Prabhat (Indian English)",
         "gender": "Male",
-        "accent": "Calm English",
-        "description": "Thoughtful, gentle and steady presence",
-        "sample_text": "I am here to support you. Let's take it one step at a time.",
+        "accent": "Indian English",
+        "description": "Calm, grounding reassurance in an Indian English accent",
+        "sample_text": "Take your time. I am listening to everything you wish to share.",
+        "default": False
+    },
+    {
+        "id": "ta-IN-PallaviNeural",
+        "name": "Pallavi",
+        "label": "Pallavi (Tamil / Tanglish)",
+        "gender": "Female",
+        "accent": "Tamil / Tanglish",
+        "description": "Authentic, warm colloquial Tamil and Tanglish voice",
+        "sample_text": "Vanakkam, unga kooda pesurathula enakku romba santhosham.",
         "default": False
     }
 ]
 
-DEFAULT_VOICE = "en-IN-NeerjaExpressiveNeural"
+DEFAULT_VOICE = "en-US-AvaMultilingualNeural"
 VALID_VOICE_IDS = {v["id"] for v in AVAILABLE_VOICES}
 
 async def generate_voice_preview(voice_id: str) -> Optional[str]:
@@ -341,12 +361,12 @@ async def synthesize_fast_speech(
     # Dynamic Prosodic Modulation for human warmth
     if wellness_score < 55 or dominant_state in ["Overwhelmed", "Exhausted", "Crisis Alert"]:
         rate = "-6%"
-        pitch = "-2Hz"
-    elif wellness_score < 68 or dominant_state in ["Lonely", "Reflective"]:
-        rate = "-3%"
         pitch = "-1Hz"
+    elif wellness_score < 68 or dominant_state in ["Lonely", "Reflective"]:
+        rate = "-4%"
+        pitch = "+0Hz"
     else:
-        rate = "+0%"
+        rate = "-2%"  # Natural human conversational cadence
         pitch = "+0Hz"
 
     target_voice = voice if (voice and voice in VALID_VOICE_IDS) else DEFAULT_VOICE
@@ -375,15 +395,20 @@ async def synthesize_speech(
 ) -> str:
     """
     Unified speech synthesis router:
-    Synthesizes natural, human-like Indian English voice via Microsoft neural TTS.
+    Synthesizes natural, human-like voice via Microsoft neural multilingual TTS.
     """
-    active_text = spoken_text if (spoken_text and len(spoken_text.strip()) > 0) else text
+    if spoken_text and isinstance(spoken_text, dict):
+        active_text = spoken_text.get("spoken_text") or spoken_text.get("display_text") or text
+    elif spoken_text and isinstance(spoken_text, str) and len(spoken_text.strip()) > 0:
+        active_text = spoken_text.strip()
+    else:
+        active_text = text
 
     return await synthesize_fast_speech(
         active_text,
         wellness_score=wellness_score,
         dominant_state=dominant_state,
         voice=voice,
-        language_mode="indian_english"
+        language_mode=language_mode
     )
 

@@ -119,6 +119,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     initControls();
     initPhase2Controls();
     initVoiceModeControls();
+    initHeaderDropdownMenu();
     initCanvasVisualizer();
     setupAudioPlayerEvents();
     await initMicDeviceSelector();
@@ -620,7 +621,11 @@ function setVoiceMode(mode) {
 // ==========================================================================
 // CHATGPT-STYLE VOICE SELECTOR CONTROLLER
 // ==========================================================================
-let selectedVoice = localStorage.getItem("arogya_selected_voice") || "en-IN-NeerjaExpressiveNeural";
+let selectedVoice = localStorage.getItem("arogya_selected_voice") || "en-US-AvaMultilingualNeural";
+if (selectedVoice === "en-IN-NeerjaExpressiveNeural") {
+    selectedVoice = "en-US-AvaMultilingualNeural";
+    localStorage.setItem("arogya_selected_voice", selectedVoice);
+}
 let availableVoices = [];
 let previewAudio = null;
 
@@ -645,7 +650,7 @@ async function initVoiceSelector() {
             const data = await res.json();
             availableVoices = data.voices || [];
             if (!availableVoices.some(v => v.id === selectedVoice)) {
-                selectedVoice = data.default_voice || "en-IN-NeerjaExpressiveNeural";
+                selectedVoice = data.default_voice || "en-US-AvaMultilingualNeural";
                 localStorage.setItem("arogya_selected_voice", selectedVoice);
             }
         }
@@ -657,6 +662,10 @@ async function initVoiceSelector() {
     const currVoiceObj = availableVoices.find(v => v.id === selectedVoice);
     if (headerLabel && currVoiceObj) {
         headerLabel.textContent = `Voice: ${currVoiceObj.name}`;
+    }
+    const menuVoiceLabel = document.getElementById("menuCurrentVoiceLabel");
+    if (menuVoiceLabel && currVoiceObj) {
+        menuVoiceLabel.textContent = `Voice: ${currVoiceObj.label || currVoiceObj.name}`;
     }
     if (sidebarVoiceLabel && currVoiceObj) {
         sidebarVoiceLabel.textContent = `Voice: ${currVoiceObj.name}`;
@@ -718,6 +727,10 @@ async function initVoiceSelector() {
         const voiceObj = availableVoices.find(v => v.id === voiceId);
         if (headerLabel && voiceObj) {
             headerLabel.textContent = `Voice: ${voiceObj.name}`;
+        }
+        const menuVoiceLabel = document.getElementById("menuCurrentVoiceLabel");
+        if (menuVoiceLabel && voiceObj) {
+            menuVoiceLabel.textContent = `Voice: ${voiceObj.label || voiceObj.name}`;
         }
         if (sidebarVoiceLabel && voiceObj) {
             sidebarVoiceLabel.textContent = `Voice: ${voiceObj.name}`;
@@ -2812,6 +2825,10 @@ window.addEventListener('beforeinstallprompt', (e) => {
     if (installBtn) {
         installBtn.classList.remove('hidden');
     }
+    const menuInstall = document.getElementById('menuInstallAppBtn');
+    if (menuInstall) {
+        menuInstall.classList.remove('hidden');
+    }
 });
 
 const installPwaBtn = document.getElementById('installPwaBtn');
@@ -3006,5 +3023,101 @@ if (submitAssessmentBtn) {
             submitAssessmentBtn.textContent = "Calculate Score";
         }
     });
+}
+
+// ==========================================================================
+// CONSOLIDATED TOP-RIGHT HEADER DROPDOWN MENU CONTROLLER
+// ==========================================================================
+function initHeaderDropdownMenu() {
+    const menuBtn = document.getElementById("headerMoreMenuBtn");
+    const dropdown = document.getElementById("headerDropdownMenu");
+
+    if (menuBtn && dropdown) {
+        menuBtn.addEventListener("click", (e) => {
+            e.stopPropagation();
+            dropdown.classList.toggle("hidden");
+        });
+
+        document.addEventListener("click", (e) => {
+            if (!dropdown.classList.contains("hidden")) {
+                if (!dropdown.contains(e.target) && e.target !== menuBtn && !menuBtn.contains(e.target)) {
+                    dropdown.classList.add("hidden");
+                }
+            }
+        });
+    }
+
+    const menuVoiceModeBtn = document.getElementById("menuVoiceModeBtn");
+    if (menuVoiceModeBtn) {
+        menuVoiceModeBtn.addEventListener("click", () => {
+            if (dropdown) dropdown.classList.add("hidden");
+            enterVoiceMode();
+        });
+    }
+
+    const menuClinicalBtn = document.getElementById("menuClinicalBtn");
+    if (menuClinicalBtn) {
+        menuClinicalBtn.addEventListener("click", () => {
+            if (dropdown) dropdown.classList.add("hidden");
+            openClinicalModal();
+        });
+    }
+
+    const menuDoctorReportBtn = document.getElementById("menuDoctorReportBtn");
+    if (menuDoctorReportBtn) {
+        menuDoctorReportBtn.addEventListener("click", () => {
+            if (dropdown) dropdown.classList.add("hidden");
+        });
+    }
+
+    const menuAnalyticsBtn = document.getElementById("menuAnalyticsBtn");
+    if (menuAnalyticsBtn) {
+        menuAnalyticsBtn.addEventListener("click", () => {
+            if (dropdown) dropdown.classList.add("hidden");
+        });
+    }
+
+    const menuInsightsBtn = document.getElementById("menuInsightsBtn");
+    if (menuInsightsBtn) {
+        menuInsightsBtn.addEventListener("click", () => {
+            if (dropdown) dropdown.classList.add("hidden");
+            if (insightsDrawer) {
+                insightsDrawer.classList.toggle("open");
+                if (insightsDrawer.classList.contains("open")) {
+                    loadDrawerInsights();
+                }
+            }
+        });
+    }
+
+    const menuVoiceSelectorBtn = document.getElementById("menuVoiceSelectorBtn");
+    if (menuVoiceSelectorBtn) {
+        menuVoiceSelectorBtn.addEventListener("click", () => {
+            if (dropdown) dropdown.classList.add("hidden");
+            const modal = document.getElementById("voiceSelectorModal");
+            if (modal) modal.classList.remove("hidden");
+        });
+    }
+
+    const menuThemeBtn = document.getElementById("menuThemeBtn");
+    if (menuThemeBtn) {
+        menuThemeBtn.addEventListener("click", () => {
+            if (dropdown) dropdown.classList.add("hidden");
+            const current = document.documentElement.getAttribute("data-theme") || "dark";
+            const next = current === "dark" ? "light" : "dark";
+            setTheme(next);
+            const desc = document.getElementById("menuThemeDesc");
+            if (desc) desc.textContent = next === "dark" ? "Switch to Light Theme" : "Switch to Dark Theme";
+        });
+    }
+
+    const menuInstallAppBtn = document.getElementById("menuInstallAppBtn");
+    if (menuInstallAppBtn) {
+        menuInstallAppBtn.addEventListener("click", () => {
+            if (dropdown) dropdown.classList.add("hidden");
+            const installBtn = document.getElementById("installPwaBtn");
+            if (installBtn) installBtn.click();
+        });
+    }
 }
 
