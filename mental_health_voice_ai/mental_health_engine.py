@@ -435,11 +435,60 @@ You MUST output strictly valid JSON matching this exact structure:
 """
 
 
+_groq_llm_client = None
+
+def get_groq_client():
+    global _groq_llm_client
+    if _groq_llm_client is None:
+        key = os.getenv("GROQ_API_KEY")
+        if key:
+            try:
+                from groq import Groq
+                _groq_llm_client = Groq(api_key=key)
+            except Exception as e:
+                print(f"[!] Groq import notice: {e}")
+    return _groq_llm_client
+
+def query_groq_llm(prompt: str, system_instruction: str, max_tokens: int = 550) -> Optional[Dict[str, Any]]:
+    """
+    Sub-second conversational LLM reasoning via Groq LPU (~300ms).
+    Returns parsed JSON dictionary with clinical evaluation and reply_text.
+    """
+    client = get_groq_client()
+    if not client:
+        return None
+    for model_name in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"]:
+        try:
+            completion = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": system_instruction},
+                    {"role": "user", "content": prompt}
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.15,
+                max_tokens=max_tokens
+            )
+            raw = (completion.choices[0].message.content or "").strip()
+            if raw.startswith("```"):
+                raw = re.sub(r"^```(?:json)?\s*", "", raw)
+                raw = re.sub(r"\s*```$", "", raw)
+            cand = json.loads(raw)
+            if cand and isinstance(cand, dict) and "reply_text" in cand:
+                print(f"[+] Successfully responded via Groq LPU ({model_name}) in sub-second speed")
+                return cand
+        except Exception as e:
+            print(f"[!] Groq model {model_name} notice: {e}")
+    return None
+
 def query_local_ollama(prompt: str, system_instruction: str, model_name: str = "qwen2.5:3b") -> Optional[Dict[str, Any]]:
     """
-    Sub-second offline local inference via Ollama on RTX 3050 GPU (http://127.0.0.1:11434).
-    Seamlessly falls back to cloud Gemini if Ollama is not active.
+    Sub-second offline local inference via Ollama (only if explicitly enabled via ENABLE_LOCAL_OLLAMA=1).
+    Zero-delay skip on cloud instances.
     """
+    if os.getenv("ENABLE_LOCAL_OLLAMA", "0") != "1":
+        return None
+
     import urllib.request
     ollama_host = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
     target_model = os.getenv("OLLAMA_MODEL", model_name)
@@ -456,7 +505,7 @@ def query_local_ollama(prompt: str, system_instruction: str, model_name: str = "
             data=payload,
             headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=3.5) as resp:
+        with urllib.request.urlopen(req, timeout=1.5) as resp:
             if resp.status == 200:
                 body = json.loads(resp.read().decode("utf-8"))
                 response_str = (body.get("response") or "").strip()
@@ -557,9 +606,12 @@ DIRECTIVE:
 Welcome them warmly{' by name' if is_named_user else ''}, let them know you are right here to listen, and ask how they are feeling today.
 Keep it simple, serene, and warm. Output strictly valid JSON.
 """
-            gdata = query_local_ollama(prompt, "You are Arogya, welcoming the user in warm Indian English.")
+            # 1. Primary: Sub-second Groq LPU Greeting (~200ms)
+            gdata = query_groq_llm(prompt, "You are Arogya, welcoming the user in warm Indian English.", max_tokens=150)
+            if not gdata:
+                gdata = query_local_ollama(prompt, "You are Arogya, welcoming the user in warm Indian English.")
             if not gdata and client:
-                for model_name in ["gemini-flash-lite-latest", "gemini-3.5-flash-lite"]:
+                for model_name in ["gemini-3.5-flash-lite", "gemini-flash-lite-latest"]:
                     try:
                         cfg = types.GenerateContentConfig(
                             response_mime_type="application/json",
@@ -865,14 +917,18 @@ Produce the requested JSON:
 
     data = None
 
-    # 1. Check Local GPU Ollama if active (ultra-fast offline response on RTX 3050)
-    data = query_local_ollama(prompt, SYSTEM_INSTRUCTION)
-    if data:
-        print("[+] Processed via Local Ollama on GPU")
+    # 1. Primary: Ultra-fast Groq LPU Reasoning (~300ms)
+    data = query_groq_llm(prompt, SYSTEM_INSTRUCTION, max_tokens=550)
 
-    # 2. Cloud Gemini Flash Lite (sub-second high-quota cloud models)
+    # 2. Local GPU Ollama if explicitly enabled
+    if not data:
+        data = query_local_ollama(prompt, SYSTEM_INSTRUCTION)
+        if data:
+            print("[+] Processed via Local Ollama on GPU")
+
+    # 3. Cloud Gemini Flash Lite (sub-second high-quota cloud fallback)
     if not data and client:
-        candidate_models = ["gemini-3.8-flash", "gemini-flash-lite-latest", "gemini-3.5-flash-lite"]
+        candidate_models = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest"]
         for model_name in candidate_models:
             try:
                 cfg = types.GenerateContentConfig(

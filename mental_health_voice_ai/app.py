@@ -14,7 +14,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response, Query
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response, Query, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -176,8 +176,15 @@ def on_startup():
 
 
 @app.get("/health")
+@app.get("/api/health")
 def health_check():
-    return {"status": "ok", "app": "Arogya Mental Health Voice AI"}
+    return {
+        "status": "healthy",
+        "service": "Arogya Mental Health Voice AI",
+        "timestamp": time.time(),
+        "groq_active": bool(os.getenv("GROQ_API_KEY")),
+        "database": "active"
+    }
 
 @app.get("/")
 def index():
@@ -553,9 +560,56 @@ async def transcribe_only(file: UploadFile = File(...)):
 
     return {"transcript": transcript}
 
+def _persist_turn(
+    session_id: str,
+    user_id: str,
+    transcript: str,
+    user_audio_url: Optional[str],
+    speech_metrics: dict,
+    reply_text: str,
+    ai_audio_url: Optional[str],
+    user_wellness: int,
+    user_state: str,
+    eval_result: dict,
+    semitone_std: Optional[float] = None,
+    new_title: Optional[str] = None
+):
+    try:
+        save_message(
+            session_id=session_id,
+            role="user",
+            text=transcript,
+            audio_path=user_audio_url,
+            speech_metrics=speech_metrics,
+            user_id=user_id
+        )
+        save_message(
+            session_id=session_id,
+            role="assistant",
+            text=reply_text,
+            audio_path=ai_audio_url,
+            speech_metrics={"overall_wellness": user_wellness, "dominant_state": user_state},
+            user_id=user_id
+        )
+        eval_result["session_id"] = session_id
+        eval_result["voice_semitone_std"] = semitone_std
+        save_mental_health_record(eval_result)
+        aggregated = get_aggregated_mental_health_insights(session_id, user_id=user_id)
+        update_session_meta(
+            session_id=session_id,
+            title=new_title,
+            wellness=aggregated.get("overall_wellness") or user_wellness,
+            emotion=aggregated.get("dominant_state", user_state),
+            summary=eval_result.get("summary_snippet", "")
+        )
+        update_user_clinical_profile(user_id=user_id, latest_eval=eval_result)
+    except Exception as e:
+        print(f"[!] Background turn save notice: {e}")
+
 @app.post("/api/chat/voice")
 async def process_voice_chat(
     request: Request,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     session_id: str = Form(...),
     voice_mode: str = Form("fast"),
@@ -671,16 +725,6 @@ async def process_voice_chat(
     tone_emotion = classify_user_emotion_from_voice_tone(acoustic_features, transcript)
     bridge.send(f"EMO:{tone_emotion['listening_face']}")
 
-    # 5. Save User Message
-    save_message(
-        session_id=session_id,
-        role="user",
-        text=transcript,
-        audio_path=f"/audio/{clean_filename}",
-        speech_metrics=acoustic_features,
-        user_id=user["id"]
-    )
-
     reply_text = eval_result.get("reply_text", "I'm listening and I'm right here with you.")
     spoken_text = eval_result.get("spoken_text")
     language_mode = eval_result.get("language_mode", "indian_english")
@@ -690,7 +734,7 @@ async def process_voice_chat(
     bridge.last_activity_time = time.time()
     bridge.send(f"EMO:{speaking_face}")
 
-    # 7. Synthesize Spoken Response (Emotion-Adaptive Cadence & Native Voice Routing)
+    # 5. Synthesize Spoken Response (Emotion-Adaptive Cadence & Native Voice Routing)
     user_wellness = eval_result.get("overall_wellness", 75)
     user_state = eval_result.get("dominant_state", "Calm")
     ai_audio_url = await synthesize_speech(
@@ -703,25 +747,7 @@ async def process_voice_chat(
         voice=voice
     )
 
-    # 8. Save Assistant Message (Stores canonical colloquial text & turn metrics for chat history)
-    save_message(
-        session_id=session_id,
-        role="assistant",
-        text=reply_text,
-        audio_path=ai_audio_url,
-        speech_metrics={"overall_wellness": user_wellness, "dominant_state": user_state},
-        user_id=user["id"]
-    )
-
-    # 9. Update Database Record with Grounded Evidence
-    eval_result["session_id"] = session_id
-    eval_result["voice_semitone_std"] = semitone_std
-    save_mental_health_record(eval_result)
-
-    # 10. Compute Cumulative Session Average & Compiled Insights
-    aggregated = get_aggregated_mental_health_insights(session_id, user_id=user["id"])
-
-    # 11. Instant Auto-titling based on First Message
+    # 6. Instant Auto-titling calculation
     current_sess = get_session(session_id, user_id=user["id"]) or get_session(session_id)
     new_title = None
     default_prefixes = ["Check-in", "New Reflection", "Emotional Wellness Reflection", "New Assessment", "Daily Reflection"]
@@ -729,12 +755,21 @@ async def process_voice_chat(
     if current_sess and (any(curr_t.startswith(p) for p in default_prefixes)):
         new_title = eval_result.get("conversation_title") or generate_quick_session_title(transcript)
 
-    update_session_meta(
+    # 7. Asynchronous Database Persistence via FastAPI BackgroundTasks (0ms delay to client)
+    background_tasks.add_task(
+        _persist_turn,
         session_id=session_id,
-        title=new_title,
-        wellness=aggregated.get("overall_wellness"),
-        emotion=aggregated.get("dominant_state", "Reflective"),
-        summary=eval_result.get("summary_snippet", "")
+        user_id=user["id"],
+        transcript=transcript,
+        user_audio_url=f"/audio/{clean_filename}",
+        speech_metrics=acoustic_features,
+        reply_text=reply_text,
+        ai_audio_url=ai_audio_url,
+        user_wellness=user_wellness,
+        user_state=user_state,
+        eval_result=eval_result,
+        semitone_std=semitone_std,
+        new_title=new_title
     )
 
     return {
@@ -757,6 +792,7 @@ async def process_voice_chat(
 @app.post("/api/chat/text")
 async def process_text_chat(
     request: Request,
+    background_tasks: BackgroundTasks,
     text: str = Form(...),
     session_id: str = Form(...),
     voice_mode: str = Form("fast"),
@@ -793,8 +829,6 @@ async def process_text_chat(
     trend_z = None
     if latest_rec and latest_rec.get("overall_wellness") is not None and baseline.get("wellness_std"):
         trend_z = (latest_rec["overall_wellness"] - baseline["wellness_mean"]) / baseline["wellness_std"]
-
-    save_message(session_id=session_id, role="user", text=text, speech_metrics=dummy_acoustics, user_id=user["id"])
 
     eval_result = analyze_and_respond(
         current_transcript=text,
@@ -834,21 +868,6 @@ async def process_text_chat(
         except Exception as e:
             print(f"[!] Speech synthesis notice: {e}")
 
-    save_message(
-        session_id=session_id,
-        role="assistant",
-        text=reply_text,
-        audio_path=ai_audio_url,
-        speech_metrics={"overall_wellness": user_wellness, "dominant_state": user_state},
-        user_id=user["id"]
-    )
-    eval_result["session_id"] = session_id
-    eval_result["voice_semitone_std"] = None
-    save_mental_health_record(eval_result)
-
-    # Compute Cumulative Session Average & Compiled Insights
-    aggregated = get_aggregated_mental_health_insights(session_id, user_id=user["id"])
-
     current_sess = get_session(session_id, user_id=user["id"]) or get_session(session_id)
     new_title = None
     default_prefixes = ["Check-in", "New Reflection", "Emotional Wellness Reflection", "New Assessment", "Daily Reflection"]
@@ -856,12 +875,21 @@ async def process_text_chat(
     if current_sess and (any(curr_t.startswith(p) for p in default_prefixes)):
         new_title = eval_result.get("conversation_title") or generate_quick_session_title(text)
 
-    update_session_meta(
+    # Asynchronous Database Persistence via FastAPI BackgroundTasks (0ms delay to client)
+    background_tasks.add_task(
+        _persist_turn,
         session_id=session_id,
-        title=new_title,
-        wellness=aggregated.get("overall_wellness"),
-        emotion=aggregated.get("dominant_state", "Reflective"),
-        summary=eval_result.get("summary_snippet", "")
+        user_id=user["id"],
+        transcript=text,
+        user_audio_url=None,
+        speech_metrics=dummy_acoustics,
+        reply_text=reply_text,
+        ai_audio_url=ai_audio_url,
+        user_wellness=user_wellness,
+        user_state=user_state,
+        eval_result=eval_result,
+        semitone_std=None,
+        new_title=new_title
     )
 
     return {

@@ -137,7 +137,8 @@ class PostgresConnectionWrapper:
             pass
 
 def get_connection():
-    clean_url = _clean_database_url(os.getenv("DATABASE_URL"))
+    raw_env_url = os.getenv("DATABASE_URL") or os.getenv("DATABASE_URL_POOLED")
+    clean_url = _clean_database_url(raw_env_url)
     if clean_url:
         try:
             pool = get_pg_pool(clean_url)

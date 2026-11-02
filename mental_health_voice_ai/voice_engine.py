@@ -37,6 +37,58 @@ REF_TEXT = (
 # Global Model instances
 whisper_model = None
 f5tts_instance = None
+_groq_client = None
+
+def get_groq_client():
+    global _groq_client
+    if _groq_client is None:
+        api_key = os.getenv("GROQ_API_KEY")
+        if api_key:
+            try:
+                from groq import Groq
+                _groq_client = Groq(api_key=api_key)
+            except Exception as e:
+                print(f"[!] Groq STT client notice: {e}")
+    return _groq_client
+
+def transcribe_with_groq_whisper(audio_path: str) -> Optional[str]:
+    """
+    Sub-second Groq Whisper LPU speech recognition (~200ms).
+    Uses 0 MB server memory, completely eliminating Render memory spikes.
+    """
+    client = get_groq_client()
+    if not client:
+        return None
+    try:
+        ext = os.path.splitext(audio_path)[1].lower()
+        filename = f"audio{ext if ext else '.wav'}"
+        with open(audio_path, "rb") as f:
+            audio_bytes = f.read()
+        if not audio_bytes or len(audio_bytes) < 400:
+            return ""
+
+        for model_id in ["whisper-large-v3-turbo", "whisper-large-v3"]:
+            try:
+                transcription = client.audio.transcriptions.create(
+                    file=(filename, audio_bytes),
+                    model=model_id,
+                    response_format="json",
+                    language="en",
+                    temperature=0.0
+                )
+                if transcription and transcription.text:
+                    text = transcription.text.strip()
+                    if text.lower() in ["none", "silence", "empty", "[silence]", "[music]", "[applause]"]:
+                        return ""
+                    print(f"[+] Transcribed via Groq Whisper ({model_id}): '{text}'")
+                    return text
+                return ""
+            except Exception as me:
+                print(f"[!] Groq {model_id} notice: {me}")
+        return None
+    except Exception as e:
+        print(f"[!] Groq Whisper transcription notice: {e}")
+        return None
 
 def transcribe_with_gemini(audio_path: str) -> Optional[str]:
     """
@@ -112,7 +164,13 @@ def transcribe_audio(audio_path: str) -> str:
     except Exception as e:
         print(f"[!] Audio energy check warning: {e}")
 
-    # Primary: Fast, 0-RAM Gemini Cloud Transcription
+    # 1. Primary: Sub-second Groq Whisper LPU (~200ms, 0 RAM)
+    groq_text = transcribe_with_groq_whisper(audio_path)
+    if groq_text is not None:
+        gc.collect()
+        return groq_text
+
+    # 2. Secondary: Fast Gemini Cloud Transcription (0 RAM)
     gemini_text = transcribe_with_gemini(audio_path)
     if gemini_text is not None:
         gc.collect()
@@ -193,36 +251,6 @@ def synthesize_cloned_speech(text: str, wellness_score: int = 75, dominant_state
         cfg_strength=2.0
     )
     return f"/audio/{out_filename}"
-
-async def synthesize_fast_speech(
-    text: str,
-    wellness_score: int = 75,
-    dominant_state: str = "Calm",
-    voice: Optional[str] = None,
-    language_mode: str = "indian_english"
-) -> str:
-    """
-    Sub-second neural speech synthesis via edge-tts (~0.35s).
-    High-fidelity Indian English neural voices (Neerja Expressive, Prabhat, Jenny, Guy).
-    Dynamically modulates prosodic rate and pitch based on user emotional state:
-    - Distress / low wellness: -6% rate, -2Hz pitch (soothing grounding cadence)
-    - Loneliness / mild strain: -3% rate, -1Hz pitch (warm intimate presence)
-    - Balanced / calm: +0% rate, +0Hz pitch (natural conversational human rhythm)
-    """
-    import edge_tts
-    out_filename = f"reply_fast_{uuid.uuid4().hex[:8]}.mp3"
-    out_path = os.path.join(CACHE_DIR, out_filename)
-
-    # Dynamic Prosodic Modulation for human warmth
-    if wellness_score < 55 or dominant_state in ["Overwhelmed", "Exhausted", "Crisis Alert"]:
-        rate = "-6%"
-        pitch = "-2Hz"
-    elif wellness_score < 68 or dominant_state in ["Lonely", "Reflective"]:
-        rate = "-3%"
-        pitch = "-1Hz"
-    else:
-        rate = "+0%"
-        pitch = "+0Hz"
 
 # Curated ChatGPT-Style Natural Voices (Indian English primary, distinct expressive personas)
 AVAILABLE_VOICES = [

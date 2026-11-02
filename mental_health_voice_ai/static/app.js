@@ -1202,30 +1202,41 @@ function startVisualizer(stream) {
     const orbWrap = document.getElementById("voiceOrbWrapper");
 
     let rotationAngle = 0;
-    let lastRenderTime = 0;
     let lastDomUpdateTime = 0;
+    let animTimeoutId = null;
 
-    function render(timestamp) {
+    function scheduleNextVisualizerFrame() {
         if (!isRecording && (!audioPlayer || audioPlayer.paused)) {
             if (animFrameId) {
                 cancelAnimationFrame(animFrameId);
                 animFrameId = null;
             }
+            if (animTimeoutId) {
+                clearTimeout(animTimeoutId);
+                animTimeoutId = null;
+            }
             drawIdleWaveform();
             return;
         }
+        // Strict 30 FPS Hardware Limiter (33ms) - eliminates high-FPS CPU/GPU drain
+        if (animTimeoutId) clearTimeout(animTimeoutId);
+        animTimeoutId = setTimeout(() => {
+            animFrameId = requestAnimationFrame(render);
+        }, 33);
+    }
 
-        // Always schedule next frame
-        animFrameId = requestAnimationFrame(render);
-
-        // Strict 30 FPS Hardware Limiter to eliminate CPU/GPU drain
-        if (timestamp) {
-            if (!lastRenderTime) lastRenderTime = timestamp;
-            const elapsed = timestamp - lastRenderTime;
-            if (elapsed < 33.3) {
-                return;
+    function render() {
+        if (!isRecording && (!audioPlayer || audioPlayer.paused)) {
+            if (animFrameId) {
+                cancelAnimationFrame(animFrameId);
+                animFrameId = null;
             }
-            lastRenderTime = timestamp - (elapsed % 33.3);
+            if (animTimeoutId) {
+                clearTimeout(animTimeoutId);
+                animTimeoutId = null;
+            }
+            drawIdleWaveform();
+            return;
         }
 
         analyser.getByteFrequencyData(freqData);
@@ -1509,8 +1520,9 @@ function startVisualizer(stream) {
             }
             inlineCtx.globalAlpha = 1.0;
         }
+        scheduleNextVisualizerFrame();
     }
-    animFrameId = requestAnimationFrame(render);
+    scheduleNextVisualizerFrame();
 }
 
 function setupAudioPlayerEvents() {
@@ -1539,9 +1551,15 @@ function setupAudioPlayerEvents() {
     });
 
     audioPlayer.addEventListener("ended", () => {
-        if (!isRecording && animFrameId) {
-            cancelAnimationFrame(animFrameId);
-            animFrameId = null;
+        if (!isRecording) {
+            if (animFrameId) {
+                cancelAnimationFrame(animFrameId);
+                animFrameId = null;
+            }
+            if (typeof animTimeoutId !== "undefined" && animTimeoutId) {
+                clearTimeout(animTimeoutId);
+                animTimeoutId = null;
+            }
         }
         setLiveStatus("Ready", "");
         orbCaption.textContent = (isHandsFree || isVoiceModalActive) ? "Listening to your thoughts..." : "Click microphone or type to reflect";
@@ -1576,9 +1594,15 @@ function setupAudioPlayerEvents() {
     });
 
     audioPlayer.addEventListener("pause", () => {
-        if (!isRecording && animFrameId) {
-            cancelAnimationFrame(animFrameId);
-            animFrameId = null;
+        if (!isRecording) {
+            if (animFrameId) {
+                cancelAnimationFrame(animFrameId);
+                animFrameId = null;
+            }
+            if (typeof animTimeoutId !== "undefined" && animTimeoutId) {
+                clearTimeout(animTimeoutId);
+                animTimeoutId = null;
+            }
         }
         setLiveStatus("Ready", "");
         notifyEsp32SpeechState(0);
