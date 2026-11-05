@@ -330,14 +330,15 @@ async def stream_edge_tts_chunks(
     import edge_tts
     target_voice = voice if (voice and voice in VALID_VOICE_IDS) else DEFAULT_VOICE
 
-    # Sanitize text for English target voices (convert stray Tamil script to fluent Romanized Tanglish)
+    # Sanitize text and smooth prosody for natural, real-human oral intonation
     clean_text = text
-    if target_voice.startswith("en-"):
-        try:
-            from tanglish_engine import convert_tamil_script_to_romanized
+    try:
+        from tanglish_engine import convert_tamil_script_to_romanized, smooth_prosody_for_speech
+        if target_voice.startswith("en-"):
             clean_text = convert_tamil_script_to_romanized(text)
-        except Exception:
-            clean_text = text
+        clean_text = smooth_prosody_for_speech(clean_text)
+    except Exception:
+        clean_text = text
 
     try:
         communicate = edge_tts.Communicate(clean_text, voice=target_voice, rate=rate, pitch=pitch)

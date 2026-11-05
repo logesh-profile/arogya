@@ -305,6 +305,36 @@ def convert_tamil_script_to_romanized(text: str) -> str:
     return out
 
 
+def smooth_prosody_for_speech(text: str) -> str:
+    """
+    Transforms rigid written punctuation into smooth spoken prosodic glides:
+    - Replaces abrupt end-of-sentence periods between linked clauses with em-dashes (' — ') or soft commas
+      so neural TTS keeps vocal intonation, resonance, and human warmth suspended in the air.
+    - Completely eliminates robotic pitch drop-to-zero and dead stops between sentences.
+    """
+    if not text:
+        return ""
+
+    t = re.sub(r'\.{2,}', ' — ', text)
+    t = re.sub(r'!+', '.', t)
+    sentences = [s.strip() for s in re.split(r'(?<=[.?!])\s+', t) if s.strip()]
+    if len(sentences) <= 1:
+        return t
+
+    smoothed_parts = []
+    for i, s in enumerate(sentences):
+        if i < len(sentences) - 1:
+            clean_s = s.rstrip('.?!')
+            if len(clean_s.split()) <= 4:
+                smoothed_parts.append(f"{clean_s} — ")
+            else:
+                smoothed_parts.append(f"{clean_s}, ")
+        else:
+            smoothed_parts.append(s)
+
+    return "".join(smoothed_parts)
+
+
 def stage_prosody_and_phonetics(
     text: str,
     spoken_script: Optional[str] = None,
@@ -363,7 +393,8 @@ def stage_prosody_and_phonetics(
     else:
         # Expressive Indian English & Romanized Tanglish: en-IN-NeerjaExpressiveNeural
         spoken_text = convert_tamil_script_to_romanized(clean_display)
-        spoken_text = spoken_text.replace(". ", pause_marker)
+        # Apply smooth conversational prosody glides to avoid abrupt pitch drops at periods
+        spoken_text = smooth_prosody_for_speech(spoken_text)
         return {
             "display_text": clean_display,
             "spoken_text": spoken_text,
