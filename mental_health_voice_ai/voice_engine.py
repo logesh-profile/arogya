@@ -310,7 +310,7 @@ async def generate_voice_preview(voice_id: str) -> Optional[str]:
 
     sample = voice_meta.get("sample_text", "Hello, I am your Arogya companion. I'm here to listen and reflect with you.")
     try:
-        communicate = edge_tts.Communicate(sample, voice=voice_id, rate="+0%", pitch="+0Hz")
+        communicate = edge_tts.Communicate(sample, voice=voice_id, rate="+14%", pitch="+0Hz")
         await asyncio.wait_for(communicate.save(preview_path), timeout=8.0)
         return f"/audio/{preview_filename}"
     except Exception as e:
@@ -320,7 +320,7 @@ async def generate_voice_preview(voice_id: str) -> Optional[str]:
 async def stream_edge_tts_chunks(
     text: str,
     voice: Optional[str] = None,
-    rate: str = "+0%",
+    rate: str = "+14%",
     pitch: str = "+0Hz"
 ) -> AsyncGenerator[bytes, None]:
     """
@@ -368,12 +368,12 @@ async def synthesize_fast_speech(
     Collects raw audio chunks in pure RAM and returns a high-speed Base64 Data URI.
     Completely eliminates disk I/O, file locks, and ephemeral disk accumulation on Render.
     """
-    # Natural human conversational prosody
+    # Natural brisk human conversational prosody
     if wellness_score < 55 or dominant_state in ["Overwhelmed", "Exhausted", "Crisis Alert"]:
-        rate = "-3%"
+        rate = "+8%"
         pitch = "+0Hz"
     else:
-        rate = "+0%"  # Natural fluid human cadence
+        rate = "+14%"  # Brisk, natural human conversational pace
         pitch = "+0Hz"
 
     target_voice = voice if (voice and voice in VALID_VOICE_IDS) else DEFAULT_VOICE
