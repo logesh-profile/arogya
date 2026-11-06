@@ -217,11 +217,18 @@ def naturalize_tanglish_response(
 
     text = raw_text.strip()
 
+    user_words = set(re.sub(r'[^\w\s]', '', user_input.lower()).split())
+    user_used_slang = bool({"bro", "man", "dude", "machan", "da", "pa", "thala"} & user_words)
+
     # If pure Indian English is detected, preserve English natural cadence
     if language_mode == "indian_english" and register == "indian_english":
         # Keep clean, conversational Indian English
         text = re.sub(r'\bdo not worry\b', "don't worry", text, flags=re.IGNORECASE)
         text = re.sub(r'\bi am here for you\b', "I'm right here with you", text, flags=re.IGNORECASE)
+        if not user_used_slang:
+            text = re.sub(r'\b(yeah|ah|listen|look|okay|hey)\s+man\b', r'\1', text, flags=re.IGNORECASE)
+            text = re.sub(r',\s*man\b', '', text, flags=re.IGNORECASE)
+            text = re.sub(r'\bbro\b,?\s*', '', text, flags=re.IGNORECASE)
         return text
 
     # Step 1: Apply Colloquial Spoken Tamil Phrase Replacements
@@ -229,31 +236,34 @@ def naturalize_tanglish_response(
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
 
     # Step 2: Tone and Slang Calibration
-    # Only add 'bro' or casual warmth if the user explicitly used casual markers AND it's casual_tanglish
-    user_words = set(re.sub(r'[^\w\s]', '', user_input.lower()).split())
-    user_used_bro = bool({"bro", "da", "machan", "pa"} & user_words)
-
-    # Clean double 'bro' if LLM generated too many
-    bro_count = len(re.findall(r'\bbro\b', text, flags=re.IGNORECASE))
-    if bro_count > 1:
-        # Keep only the first occurrence
-        parts = re.split(r'\b(bro)\b', text, flags=re.IGNORECASE)
-        new_parts = []
-        found_first = False
-        for p in parts:
-            if p.lower() == "bro":
-                if not found_first:
-                    new_parts.append(p)
-                    found_first = True
+    # Only keep 'bro' or casual warmth if the user explicitly used casual markers
+    if not user_used_slang:
+        text = re.sub(r'\b(yeah|ah|listen|look|okay|hey)\s+man\b', r'\1', text, flags=re.IGNORECASE)
+        text = re.sub(r',\s*man\b', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bbro\b,?\s*', '', text, flags=re.IGNORECASE)
+        text = re.sub(r'\bmachan\b,?\s*', '', text, flags=re.IGNORECASE)
+    else:
+        # Clean double 'bro' if LLM generated too many
+        bro_count = len(re.findall(r'\bbro\b', text, flags=re.IGNORECASE))
+        if bro_count > 1:
+            # Keep only the first occurrence
+            parts = re.split(r'\b(bro)\b', text, flags=re.IGNORECASE)
+            new_parts = []
+            found_first = False
+            for p in parts:
+                if p.lower() == "bro":
+                    if not found_first:
+                        new_parts.append(p)
+                        found_first = True
+                    else:
+                        # remove subsequent 'bro'
+                        pass
                 else:
-                    # remove subsequent 'bro'
-                    pass
-            else:
-                new_parts.append(p)
-        text = "".join(new_parts)
+                    new_parts.append(p)
+            text = "".join(new_parts)
 
     # If user used formal 'neenga' / 'sir', ensure we DO NOT add 'bro'
-    if not user_used_bro and register == "respectful_tamil":
+    if not user_used_slang or register == "respectful_tamil":
         text = re.sub(r'\bbro\b,?\s*', '', text, flags=re.IGNORECASE)
 
     # Step 3: Polish sentence flow & conversational connectors
