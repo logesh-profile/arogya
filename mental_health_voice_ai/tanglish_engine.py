@@ -307,32 +307,48 @@ def convert_tamil_script_to_romanized(text: str) -> str:
 
 def smooth_prosody_for_speech(text: str) -> str:
     """
-    Transforms rigid written punctuation into smooth spoken prosodic glides:
-    - Replaces abrupt end-of-sentence periods between linked clauses with em-dashes (' — ') or soft commas
-      so neural TTS keeps vocal intonation, resonance, and human warmth suspended in the air.
-    - Completely eliminates robotic pitch drop-to-zero and dead stops between sentences.
+    Cleans and refines punctuation for natural, human-like neural TTS delivery:
+    - Strips artificial em-dashes ('—', '--') and multiple ellipses ('...') that cause unnatural glottal stops or glitches in neural TTS.
+    - Normalizes punctuation to standard periods, commas, and question marks so the neural voice produces authentic, fluid sentence intonations.
+    - Cleans up markdown, extra whitespace, and doubled punctuation.
     """
     if not text:
         return ""
 
-    t = re.sub(r'\.{2,}', ' — ', text)
-    t = re.sub(r'!+', '.', t)
-    sentences = [s.strip() for s in re.split(r'(?<=[.?!])\s+', t) if s.strip()]
-    if len(sentences) <= 1:
-        return t
+    # Remove markdown formatting artifacts
+    cleaned = re.sub(r'[*_#`~\[\]<>]', '', text)
+    # Remove enclosing quotes
+    cleaned = cleaned.replace('"', '').replace('"', '').replace('"', '')
 
-    smoothed_parts = []
-    for i, s in enumerate(sentences):
-        if i < len(sentences) - 1:
-            clean_s = s.rstrip('.?!')
-            if len(clean_s.split()) <= 4:
-                smoothed_parts.append(f"{clean_s} — ")
-            else:
-                smoothed_parts.append(f"{clean_s}, ")
-        else:
-            smoothed_parts.append(s)
+    # Convert em-dashes and long dashes to a soft natural comma
+    cleaned = re.sub(r'\s*[—–]\s*', ', ', cleaned)
+    cleaned = re.sub(r'\s*--+\s*', ', ', cleaned)
 
-    return "".join(smoothed_parts)
+    # Clean mixed comma/ellipsis combinations: '... ,' or ', ...' -> clean single comma
+    cleaned = re.sub(r'[,;]\s*\.+|\.+\s*[,;]', ', ', cleaned)
+    # Normalize multiple dots / ellipses to a single clean period
+    cleaned = re.sub(r'\.{2,}', '. ', cleaned)
+    # Normalize multiple exclamation marks to a single period for gentle, warm conversational tone
+    cleaned = re.sub(r'!+', '.', cleaned)
+    # Normalize multiple question marks to a single question mark
+    cleaned = re.sub(r'\?+', '?', cleaned)
+    # Normalize multiple commas
+    cleaned = re.sub(r',+', ',', cleaned)
+
+    # Clean mixed punctuation like '.,' or ',.' or ',?'
+    cleaned = re.sub(r'[,;]\s*\.', '.', cleaned)
+    cleaned = re.sub(r'\.\s*[,;]', '.', cleaned)
+    cleaned = re.sub(r'[,;]\s*\?', '?', cleaned)
+    cleaned = re.sub(r'\?\s*[,;]', '?', cleaned)
+
+    # Ensure clean spacing after punctuation
+    cleaned = re.sub(r'\s*([,?.!])\s*', r'\1 ', cleaned)
+    # Capitalize the first letter following a period or question mark
+    cleaned = re.sub(r'([.?!]\s+)([a-z])', lambda m: m.group(1) + m.group(2).upper(), cleaned)
+    # Clean redundant whitespace
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+
+    return cleaned
 
 
 def stage_prosody_and_phonetics(
@@ -354,14 +370,6 @@ def stage_prosody_and_phonetics(
     clean_display = re.sub(r'[*_#`~\[\]]', '', text)
     clean_display = re.sub(r'\s+', ' ', clean_display).strip()
 
-    # Prosodic pacing adjustments based on emotion
-    if emotion_state in ["Overwhelmed", "Exhausted", "Crisis Alert", "Tense"]:
-        pause_marker = "... "
-    elif emotion_state in ["Lonely", "Reflective"]:
-        pause_marker = ", "
-    else:
-        pause_marker = ". "
-
     if tts_engine in ["edge_tamil", "ta-IN-PallaviNeural"]:
         # Native Tamil Voice: ta-IN-PallaviNeural
         if spoken_script and len(spoken_script.strip()) > 3:
@@ -371,7 +379,7 @@ def stage_prosody_and_phonetics(
         else:
             spoken_script_clean = transliterate_tanglish_to_spoken_tamil(clean_display)
 
-        spoken_text = spoken_script_clean.replace(". ", pause_marker).replace("! ", ". ")
+        spoken_text = smooth_prosody_for_speech(spoken_script_clean)
         return {
             "display_text": clean_display,
             "spoken_text": spoken_text,
@@ -383,7 +391,7 @@ def stage_prosody_and_phonetics(
         spoken_text = clean_display
         spoken_text = re.sub(r'\b([A-Za-z]+)-ah\b', r'\1 aa', spoken_text)
         spoken_text = re.sub(r'\b([A-Za-z]+)-la\b', r'\1 la', spoken_text)
-        spoken_text = spoken_text.replace(". ", pause_marker)
+        spoken_text = smooth_prosody_for_speech(spoken_text)
         return {
             "display_text": clean_display,
             "spoken_text": spoken_text,
@@ -393,7 +401,6 @@ def stage_prosody_and_phonetics(
     else:
         # Expressive Indian English & Romanized Tanglish: en-IN-NeerjaExpressiveNeural
         spoken_text = convert_tamil_script_to_romanized(clean_display)
-        # Apply smooth conversational prosody glides to avoid abrupt pitch drops at periods
         spoken_text = smooth_prosody_for_speech(spoken_text)
         return {
             "display_text": clean_display,

@@ -288,14 +288,17 @@ You converse with the user through spoken audio. Your core principles:
    - REQUIRED: Talk naturally out loud just like two close friends talking in real life.
      * Start immediately with authentic conversational openers and discourse connectives:
        "Yeah man, I totally get it...", "Look...", "Honestly...", "You know what...", "Ah man, I hear you...", "Listen bro..."
-     * Example: "Yeah man, I totally get it... placement stress is brutal. Is this hitting you right now, or are you just worrying ahead?"
-     * Example (Tanglish): "Romba tension aagatheenga bro — placement pressure pathi yosichu sleep spoil pannadheenga. Relax pannunga, namma step-by-step paathukalaam. Enna aachu nu sollunga."
-   - Smooth Connected Intonation: Use em-dashes and soft commas rather than rigid, detached sentence stops so your thoughts flow smoothly as one warm, living utterance.
+     * Example: "Yeah man, I totally get it, placement stress is brutal. Is this hitting you right now, or are you just worrying ahead?"
+     * Example (Tanglish): "Romba tension aagatheenga bro, placement pressure pathi yosichu sleep spoil pannadheenga. Relax pannunga, namma step-by-step paathukalaam. Enna aachu nu sollunga."
+   - Natural Conversational Flow: Keep sentences short and natural. Use standard periods and commas in their natural grammatical places. Do not write awkward run-on sentences.
    - Brevity & Voice-First Turn-Taking: Keep spoken replies under 25-30 words (1 to 2 spoken thoughts followed by a gentle, open follow-up question). Never dump a long monologue.
-   - Address the user warmly by their actual name if provided in their profile or conversation. If no name has been confirmed, address them warmly as a friend without assuming any third-party name (NEVER assume any personal name).
+   - STRICT ANTI-NAME-SPAM RULE:
+     * NEVER repeat the user's name in every chat turn! In real life, friends do NOT say your name in every sentence.
+     * Use their name ONLY in the first greeting. Once in active dialogue, do NOT insert their name into your replies.
+     * Talk directly using "you", "man", "bro", or direct speech.
 
 2. LONG-TERM CLINICAL CONTINUITY & STRICT MEMORY GROUNDING:
-   - USER IDENTITY: Refer to the user by their preferred name provided in the session profile context. If none is provided, do NOT use any other person's name.
+   - USER IDENTITY: You know the user's identity from their profile. If they explicitly ask "do you remember me?" or "what is my name?", confirm it accurately. Otherwise, converse naturally without repeatedly saying their name.
    - STRICT EMPIRICAL CONTINUITY: You have access to the user's authentic clinical profile and past conversational memory in the prompt. ONLY reference stressors, challenges, or coping strategies that appear in their actual history.
    - ZERO UNRELATED HALLUCINATIONS: If the user has no recorded history or has not explicitly mentioned exams, jobs, or specific life events, DO NOT invent or assume them. Greet and converse with new users with a warm, open, supportive presence.
    - If the user asks "do you remember me?", "what is my name?", or references past sessions, confirm and answer accurately using their profile and past session history.
@@ -792,9 +795,10 @@ def analyze_and_respond(
 
 --- ACTIVE USER PROFILE ---
 User Name: {first_name} (Full Name: {user_name}, User ID: {user_id})
-MANDATORY DIRECTIVE:
-1. Address the user by their actual name ({first_name}) naturally, warmly, and empathetically when appropriate.
-2. NEVER address them by any other person's name or placeholder.
+CONVERSATIONAL IDENTITY & ANTI-NAME-SPAM:
+1. You know the user's name is {first_name}. If they explicitly ask about their identity or name, confirm it.
+2. In regular conversation turns, DO NOT repeat their name. Real friends talk directly without saying the person's name in every single sentence.
+3. NEVER address them by any other person's name.
 
 --- CONVERSATION HISTORY (PAST TURNS IN THIS SESSION) ---
 {history_str}
@@ -808,7 +812,7 @@ IMPORTANT CONVERSATIONAL MEMORY & ORAL REALISM DIRECTIVE:
 3. SPOKEN REALISM OVER FORMAL ESSAY: Talk like a real human friend talking out loud — NEVER like a news anchor, textbook, or transcription machine.
    - Open with an immediate conversational micro-affirmation: "Yeah man...", "Ah man, I hear you...", "Look bro...", "Honestly..."
    - Use natural oral English and Romanized Tanglish ("placement stress is brutal", "don't overthink it bro", "relax pannunga").
-   - Maximum 25-30 words: 1-2 spoken thoughts + a warm open follow-up question. Address {first_name} warmly.
+   - Maximum 25-30 words: 1-2 spoken thoughts + a warm open follow-up question. (DO NOT insert the user's name — speak directly like a friend).
 4. Evaluate the user's emotional state across the 7 dimensions based strictly on their actual statements.
 
 Produce the requested JSON:
@@ -826,18 +830,18 @@ Produce the requested JSON:
             print("[+] Processed via Local Ollama on GPU")
 
     if not data:
-        # Context-aware fallback: Personalize with user's actual name
+        # Context-aware fallback: Conversational without name repetition
         t_lower = current_transcript.lower().strip()
         if any(w in t_lower for w in ["hi", "hello", "hey"]):
-            fallback_reply = f"Hello {first_name}! I'm right here with you. How is your day going so far?"
+            fallback_reply = "Hey there, I'm right here with you. How is your day going so far?"
         elif any(w in t_lower for w in ["bad", "sad", "upset", "depress", "tired", "exhaust", "stress"]):
-            fallback_reply = f"I'm so sorry you're having a tough time today, {first_name}. I'm right here with you—tell me more about what happened."
+            fallback_reply = "I hear you, man. I'm so sorry you're dealing with this today. What happened?"
         elif any(w in t_lower for w in ["happy", "good", "great", "fine", "super"]):
-            fallback_reply = f"I'm really glad to hear that, {first_name}! What made today good for you?"
+            fallback_reply = "That's awesome to hear! What made things feel good today?"
         elif "?" in current_transcript:
-            fallback_reply = f"I hear your question, {first_name}, and I'm right here listening. Tell me more so I can understand better."
+            fallback_reply = "I hear your question, and I'm right here listening. Tell me more so we can figure this out."
         else:
-            fallback_reply = f"I'm listening and I'm right here with you, {first_name}. Tell me what's on your mind."
+            fallback_reply = "I hear you. I'm right here listening, so tell me what's on your mind."
         data = {
             "reply_text": fallback_reply,
             "conversation_title": generate_quick_session_title(current_transcript),
