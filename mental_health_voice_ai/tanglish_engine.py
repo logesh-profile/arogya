@@ -338,8 +338,8 @@ def smooth_prosody_for_speech(text: str) -> str:
     cleaned = re.sub(r'[,;]\s*\.+|\.+\s*[,;]', ', ', cleaned)
     # Normalize multiple dots / ellipses to a single clean period
     cleaned = re.sub(r'\.{2,}', '. ', cleaned)
-    # Normalize multiple exclamation marks to a single period for gentle, warm conversational tone
-    cleaned = re.sub(r'!+', '.', cleaned)
+    # Normalize multiple exclamation marks to a single exclamation mark to preserve upbeat / expressive tone
+    cleaned = re.sub(r'!+', '!', cleaned)
     # Normalize multiple question marks to a single question mark
     cleaned = re.sub(r'\?+', '?', cleaned)
     # Normalize multiple commas

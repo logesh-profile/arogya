@@ -5,7 +5,7 @@ import re
 import io
 import base64
 import asyncio
-from typing import Optional, Union, AsyncGenerator
+from typing import Optional, Union, AsyncGenerator, Tuple
 import soundfile as sf
 
 # Dynamic optional imports for cloud deployment / low-memory environments
@@ -317,18 +317,88 @@ async def generate_voice_preview(voice_id: str) -> Optional[str]:
         print(f"[!] Voice preview generation notice: {e}")
         return None
 
+def compute_adaptive_prosody(
+    wellness_score: Optional[int] = 75,
+    dominant_state: Optional[str] = "Calm",
+    voice_id: Optional[str] = None
+) -> Tuple[str, str]:
+    """
+    Computes fine-grained, authentic human prosody (rate and pitch) for Microsoft Edge-TTS
+    across ALL neural voice models (Neerja, Ava, Prabhat, Andrew, Emma, Brian, Pallavi).
+
+    Emotional Prosody Contours:
+    - Grief / Worthless / Sad / Lonely / Depressed:
+      Gentle, intimate, warm comforting cadence with soft lower pitch (rate: +5%, pitch: -1Hz).
+    - Panic / Anxiety / High Stress / Crisis Alert / Overwhelmed:
+      Steady, grounding pace, calm reassuring anchor (rate: +6%, pitch: -1Hz).
+    - Humor / Banter / Joy / Excitement / Playful / Cheerful:
+      Upbeat, smiling, lively tempo with bright lift (rate: +16%, pitch: +2Hz).
+    - Frustration / Venting / Irritated:
+      Committed ally pace, engaged and responsive (rate: +13%, pitch: +1Hz).
+    - Exhausted / Burnout / Fatigued:
+      Gentle, non-demanding, relaxed cadence (rate: +6%, pitch: -1Hz).
+    - Low Score Safeguard (wellness < 55):
+      Warm, gentle pacing (rate: +5% to +7%, pitch: -1Hz).
+    - Standard Conversational / Calm / Reflective / Focused:
+      Natural, fluid human conversational pace (rate: +12%, pitch: +0Hz).
+    """
+    score = wellness_score if wellness_score is not None else 75
+    state = (dominant_state or "").lower().strip()
+
+    # 1. Joyful / Humorous / Playful banter (Upbeat, smiling pitch)
+    if any(k in state for k in ["humor", "playful", "joke", "funny", "laugh", "joy", "excited", "happy", "amused", "cheerful", "good mood"]):
+        return ("+16%", "+2Hz")
+
+    # 2. Grief / Worthless / Sadness / Solitude (Gentle, soft, comforting)
+    if any(k in state for k in ["worthless", "sad", "grief", "lonely", "depress", "mourn", "empty", "hopeless", "discouraged"]):
+        return ("+5%", "-1Hz")
+
+    # 3. Panic / Acute Anxiety / Overwhelm / Crisis (Steady, calm anchor)
+    if any(k in state for k in ["panic", "anxi", "crisis", "overwhelm", "fear", "terrified", "stress"]):
+        return ("+6%", "-1Hz")
+
+    # 4. Frustrated / Venting (Engaged ally)
+    if any(k in state for k in ["frustrat", "vent", "angry", "annoyed", "irritat"]):
+        return ("+13%", "+1Hz")
+
+    # 5. Exhaustion / Burnout / Fatigue
+    if any(k in state for k in ["exhaust", "burnout", "fatigue", "drained", "tired"]):
+        return ("+6%", "-1Hz")
+
+    # 6. Low wellness score safeguard (if state was general/unclassified)
+    if score < 50:
+        return ("+5%", "-1Hz")
+    elif score < 65:
+        return ("+7%", "-1Hz")
+
+    # 7. Default: Natural, fluid human conversational pace
+    return ("+12%", "+0Hz")
+
+
 async def stream_edge_tts_chunks(
     text: str,
     voice: Optional[str] = None,
-    rate: str = "+14%",
-    pitch: str = "+0Hz"
+    rate: Optional[str] = None,
+    pitch: Optional[str] = None,
+    wellness_score: Optional[int] = None,
+    dominant_state: Optional[str] = None
 ) -> AsyncGenerator[bytes, None]:
     """
     Asynchronous in-memory streaming generator for Microsoft Edge-TTS.
     Yields raw MP3 audio chunks directly as they are generated without writing to disk.
+    Dynamically modulates rate and pitch across all voices to mirror human conversational affect.
     """
     import edge_tts
     target_voice = voice if (voice and voice in VALID_VOICE_IDS) else DEFAULT_VOICE
+
+    # Dynamically compute adaptive prosody if not explicitly supplied
+    calc_rate, calc_pitch = compute_adaptive_prosody(
+        wellness_score=wellness_score,
+        dominant_state=dominant_state,
+        voice_id=target_voice
+    )
+    effective_rate = rate if rate is not None else calc_rate
+    effective_pitch = pitch if pitch is not None else calc_pitch
 
     # Sanitize text and smooth prosody for natural, real-human oral intonation
     clean_text = text
@@ -341,7 +411,7 @@ async def stream_edge_tts_chunks(
         clean_text = text
 
     try:
-        communicate = edge_tts.Communicate(clean_text, voice=target_voice, rate=rate, pitch=pitch)
+        communicate = edge_tts.Communicate(clean_text, voice=target_voice, rate=effective_rate, pitch=effective_pitch)
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 yield chunk["data"]
@@ -350,38 +420,49 @@ async def stream_edge_tts_chunks(
         # Fallback to standard Neerja if expressive voice has delay
         if target_voice == "en-IN-NeerjaExpressiveNeural":
             try:
-                fallback_comm = edge_tts.Communicate(clean_text, voice="en-IN-NeerjaNeural", rate=rate, pitch=pitch)
+                fallback_comm = edge_tts.Communicate(clean_text, voice="en-IN-NeerjaNeural", rate=effective_rate, pitch=effective_pitch)
                 async for chunk in fallback_comm.stream():
                     if chunk["type"] == "audio":
                         yield chunk["data"]
             except Exception:
                 pass
 
+
 async def synthesize_fast_speech(
     text: str,
     wellness_score: int = 75,
     dominant_state: str = "Calm",
     voice: Optional[str] = None,
-    language_mode: str = "indian_english"
+    language_mode: str = "indian_english",
+    rate: Optional[str] = None,
+    pitch: Optional[str] = None
 ) -> str:
     """
     In-memory neural speech synthesis via Edge-TTS (~0.35s).
     Collects raw audio chunks in pure RAM and returns a high-speed Base64 Data URI.
     Completely eliminates disk I/O, file locks, and ephemeral disk accumulation on Render.
+    Dynamically adapts vocal prosody across all voices to match the user's emotional state.
     """
-    # Natural brisk human conversational prosody
-    if wellness_score < 55 or dominant_state in ["Overwhelmed", "Exhausted", "Crisis Alert"]:
-        rate = "+8%"
-        pitch = "+0Hz"
-    else:
-        rate = "+14%"  # Brisk, natural human conversational pace
-        pitch = "+0Hz"
-
     target_voice = voice if (voice and voice in VALID_VOICE_IDS) else DEFAULT_VOICE
+
+    calc_rate, calc_pitch = compute_adaptive_prosody(
+        wellness_score=wellness_score,
+        dominant_state=dominant_state,
+        voice_id=target_voice
+    )
+    effective_rate = rate if rate is not None else calc_rate
+    effective_pitch = pitch if pitch is not None else calc_pitch
 
     try:
         audio_buffer = bytearray()
-        async for chunk in stream_edge_tts_chunks(text, voice=target_voice, rate=rate, pitch=pitch):
+        async for chunk in stream_edge_tts_chunks(
+            text,
+            voice=target_voice,
+            rate=effective_rate,
+            pitch=effective_pitch,
+            wellness_score=wellness_score,
+            dominant_state=dominant_state
+        ):
             audio_buffer.extend(chunk)
 
         if audio_buffer:
@@ -392,6 +473,7 @@ async def synthesize_fast_speech(
 
     return ""
 
+
 async def synthesize_speech(
     text: str,
     mode: str = "fast",
@@ -399,11 +481,14 @@ async def synthesize_speech(
     dominant_state: str = "Calm",
     language_mode: str = "indian_english",
     spoken_text: Optional[str] = None,
-    voice: Optional[str] = None
+    voice: Optional[str] = None,
+    rate: Optional[str] = None,
+    pitch: Optional[str] = None
 ) -> str:
     """
     Unified speech synthesis router:
-    Synthesizes natural, human-like voice via Microsoft neural multilingual TTS.
+    Synthesizes natural, human-like voice via Microsoft neural multilingual TTS
+    with emotion-adaptive prosody across all curated voices.
     """
     if spoken_text and isinstance(spoken_text, dict):
         active_text = spoken_text.get("spoken_text") or spoken_text.get("display_text") or text
@@ -417,6 +502,8 @@ async def synthesize_speech(
         wellness_score=wellness_score,
         dominant_state=dominant_state,
         voice=voice,
-        language_mode=language_mode
+        language_mode=language_mode,
+        rate=rate,
+        pitch=pitch
     )
 

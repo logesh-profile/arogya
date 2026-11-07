@@ -399,13 +399,27 @@ async def get_voice_preview_endpoint(voice: Optional[str] = None):
     return {"voice": target_voice, "audio_url": audio_url}
 
 @app.get("/api/tts/stream")
-async def stream_tts_endpoint(text: str = Query(...), voice: Optional[str] = Query(None)):
+async def stream_tts_endpoint(
+    text: str = Query(...),
+    voice: Optional[str] = Query(None),
+    wellness_score: Optional[int] = Query(None),
+    dominant_state: Optional[str] = Query(None),
+    rate: Optional[str] = Query(None),
+    pitch: Optional[str] = Query(None)
+):
     """
-    In-memory Edge-TTS audio streaming endpoint.
+    In-memory Edge-TTS audio streaming endpoint with dynamic emotional prosody.
     Yields raw MP3 chunks directly with media_type='audio/mpeg' and zero disk I/O.
     """
     return StreamingResponse(
-        stream_edge_tts_chunks(text=text, voice=voice),
+        stream_edge_tts_chunks(
+            text=text,
+            voice=voice,
+            rate=rate,
+            pitch=pitch,
+            wellness_score=wellness_score,
+            dominant_state=dominant_state
+        ),
         media_type="audio/mpeg"
     )
 
@@ -414,23 +428,38 @@ async def standalone_synthesize(
     request: Request,
     text: str = Form(...),
     voice_mode: str = Form("fast"),
-    voice: Optional[str] = Form(None)
+    voice: Optional[str] = Form(None),
+    wellness_score: Optional[int] = Form(None),
+    dominant_state: Optional[str] = Form(None),
+    rate: Optional[str] = Form(None),
+    pitch: Optional[str] = Form(None)
 ):
     """
     Synthesizes speech in-memory without creating physical disk files.
-    Returns StreamingResponse if requested by client, or instant Data URI.
+    Returns StreamingResponse if requested by client, or instant Data URI with dynamic prosody.
     """
     if "audio/mpeg" in request.headers.get("accept", ""):
         return StreamingResponse(
-            stream_edge_tts_chunks(text=text, voice=voice),
+            stream_edge_tts_chunks(
+                text=text,
+                voice=voice,
+                rate=rate,
+                pitch=pitch,
+                wellness_score=wellness_score,
+                dominant_state=dominant_state
+            ),
             media_type="audio/mpeg"
         )
 
     audio_url = await synthesize_speech(
         text=text,
         mode=voice_mode,
+        wellness_score=wellness_score if wellness_score is not None else 75,
+        dominant_state=dominant_state or "Calm",
         language_mode="indian_english",
-        voice=voice
+        voice=voice,
+        rate=rate,
+        pitch=pitch
     )
     if not audio_url:
         raise HTTPException(status_code=500, detail="Speech synthesis failed")
