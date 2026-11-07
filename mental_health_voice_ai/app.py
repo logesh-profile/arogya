@@ -48,6 +48,7 @@ from database import (
     get_analytics_summary,
     get_user_clinical_profile,
     update_user_clinical_profile,
+    update_user_companion_name,
     upsert_google_user,
     update_user_preferred_name,
     create_auth_session,
@@ -307,6 +308,31 @@ async def auth_update_name(request: Request):
     
     updated_user = update_user_preferred_name(user["id"], preferred_name)
     return {"status": "success", "user": updated_user}
+
+@app.get("/api/user/companion-name")
+def get_companion_name_route(request: Request):
+    """Retrieves the personalized AI companion name for the active user."""
+    user = get_current_user(request)
+    user_id = user["id"] if user else "guest_user"
+    profile = get_user_clinical_profile(user_id)
+    return {"companion_name": profile.get("companion_name") or "Arogya"}
+
+@app.post("/api/user/companion-name")
+async def update_companion_name_route(request: Request):
+    """Updates the personalized AI companion name for the authenticated user."""
+    user = get_current_user(request)
+    user_id = user["id"] if user else "guest_user"
+    try:
+        data = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request payload")
+    
+    companion_name = data.get("companion_name", "").strip()
+    if not companion_name:
+        raise HTTPException(status_code=400, detail="Companion name cannot be empty")
+    
+    success = update_user_companion_name(user_id, companion_name)
+    return {"status": "success" if success else "error", "companion_name": companion_name}
 
 @app.post("/api/auth/logout")
 def auth_logout(request: Request, response: Response):

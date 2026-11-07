@@ -282,12 +282,12 @@ def select_tts_route(language_mode: str, voice_mode: str = "fast") -> str:
     """
     Selects the optimal TTS engine based on user preference and language mode:
     - 'cloned' -> 'f5_tts' (Local GPU Diffusion on RTX 3050)
-    - 'fast' + 'tamil' (pure Tamil script) -> 'edge_tamil' (ta-IN-PallaviNeural)
-    - 'fast' + (tanglish / indian_english / code_switched) -> 'edge_english' (en-IN-NeerjaExpressiveNeural)
+    - 'fast' + (tamil / tanglish / code_switched) -> 'ta-IN-PallaviNeural' (Native mother-tongue Tamil voice)
+    - 'fast' + indian_english -> 'en-IN-NeerjaExpressiveNeural'
     """
     if voice_mode == "cloned":
         return "f5_tts"
-    if language_mode == "tamil":
+    if language_mode in ["tamil", "tanglish", "code_switched"]:
         return "ta-IN-PallaviNeural"
     return "en-IN-NeerjaExpressiveNeural"
 
@@ -380,8 +380,8 @@ def stage_prosody_and_phonetics(
     clean_display = re.sub(r'[*_#`~\[\]]', '', text)
     clean_display = re.sub(r'\s+', ' ', clean_display).strip()
 
-    if tts_engine in ["edge_tamil", "ta-IN-PallaviNeural"]:
-        # Native Tamil Voice: ta-IN-PallaviNeural
+    if tts_engine in ["edge_tamil", "ta-IN-PallaviNeural"] or language_mode in ["tamil", "tanglish", "code_switched"]:
+        # Native Tamil Voice: ta-IN-PallaviNeural for genuine mother-tongue cadence
         if spoken_script and len(spoken_script.strip()) > 3:
             raw_target = re.sub(r'[*_#`~\[\]]', '', spoken_script)
             raw_target = re.sub(r'\s*-\s*', '-', raw_target)
@@ -444,9 +444,12 @@ SPOKEN_LEXICON = {
     "onnumey illa": "ஒண்ணுமே இல்ல", "ethum": "எதும்",
     
     # Emotional & Sensory
-    "romba": "ரொம்ப", "konjam": "கொஞ்சம்", "kavala": "கவலை", "kavalapadadheenga": "கவலைப்படாதீங்க",
-    "bayama": "பயமா", "bayapadadheenga": "பயப்படாதீங்க", "kashtama": "கஷ்டமா", "kashtam": "கஷ்டம்",
-    "tension aagadheenga": "tension ஆகாதீங்க", "worry pannadheenga": "worry பண்ணாதீங்க",
+    "romba": "ரொம்ப", "rombha": "ரொம்ப", "konjam": "கொஞ்சம்", "kavala": "கவலை", "kavalapadadheenga": "கவலைப்படாதீங்க",
+    "kavalapadatheenga": "கவலைப்படாதீங்க", "bayama": "பயமா", "bayapadadheenga": "பயப்படாதீங்க", "bayapadatheenga": "பயப்படாதீங்க",
+    "kashtama": "கஷ்டமா", "kashtam": "கஷ்டம்", "perusa": "பெருசா",
+    "tension aagadheenga": "tension ஆகாதீங்க", "tension aagatheenga": "tension ஆகாதீங்க", "aagatheenga": "ஆகாதீங்க", "aagadheenga": "ஆகாதீங்க",
+    "aachu": "ஆச்சு", "aagum": "ஆகும்", "aayiduchi": "ஆயிடுச்சு", "aagiduchi": "ஆயிடுச்சு",
+    "worry pannadheenga": "worry பண்ணாதீங்க",
     "manasu": "மனசு", "manasula": "மனசுல", "udambu": "உடம்பு", "moolai": "மூளை",
     "valikidhu": "வலிக்குது", "vali": "வலி", "thookam": "தூக்கம்", "nimmathi": "நிம்மதி",
     "sandhosham": "சந்தோஷம்", "santhosam": "சந்தோஷம்", "santhosama": "சந்தோஷமா",

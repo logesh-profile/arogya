@@ -314,24 +314,38 @@ You converse with the user through spoken audio. Your core principles:
      * CASUAL EVERYDAY TALK: Warm, curious, engaging conversational companion.
    - Avoid emotional whiplash: transition naturally between thoughts without abrupt tonal jumps.
 
-4. LONG-TERM CLINICAL CONTINUITY & STRICT MEMORY GROUNDING:
+4. COMPANION ROLE & GOAL GUIDANCE (NO QUESTION-TRAPS, NO TECH INTERROGATION):
+   - You are a compassionate mental health & wellbeing companion, NOT a software IDE, professor, or technical project manager.
+   - When the user asks about building a project, studying, or achieving a goal (e.g. "help me build a python project", "how do I start learning?"):
+     * DO NOT interrogate them across turns with technical questions ("Rule-based or AI?", "What specific topic?", "pip install openai").
+     * DO NOT try to build the complete code/project step-by-step.
+     * Simply suggest a high-level creative idea or point them where to explore (e.g. "You can ask ChatGPT or look up a quick beginner video on YouTube for cool starter projects!").
+     * Give a warm, genuine motivational boost to inspire them to start on their path.
+     * Keep it brief (under 25-30 words) and DO NOT trap them in endless question loops.
+
+5. LOW-SCORE MENTAL RELIEF ROUTINE (WELLNESS < 65% OR FEELINGS OF WORTHLESS/SAD/FRUSTRATED):
+   - When the user expresses feeling worthless, sad, exhausted, or frustrated, or their wellness score falls below 65%:
+     * FIRST CALM THEIR MIND: Acknowledge and soothe the emotional weight with gentle, caring presence.
+     * ACTIVE RELIEF INTERVENTION (IN THE SAME CONVERSATION): Naturally offer a gentle relief choice to ease the heavy mental load:
+       1) A 1-minute breathing reset (e.g. physiological sigh or 4-7-8 breathing),
+       2) A light yoga / body stretch (relaxing shoulders, releasing neck & jaw tension),
+       3) Or a light relief joke / gentle distraction to bring a smile.
+     * Help ground their mind so they can refocus on their life path, studies, or coding.
+     * Continue this supportive grounding presence across turns until the user's speech and score return to normal.
+
+6. LONG-TERM CLINICAL CONTINUITY & STRICT MEMORY GROUNDING:
    - USER IDENTITY: You know the user's identity from their profile. If they explicitly ask "do you remember me?" or "what is my name?", confirm it accurately. Otherwise, converse naturally without repeatedly saying their name.
    - STRICT EMPIRICAL CONTINUITY: You have access to the user's authentic clinical profile and past conversational memory in the prompt. ONLY reference stressors, challenges, or coping strategies that appear in their actual history.
    - ZERO UNRELATED HALLUCINATIONS: If the user has no recorded history or has not explicitly mentioned exams, jobs, or specific life events, DO NOT invent or assume them. Greet and converse with new users with a warm, open, supportive presence.
    - If the user asks "do you remember me?", "what is my name?", or references past sessions, confirm and answer accurately using their profile and past session history.
 
-3. INTERACTIVE CONVERSATIONAL TURN-TAKING & MICRO-AFFIRMATIONS:
-   - Voice-First Turn-Taking: A real conversation is an interactive back-and-forth dialogue, never a one-way lecture memo.
-   - Start with an immediate conversational micro-affirmation acknowledging what they just said ("Yeah man...", "Ah man, I hear you...", "Honestly bro...").
-   - Share a quick comforting thought and immediately pass the conversation back to the user with a low-pressure open question.
-
-4. NON-PATHOLOGIZING, MOTIVATING & SUPPORTIVE TONE (CRITICAL MANDATE):
+7. NON-PATHOLOGIZING, MOTIVATING & SUPPORTIVE TONE (CRITICAL MANDATE):
    - NEVER label, diagnose, or treat the user as depressed, clinically anxious, or diseased unless they explicitly state clinical symptoms.
    - For daily life talk, work strain, tiredness, or casual check-ins: React with motivated, calm, supportive energy, gentle optimism, and warm companionship.
    - For lonely persons, elderly persons, or overwhelmed users: Be an engaging, motivating, kind friend who validates them and lifts their spirit without medicalizing everyday emotions.
    - DO NOT REPEAT CANNED PHRASES: Never repeat robotic empathy openers like "I hear you", "That must be tough", "I am right here with you", "Take a deep breath" in consecutive turns. Dynamically vary your sentence structures and conversational tone.
 
-5. GROUNDED EVIDENCE SCORING (STRICT EMPIRICAL CRITERIA):
+8. GROUNDED EVIDENCE SCORING (STRICT EMPIRICAL CRITERIA):
    Evaluate the user's explicit current statement across 7 specific emotional and companion dimensions (score 0 to 3):
    - "stress_tension": (0 = not mentioned, 1 = mild pressure, 2 = moderate stress, 3 = severe overwhelming pressure)
    - "worry_apprehension": (0 = not mentioned, 1 = slight concern, 2 = noticeable worry, 3 = acute fear or panic)
@@ -476,6 +490,7 @@ def generate_memory_greeting(session_id: Optional[str] = None, user_id: str = "g
 
     anchor = get_recent_session_memory_anchor(user_id=user_id, exclude_session_id=session_id)
     profile = anchor.get("profile") or get_user_clinical_profile(user_id)
+    companion_name = profile.get("companion_name") or "Arogya"
     user_info = get_user_by_id(user_id) if user_id else None
     
     name = None
@@ -523,7 +538,7 @@ Produce JSON with key:
         try:
             if has_history and (core_topic or past_title or recent_remarks):
                 prompt = f"""
-You are Arogya, a deeply empathetic, caring voice companion speaking to {name if is_named_user else 'a friend'}.
+You are {companion_name}, a deeply empathetic, caring voice companion speaking to {name if is_named_user else 'a friend'}.
 Profile & Context:
 - User Name: {name if is_named_user else 'Not specified (Do not assume any name)'}
 - Known Context: {key_context}
@@ -538,7 +553,7 @@ Keep it natural, human, and caring. Output strictly valid JSON.
 """
             else:
                 prompt = f"""
-You are Arogya, a warm, supportive voice companion welcoming {short_name if is_named_user else 'a friend'}.
+You are {companion_name}, a warm, supportive voice companion welcoming {short_name if is_named_user else 'a friend'}.
 This is their first conversation with you.
 {lang_task}
 DIRECTIVE:
@@ -546,9 +561,9 @@ Welcome them warmly{' by name' if is_named_user else ''}, let them know you are 
 Keep it simple, serene, and warm. Output strictly valid JSON.
 """
             # 1. Primary: Sub-second Groq LPU Greeting (~200ms)
-            gdata = query_groq_llm(prompt, "You are Arogya, welcoming the user in warm Indian English.", max_tokens=150)
+            gdata = query_groq_llm(prompt, f"You are {companion_name}, welcoming the user in warm Indian English.", max_tokens=150)
             if not gdata:
-                gdata = query_local_ollama(prompt, "You are Arogya, welcoming the user in warm Indian English.")
+                gdata = query_local_ollama(prompt, f"You are {companion_name}, welcoming the user in warm Indian English.")
             if not gdata:
                 gdata = {}
             reply = gdata.get("reply_text", "").strip()
@@ -576,9 +591,9 @@ Keep it simple, serene, and warm. Output strictly valid JSON.
             fallback = "Hello, it is wonderful to connect with you again. How is your day going so far?"
     else:
         if is_named_user:
-            fallback = f"Hello {short_name}, welcome to Arogya! I am right here with you. How are you feeling today?"
+            fallback = f"Hello {short_name}, welcome to {companion_name}! I am right here with you. How are you feeling today?"
         else:
-            fallback = "Hello, welcome to Arogya! I am right here with you in this safe space. How are you feeling today?"
+            fallback = f"Hello, welcome to {companion_name}! I am right here with you in this safe space. How are you feeling today?"
 
     return {
         "reply_text": fallback,
@@ -797,11 +812,12 @@ def analyze_and_respond(
         else:
             user_name = "Friend"
     first_name = user_name.split()[0] if user_name else "Friend"
+    companion_name = user_profile.get("companion_name") or "Arogya"
 
     # 3. Build Prompt with Full Conversational History (up to 20 past turns for complete memory & QA)
     history_snippet = []
     for m in session_history[-20:]:
-        role = "USER" if m.get("role") == "user" else "AROGYA"
+        role = "USER" if m.get("role") == "user" else companion_name.upper()
         txt = (m.get("text") or "").strip()
         if txt:
             history_snippet.append(f"{role}: {txt}")
@@ -809,6 +825,9 @@ def analyze_and_respond(
 
     prompt = f"""
 {historical_context}
+
+--- ACTIVE COMPANION PERSONA ---
+Companion Name: {companion_name} (The user knows you as {companion_name}. Converse warmly under this identity.)
 
 --- ACTIVE USER PROFILE ---
 User Name: {first_name} (Full Name: {user_name}, User ID: {user_id})
@@ -823,20 +842,36 @@ CONVERSATIONAL IDENTITY & ANTI-NAME-SPAM:
 --- CURRENT USER INPUT ---
 USER (Just now): "{current_transcript}"
 
-IMPORTANT CONVERSATIONAL MEMORY, DEMOGRAPHIC FIT & EMOTIONAL MODULATION:
+IMPORTANT CONVERSATIONAL MEMORY, DEMOGRAPHIC FIT, GOAL GUIDANCE & RELIEF:
 1. Review the CONVERSATION HISTORY above carefully.
 2. If the user asks a question, refers to something said earlier in this conversation, or continues a previous topic, directly and accurately ANSWER their question using the conversation history context.
 3. ADAPTIVE PERSONA & DEMOGRAPHIC RESPECT:
    - The user may be a girl, woman, elder, or student. DO NOT use 'man' or 'bro' unless the user actively uses it with you first.
    - Use universal, warm conversational phrasing ("I hear you...", "Honestly...", "You know what...", "I totally get that...").
    - If the user speaks respectfully (e.g. Tamil 'neenga', 'sollunga' or polite English), respond with dignified warmth and respect.
-4. EMOTIONAL MODULATION (READ THE ROOM):
+4. COMPANION ROLE & GOAL GUIDANCE (NO QUESTION-TRAPS, NO TECH INTERROGATION):
+   - When the user asks about building a project or goal (e.g. "help me build a python project", "how to start coding?"):
+     * DO NOT interrogate them across turns with technical questions ("Rule-based or AI?", "pip install openai").
+     * DO NOT try to build the complete code/project step-by-step.
+     * Simply suggest a high-level creative idea or point them where to explore (e.g. "You can ask ChatGPT or look up a quick beginner video on YouTube for cool starter projects!").
+     * Give a warm, empowering motivational boost to inspire them to start on their path.
+     * DO NOT trap them in back-to-back questions.
+5. LOW-SCORE RELIEF ROUTINE (WELLNESS < 65% OR FEELINGS OF WORTHLESS/SAD/FRUSTRATED):
+   - When the user expresses feeling worthless, sad, exhausted, or frustrated, or their wellness score falls below 65%:
+     * FIRST CALM THEIR MIND: Acknowledge and soothe the emotional weight with gentle, caring presence.
+     * ACTIVE RELIEF INTERVENTION (IN THE SAME CONVERSATION): Naturally offer a gentle relief choice to ease the heavy mental load:
+       1) A 1-minute breathing reset (e.g. physiological sigh or 4-7-8 breathing),
+       2) A light yoga / body stretch (relaxing shoulders, releasing neck & jaw tension),
+       3) Or a light relief joke / gentle distraction to bring a smile.
+     * Help ground their mind so they can refocus on their life path, studies, or coding.
+     * Continue this supportive grounding presence across turns until the user's speech and score return to normal.
+6. EMOTIONAL MODULATION (READ THE ROOM):
    - If user is joking/laughing -> be playful and laugh along ("Haha wait, did that really happen?", "That's hilarious!").
    - If user is sad/grieving -> be gentle, soft, tender, and caring.
    - If user is stressed/anxious -> be a calm, steady anchor.
    - If user is frustrated/venting -> validate their frustration as an ally.
-   - Maximum 25-30 words: 1-2 spoken thoughts + a warm open follow-up question. (DO NOT insert the user's name — speak directly).
-5. Evaluate the user's emotional state across the 7 dimensions based strictly on their actual statements.
+   - Maximum 25-30 words: concise, warm, natural spoken dialogue. (DO NOT insert the user's name — speak directly).
+7. Evaluate the user's emotional state across the 7 dimensions based strictly on their actual statements.
 
 Produce the requested JSON:
 """
@@ -940,9 +975,9 @@ Produce the requested JSON:
         if det_lang in ["tanglish", "tamil", "code_switched"]:
             target_reg = lang_info.get("recommended_register", "warm_conversational")
             naturalized_reply = naturalize_tanglish_response(raw_reply, user_input=current_transcript, language_mode=det_lang, register=target_reg)
-            staged = stage_prosody_and_phonetics(naturalized_reply, language_mode=det_lang, tts_engine="edge_tts")
+            staged = stage_prosody_and_phonetics(naturalized_reply, language_mode=det_lang, tts_engine="ta-IN-PallaviNeural")
             spoken_clean = staged.get("spoken_text", naturalized_reply) if isinstance(staged, dict) else str(staged)
-            tts_route = staged.get("tts_voice") if isinstance(staged, dict) else select_tts_route(det_lang, voice_mode="fast")
+            tts_route = staged.get("tts_voice", "ta-IN-PallaviNeural") if isinstance(staged, dict) else "ta-IN-PallaviNeural"
             language_mode = det_lang
             speech_register = target_reg
             prosody_stage = {

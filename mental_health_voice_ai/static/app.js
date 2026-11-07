@@ -3177,6 +3177,76 @@ function initHeaderDropdownMenu() {
         });
     }
 
+    // Companion Name Customization Modal & State
+    const menuCompanionNameBtn = document.getElementById("menuCompanionNameBtn");
+    const companionNameModal = document.getElementById("companionNameModal");
+    const companionModalBackdrop = document.getElementById("companionModalBackdrop");
+    const closeCompanionModalBtn = document.getElementById("closeCompanionModalBtn");
+    const cancelCompanionModalBtn = document.getElementById("cancelCompanionModalBtn");
+    const saveCompanionModalBtn = document.getElementById("saveCompanionModalBtn");
+    const companionNameInput = document.getElementById("companionNameInput");
+    const menuCompanionNameLabel = document.getElementById("menuCompanionNameLabel");
+
+    async function loadCompanionName() {
+        try {
+            const res = await fetch("/api/user/companion-name");
+            if (res.ok) {
+                const data = await res.json();
+                const name = data.companion_name || "Arogya";
+                if (companionNameInput) companionNameInput.value = name;
+                if (menuCompanionNameLabel) menuCompanionNameLabel.textContent = `Companion: ${name}`;
+                window.currentCompanionName = name;
+            }
+        } catch (e) {
+            console.warn("Could not load companion name:", e);
+        }
+    }
+
+    if (menuCompanionNameBtn && companionNameModal) {
+        menuCompanionNameBtn.addEventListener("click", () => {
+            if (dropdown) dropdown.classList.add("hidden");
+            loadCompanionName();
+            companionNameModal.classList.remove("hidden");
+            if (companionNameInput) setTimeout(() => companionNameInput.focus(), 100);
+        });
+    }
+
+    const closeCompModal = () => {
+        if (companionNameModal) companionNameModal.classList.add("hidden");
+    };
+
+    if (closeCompanionModalBtn) closeCompanionModalBtn.addEventListener("click", closeCompModal);
+    if (cancelCompanionModalBtn) cancelCompanionModalBtn.addEventListener("click", closeCompModal);
+    if (companionModalBackdrop) companionModalBackdrop.addEventListener("click", closeCompModal);
+
+    if (saveCompanionModalBtn && companionNameInput) {
+        saveCompanionModalBtn.addEventListener("click", async () => {
+            const newName = companionNameInput.value.trim();
+            if (!newName) return;
+            saveCompanionModalBtn.textContent = "Saving...";
+            try {
+                const res = await fetch("/api/user/companion-name", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ companion_name: newName })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const saved = data.companion_name || newName;
+                    if (menuCompanionNameLabel) menuCompanionNameLabel.textContent = `Companion: ${saved}`;
+                    window.currentCompanionName = saved;
+                    closeCompModal();
+                }
+            } catch (e) {
+                console.error("Failed to save companion name:", e);
+            } finally {
+                saveCompanionModalBtn.textContent = "Save Name";
+            }
+        });
+    }
+
+    loadCompanionName();
+
     const menuThemeBtn = document.getElementById("menuThemeBtn");
     if (menuThemeBtn) {
         menuThemeBtn.addEventListener("click", () => {

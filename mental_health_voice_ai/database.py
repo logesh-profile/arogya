@@ -271,12 +271,19 @@ def init_db():
     try:
         cursor.execute("ALTER TABLE mental_health_records ADD COLUMN dominant_state TEXT DEFAULT 'Reflective'")
     except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE user_clinical_profile ADD COLUMN companion_name TEXT DEFAULT 'Arogya'")
+    except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE users ADD COLUMN companion_name TEXT DEFAULT 'Arogya'")
+    except Exception: pass
 
     # User clinical profile table (Persistent Cross-Session Memory)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_clinical_profile (
             user_id TEXT PRIMARY KEY,
             user_name TEXT DEFAULT 'Friend',
+            companion_name TEXT DEFAULT 'Arogya',
             key_context TEXT DEFAULT '',
             recurring_stressors TEXT DEFAULT '[]',
             effective_coping TEXT DEFAULT '[]',
@@ -1013,9 +1020,24 @@ def get_user_clinical_profile(user_id: str = "guest_user") -> Dict[str, Any]:
     """, (user_id,))
     row = cursor.fetchone()
 
-    # Look up actual registered user record for accurate display name
+    # Look up actual registered user record for accurate display name and companion name
     cursor.execute("SELECT name, given_name, preferred_name FROM users WHERE id = ?", (user_id,))
     user_row = cursor.fetchone()
+
+    # Safely check companion_name if column exists
+    comp_name = "Arogya"
+    try:
+        cursor.execute("SELECT companion_name FROM user_clinical_profile WHERE user_id = ?", (user_id,))
+        cp_row = cursor.fetchone()
+        if cp_row and cp_row.get("companion_name"):
+            comp_name = cp_row["companion_name"]
+        else:
+            cursor.execute("SELECT companion_name FROM users WHERE id = ?", (user_id,))
+            u_row = cursor.fetchone()
+            if u_row and u_row.get("companion_name"):
+                comp_name = u_row["companion_name"]
+    except Exception:
+        pass
     conn.close()
 
     resolved_name = "Friend"
@@ -1026,6 +1048,7 @@ def get_user_clinical_profile(user_id: str = "guest_user") -> Dict[str, Any]:
         return {
             "user_id": user_id,
             "user_name": resolved_name,
+            "companion_name": comp_name,
             "key_context": "Member seeking conversational companionship and emotional support",
             "recurring_stressors": [],
             "effective_coping": ["Guided box breathing (4-4-4-4)", "Gentle mindful reflection", "Empathetic companion dialogue"],
@@ -1036,6 +1059,7 @@ def get_user_clinical_profile(user_id: str = "guest_user") -> Dict[str, Any]:
     d = dict(row)
     if not d.get("user_name") or d.get("user_name") in ["Friend", "User"]:
         d["user_name"] = resolved_name
+    d["companion_name"] = d.get("companion_name") or comp_name
 
     try:
         d["recurring_stressors"] = json.loads(d["recurring_stressors"]) if d.get("recurring_stressors") else []
@@ -1098,6 +1122,42 @@ def update_user_clinical_profile(
     conn.close()
 
     return get_user_clinical_profile(user_id)
+
+def update_user_companion_name(user_id: str, companion_name: str) -> bool:
+    """
+    Updates the personalized AI companion name for a specific user.
+    Strictly isolated per user credentials in database.
+    """
+    if not user_id or not companion_name or not companion_name.strip():
+        return False
+    clean_name = companion_name.strip()[:50]
+    conn = get_connection()
+    cursor = conn.cursor()
+    now = datetime.now().isoformat()
+    try:
+        # Update user_clinical_profile if row exists, or insert
+        cursor.execute("""
+            INSERT INTO user_clinical_profile (user_id, companion_name, last_updated)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                companion_name = excluded.companion_name,
+                last_updated = excluded.last_updated
+        """, (user_id, clean_name, now))
+    except Exception as e:
+        print(f"[!] update_user_companion_name clinical profile notice: {e}")
+
+    try:
+        cursor.execute("UPDATE users SET companion_name = ? WHERE id = ?", (clean_name, user_id))
+    except Exception as e:
+        print(f"[!] update_user_companion_name users notice: {e}")
+
+    try:
+        conn.commit()
+    except Exception:
+        pass
+    finally:
+        conn.close()
+    return True
 
 def get_recent_session_memory_anchor(user_id: str = "guest_user", exclude_session_id: Optional[str] = None) -> Dict[str, Any]:
     """
