@@ -278,16 +278,16 @@ def naturalize_tanglish_response(
 # ==============================================================================
 # 3. PROSODY AND PHONETIC PREPARATION
 # ==============================================================================
-def select_tts_route(language_mode: str, voice_mode: str = "fast") -> str:
+def select_tts_route(language_mode: str, voice_mode: str = "fast", text: str = "") -> str:
     """
-    Selects the optimal TTS engine based on user preference and language mode:
+    Selects the optimal TTS engine based on user preference, text script, and language mode:
     - 'cloned' -> 'f5_tts' (Local GPU Diffusion on RTX 3050)
-    - 'fast' + (tamil / tanglish / code_switched) -> 'ta-IN-PallaviNeural' (Native mother-tongue Tamil voice)
-    - 'fast' + indian_english -> 'en-IN-NeerjaExpressiveNeural'
+    - Pure Tamil script (Tamil Unicode) -> 'ta-IN-PallaviNeural' (Native mother-tongue Tamil voice)
+    - Romanized Tanglish / code_switched / indian_english -> 'en-IN-NeerjaExpressiveNeural' (Expressive Indian English voice)
     """
     if voice_mode == "cloned":
         return "f5_tts"
-    if language_mode in ["tamil", "tanglish", "code_switched"]:
+    if language_mode == "tamil" or (text and bool(re.search(r'[\u0B80-\u0BFF]', text))):
         return "ta-IN-PallaviNeural"
     return "en-IN-NeerjaExpressiveNeural"
 
@@ -370,26 +370,22 @@ def stage_prosody_and_phonetics(
 ) -> Dict[str, str]:
     """
     Prepares text for TTS synthesis:
-    - display_text: Natural colloquial text shown to the user on the chat stream.
-    - spoken_text: Phonetically staged text tailored for the target TTS engine.
-    - tts_voice: The exact voice identifier to be used.
+    - Pure Tamil Script -> Routed directly to ta-IN-PallaviNeural (native mother-tongue cadence).
+    - Romanized Tanglish & Indian English -> Routed to en-IN-NeerjaExpressiveNeural (fluid Indian cadence).
+    - Avoids mixed Frankenscript transliteration that causes TTS stutter or crashes.
     """
-    if tts_engine == "auto":
-        tts_engine = select_tts_route(language_mode)
-
     clean_display = re.sub(r'[*_#`~\[\]]', '', text)
     clean_display = re.sub(r'\s+', ' ', clean_display).strip()
 
-    if tts_engine in ["edge_tamil", "ta-IN-PallaviNeural"] or language_mode in ["tamil", "tanglish", "code_switched"]:
-        # Native Tamil Voice: ta-IN-PallaviNeural for genuine mother-tongue cadence
-        if spoken_script and len(spoken_script.strip()) > 3:
-            raw_target = re.sub(r'[*_#`~\[\]]', '', spoken_script)
-            raw_target = re.sub(r'\s*-\s*', '-', raw_target)
-            spoken_script_clean = raw_target.strip()
-        else:
-            spoken_script_clean = transliterate_tanglish_to_spoken_tamil(clean_display)
+    has_tamil_unicode = bool(re.search(r'[\u0B80-\u0BFF]', clean_display))
 
-        spoken_text = smooth_prosody_for_speech(spoken_script_clean)
+    if tts_engine == "auto":
+        tts_engine = select_tts_route(language_mode, text=clean_display)
+
+    if tts_engine in ["edge_tamil", "ta-IN-PallaviNeural"] or (has_tamil_unicode and tts_engine != "f5_tts"):
+        # Native Tamil Voice: ta-IN-PallaviNeural for genuine mother-tongue cadence
+        target_script = spoken_script if (spoken_script and len(spoken_script.strip()) > 3) else clean_display
+        spoken_text = smooth_prosody_for_speech(target_script)
         return {
             "display_text": clean_display,
             "spoken_text": spoken_text,

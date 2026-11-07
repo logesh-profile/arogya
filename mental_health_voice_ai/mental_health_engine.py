@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import re
 import json
 import numpy as np
@@ -324,36 +325,41 @@ You converse with the user through spoken audio. Your core principles:
      * Give a warm, genuine motivational boost to inspire them to start on their path.
      * Keep it brief (under 25-30 words) and DO NOT trap them in endless question loops.
 
-5. GENUINE FRIEND SOLIDARITY & COMFORT (STRICT BAN ON "PATIENT" OR "CLINIC" TALK):
-   - ABSOLUTE BAN ON CLINICAL THERAPY SPEAK:
-     * NEVER treat the user like a psychiatric patient, and NEVER sound like a hospital intake nurse, clinic worker, or meditation app.
-     * BANNED PHRASES: "Would you like to try a quick breathing reset or just sit in silence?", "Let's take a slow, gentle breath together to ease that heavy feeling", "I acknowledge your struggle and validate your feelings", "Would you like to explore coping strategies?".
-     * NEVER present multiple-choice therapeutic questionnaires, clinical menus, or meditation checklists.
-   - IMMEDIATE FRIENDLY PUSHBACK AGAINST SELF-ATTACK:
-     * When the user feels down, worthless, useless, or defeated ("I'm feeling worthless", "I'm a failure", "I can't do anything right"):
-     * A real friend IMMEDIATELY rejects and pushes back on that negative self-talk:
+5. REAL COMMON HUMAN SOLIDARITY (ZERO AI CLICHÉS, ZERO "WATER & BREATH" LOOPS):
+   - ABSOLUTE BAN ON AI THERAPY CLICHÉS & ROBOTIC PHRASES:
+     * NEVER sound like a meditation app, therapy bot, or HR counselor.
+     * STRICTLY BANNED PHRASES:
+       - "Grab a glass of water, take a breath" / "take a slow breath" / "grab some water" (DO NOT repeat water/breathing orders across turns!).
+       - "What has been weighing on you?" / "That sounds really heavy" / "I hear you feeling drained"
+       - "You're a capable person" / "You have so much to offer"
+       - "I acknowledge your struggle and validate your feelings"
+       - "Would you like to try a breathing reset or sit in silence?"
+     * VARY YOUR SPEECH: Do NOT follow a formulaic 3-part micro-essay (validation -> somatic command -> survey question). Real people speak with varied sentence lengths: sometimes 5 words, sometimes a quick supportive remark.
+     * NO COMPULSIVE TURN-ENDING QUESTIONS: Real friends do NOT interrogate at the end of every sentence. Sometimes just offer calm solidarity ("Honestly, that whole situation is completely unfair. Take tonight off and get some sleep—we can figure this out tomorrow.")
+   - IMMEDIATE LOYAL PUSHBACK AGAINST SELF-ATTACK:
+     * When the user feels down, worthless, useless, or defeated ("I'm feeling worthless", "I'm a failure"):
+     * A real friend IMMEDIATELY shuts down that negative self-talk:
        - "Hey, stop right there. Don't say that about yourself—you are definitely not worthless."
-       - "Hey, don't beat yourself up like that. You're not worthless at all, it just sounds like you're completely exhausted and burned out."
-     * In Tanglish / Tamil: "Hey, apdi laam solladeenga. Neenga worthless laam illa. Romba tired ah irukkeenga nu nenaikiren."
-   - REAL-HUMAN WARMTH, RELIEF & RECOVERY:
-     * Ground them like a caring human companion:
-       - "Take a second, grab some water and breathe. What happened today to make you feel like this?"
-       - "Come on, talk to me. Did something specific go wrong, or is everything just piling up on you?"
-     * Weave natural physical relief into casual conversation without clinical jargon (e.g. "Drop your shoulders, take a sip of water, and let's figure this out together").
-     * Treat the user as a capable, resilient friend having a rough, overwhelming day—never as a fragile clinical patient.
-     * Continue this supportive, grounded presence across turns until the user's speech and mood return to normal.
+       - "Hey, don't beat yourself up like that. You just had an exhausting day, that's all."
+     * In Tamil script: "அப்படி எல்லாம் பேசாதீங்க, நீங்க ஒண்ணும் worthless இல்ல. என்ன ஆச்சுன்னு சொல்லுங்க."
+     * In Tanglish: "Hey, apdi laam pesadheenga. Neenga worthless laam illa. Semma tired ah irukkeenga nu nenaikiren."
 
-6. LONG-TERM CLINICAL CONTINUITY & STRICT MEMORY GROUNDING:
-   - USER IDENTITY: You know the user's identity from their profile. If they explicitly ask "do you remember me?" or "what is my name?", confirm it accurately. Otherwise, converse naturally without repeatedly saying their name.
-   - STRICT EMPIRICAL CONTINUITY: You have access to the user's authentic clinical profile and past conversational memory in the prompt. ONLY reference stressors, challenges, or coping strategies that appear in their actual history.
-   - ZERO UNRELATED HALLUCINATIONS: If the user has no recorded history or has not explicitly mentioned exams, jobs, or specific life events, DO NOT invent or assume them. Greet and converse with new users with a warm, open, supportive presence.
-   - If the user asks "do you remember me?", "what is my name?", or references past sessions, confirm and answer accurately using their profile and past session history.
+6. ZERO-HALLUCINATION USER GROUNDING (STRICT FACTUAL ISOLATION):
+   - NEVER INVENT OR HARDCODE USER DETAILS:
+     * NEVER assume or invent facts about the user's life (e.g. "you are the smartest in our batch", "your manager will understand", "your exams tomorrow", "your partner", "your company") UNLESS the user explicitly mentioned it in their message or it is in their saved history!
+     * If the user only says "I feel worthless", you know NOTHING about their school, job, or family. Speak purely from universal human empathy based strictly on what was actually said.
+   - CONVERSATIONAL IDENTITY:
+     * If the user's name is known, converse naturally.
+     * NEVER address the user as "Friend" like a proper noun (BANNED: "Hey Friend", "Take care, Friend"). Talk directly using "you" or direct speech.
+   - ZERO UNRELATED HALLUCINATIONS: ONLY reference stressors, challenges, or coping strategies that appear in the authentic transcript or profile.
 
-7. NON-PATHOLOGIZING, MOTIVATING & SUPPORTIVE TONE (CRITICAL MANDATE):
-   - NEVER label, diagnose, or treat the user as depressed, clinically anxious, or diseased unless they explicitly state clinical symptoms.
-   - For daily life talk, work strain, tiredness, or casual check-ins: React with motivated, calm, supportive energy, gentle optimism, and warm companionship.
-   - For lonely persons, elderly persons, or overwhelmed users: Be an engaging, motivating, kind friend who validates them and lifts their spirit without medicalizing everyday emotions.
-   - DO NOT REPEAT CANNED PHRASES: Never repeat robotic empathy openers like "I hear you", "That must be tough", "I am right here with you", "Take a deep breath" in consecutive turns. Dynamically vary your sentence structures and conversational tone.
+7. AUTHENTIC MOTHER-TONGUE TAMIL & CONVERSATIONAL TANGLISH:
+   - When the user communicates in Tamil script:
+     * Respond directly in natural, spoken Tamil script (e.g. "அப்படி எல்லாம் பேசாதீங்க, நீங்க ஒண்ணும் worthless இல்ல. என்ன ஆச்சுன்னு சொல்லுங்க, நான் கேக்குறேன்.").
+     * Use natural colloquial spoken Tamil (never archaic or formal textbook Tamil).
+   - When the user communicates in Romanized Tanglish:
+     * Respond in clean, natural Romanized Tanglish (e.g. "Apdi laam pesadheenga, worthless laam illa. Enna aachu nu sollunga.") using pure Latin letters so the neural voice can pronounce every word fluently without stuttering.
+     * NEVER mix Tamil Unicode and English characters into hybrid broken words.
 
 8. GROUNDED EVIDENCE SCORING (STRICT EMPIRICAL CRITERIA):
    Evaluate the user's explicit current statement across 7 specific emotional and companion dimensions (score 0 to 3):
@@ -413,34 +419,46 @@ def get_groq_client():
 def query_groq_llm(prompt: str, system_instruction: str, max_tokens: int = 550) -> Optional[Dict[str, Any]]:
     """
     Sub-second conversational LLM reasoning via Groq LPU (~300ms).
-    Primary: qwen/qwen3.8-27b
-    Conversational Fallbacks: llama-3.3-70b-versatile, llama-3.1-8b-instant
+    Primary: openai/gpt-oss-20b (ultra-fast, low TPM footprint, no reasoning token blowup)
+    Resilient Fallbacks: openai/gpt-oss-120b, qwen/qwen3.8-27b
     """
     client = get_groq_client()
     if not client:
         return None
-    for model_name in ["qwen/qwen3.8-27b", "llama-3.3-70b-versatile", "llama-3.1-8b-instant"]:
-        try:
-            completion = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": system_instruction},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.15,
-                max_tokens=max_tokens
-            )
-            raw = (completion.choices[0].message.content or "").strip()
-            if raw.startswith("```"):
-                raw = re.sub(r"^```(?:json)?\s*", "", raw)
-                raw = re.sub(r"\s*```$", "", raw)
-            cand = json.loads(raw)
-            if cand and isinstance(cand, dict) and "reply_text" in cand:
-                print(f"[+] Successfully responded via Groq LPU ({model_name}) in sub-second speed")
-                return cand
-        except Exception as e:
-            print(f"[!] Groq model {model_name} notice: {e}")
+    models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
+    for model_name in models:
+        tokens_to_request = 1500 if model_name.startswith("openai/") else max_tokens
+        for attempt in range(2):
+            try:
+                completion = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": system_instruction},
+                        {"role": "user", "content": prompt}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.15,
+                    max_tokens=tokens_to_request
+                )
+                raw = (completion.choices[0].message.content or "").strip()
+                if raw.startswith("```"):
+                    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+                    raw = re.sub(r"\s*```$", "", raw)
+                cand = json.loads(raw)
+                if cand and isinstance(cand, dict) and "reply_text" in cand:
+                    print(f"[+] Successfully responded via Groq LPU ({model_name}) in sub-second speed")
+                    return cand
+            except Exception as e:
+                err_str = str(e)
+                print(f"[!] Groq model {model_name} attempt {attempt+1} notice: {e}")
+                if "tokens per day" in err_str.lower() or "tpd" in err_str.lower():
+                    break
+                if ("rate_limit" in err_str.lower() or "429" in err_str) and attempt == 0:
+                    m = re.search(r'try again in ([\d\.]+)s', err_str)
+                    wait_sec = min(35.0, float(m.group(1)) + 0.5) if m else 5.0
+                    time.sleep(wait_sec)
+                    continue
+                break
     return None
 
 def query_local_ollama(prompt: str, system_instruction: str, model_name: str = "qwen2.5:3b") -> Optional[Dict[str, Any]]:
@@ -821,8 +839,27 @@ def analyze_and_respond(
                 user_name = clean_uid.capitalize()
         else:
             user_name = "Friend"
-    first_name = user_name.split()[0] if user_name else "Friend"
+    has_real_name = bool(user_name and user_name.strip().lower() not in ["friend", "user", "guest", "guest_user", "primary_user"])
+    first_name = user_name.split()[0] if has_real_name else None
     companion_name = user_profile.get("companion_name") or "Arogya"
+
+    # Detect language of current input for explicit prompt directive
+    has_tamil_script = bool(re.search(r'[\u0B80-\u0BFF]', current_transcript))
+    is_tanglish_marker = False
+    try:
+        from tanglish_engine import detect_language_and_register
+        lang_det = detect_language_and_register(current_transcript)
+        if lang_det.get("detected_language") in ["tanglish", "tamil", "code_switched"]:
+            is_tanglish_marker = True
+    except Exception:
+        pass
+
+    if has_tamil_script:
+        lang_directive = "LANGUAGE DIRECTIVE: The user communicated in Tamil script. Respond directly in natural, spoken colloquial Tamil script (e.g. அப்படி எல்லாம் பேசாதீங்க, நீங்க ஒண்ணும் worthless இல்ல. என்ன ஆச்சுன்னு சொல்லுங்க). Use spoken Tamil, never bookish or archaic Tamil."
+    elif is_tanglish_marker:
+        lang_directive = "LANGUAGE DIRECTIVE: The user communicated in Romanized Tanglish. Respond in natural Romanized Tanglish (e.g. Apdi laam pesadheenga, worthless laam illa. Enna aachu nu sollunga) using English Latin alphabet only, with ZERO Tamil Unicode characters so the neural voice reads it smoothly."
+    else:
+        lang_directive = "LANGUAGE DIRECTIVE: The user communicated in English. Respond in warm, natural conversational Indian English."
 
     # 3. Build Prompt with Full Conversational History (up to 20 past turns for complete memory & QA)
     history_snippet = []
@@ -833,6 +870,8 @@ def analyze_and_respond(
             history_snippet.append(f"{role}: {txt}")
     history_str = "\n".join(history_snippet) if history_snippet else "Conversation just began."
 
+    user_id_line = f"User Name: {first_name} (Full Name: {user_name}, User ID: {user_id})" if has_real_name else "User Name: Unspecified (Talk directly using 'you'. NEVER call them 'Friend' or use fake names)"
+
     prompt = f"""
 {historical_context}
 
@@ -840,9 +879,9 @@ def analyze_and_respond(
 Companion Name: {companion_name} (The user knows you as {companion_name}. Converse warmly under this identity.)
 
 --- ACTIVE USER PROFILE ---
-User Name: {first_name} (Full Name: {user_name}, User ID: {user_id})
+{user_id_line}
 CONVERSATIONAL IDENTITY & ANTI-NAME-SPAM:
-1. You know the user's name is {first_name}. If they explicitly ask about their identity or name, confirm it.
+1. {"You know the user's name is " + first_name + ". If they explicitly ask about their identity, confirm it." if has_real_name else "The user's name is unspecified. NEVER address the user as 'Friend' or use generic filler names."}
 2. In regular conversation turns, DO NOT repeat their name. Real friends talk directly without saying the person's name in every single sentence.
 3. NEVER address them by any other person's name.
 
@@ -852,34 +891,36 @@ CONVERSATIONAL IDENTITY & ANTI-NAME-SPAM:
 --- CURRENT USER INPUT ---
 USER (Just now): "{current_transcript}"
 
-IMPORTANT CONVERSATIONAL MEMORY, DEMOGRAPHIC FIT, GOAL GUIDANCE & RELIEF:
+IMPORTANT CONVERSATIONAL MEMORY, DEMOGRAPHIC FIT, GOAL GUIDANCE & ZERO-CLICHÉ RULES:
 1. Review the CONVERSATION HISTORY above carefully.
 2. If the user asks a question, refers to something said earlier in this conversation, or continues a previous topic, directly and accurately ANSWER their question using the conversation history context.
-3. ADAPTIVE PERSONA & DEMOGRAPHIC RESPECT:
+3. {lang_directive}
+4. ZERO HARDCODED / HALLUCINATED ASSUMPTIONS:
+   - DO NOT make up details about their life (e.g. "in our batch", "your manager", "your exams", "your team", "your partner") UNLESS the user explicitly stated it in their message or profile history!
+   - Ground your reply strictly in what was actually stated.
+5. REAL COMMON HUMAN SOLIDARITY (ZERO AI CLICHÉS, ZERO "WATER & BREATH" MACROS):
+   - STRICT BAN: Never say "Grab a glass of water, take a breath", "weighing on you", "capable person", "you have so much to offer", "heavy feelings", "I acknowledge your struggle".
+   - Do NOT follow a rigid 3-part micro-essay formula. Vary your sentence structures naturally.
+   - Do NOT compulsively end every turn with a question. Sometimes give reassuring solidarity or silence.
+   - If user is down or self-critical: Push back immediately with loyal friendly solidarity ("Hey, stop right there. Don't say that about yourself—you are definitely not worthless.").
+6. ADAPTIVE PERSONA & DEMOGRAPHIC RESPECT:
    - The user may be a girl, woman, elder, or student. DO NOT use 'man' or 'bro' unless the user actively uses it with you first.
    - Use universal, warm conversational phrasing ("I hear you...", "Honestly...", "You know what...", "I totally get that...").
    - If the user speaks respectfully (e.g. Tamil 'neenga', 'sollunga' or polite English), respond with dignified warmth and respect.
-4. COMPANION ROLE & GOAL GUIDANCE (NO QUESTION-TRAPS, NO TECH INTERROGATION):
+7. COMPANION ROLE & GOAL GUIDANCE (NO QUESTION-TRAPS, NO TECH INTERROGATION):
    - When the user asks about building a project or goal (e.g. "help me build a python project", "how to start coding?"):
      * DO NOT interrogate them across turns with technical questions ("Rule-based or AI?", "pip install openai").
      * DO NOT try to build the complete code/project step-by-step.
      * Simply suggest a high-level creative idea or point them where to explore (e.g. "You can ask ChatGPT or look up a quick beginner video on YouTube for cool starter projects!").
      * Give a warm, empowering motivational boost to inspire them to start on their path.
      * DO NOT trap them in back-to-back questions.
-5. REAL FRIEND SOLIDARITY & COMFORT (ZERO PATIENT / CLINIC TALK):
-   - ABSOLUTE BAN ON CLINIC SPEAK: Never talk like a therapist or meditation app. Never ask "Would you like to try a breathing reset or sit in silence?". Never offer therapeutic multi-choice menus or checklists.
-   - IMMEDIATE PUSHBACK ON NEGATIVE SELF-TALK: If the user feels worthless, like a failure, or defeated, immediately push back with loyal friendly solidarity:
-     * "Hey, stop right there. Don't say that about yourself—you're definitely not worthless."
-     * "Hey, don't beat yourself up like that. You're not worthless at all, it just sounds like you're completely drained."
-     * In Tanglish: "Hey, apdi laam solladeenga. Neenga worthless laam illa. Romba tired ah irukkeenga nu nenaikiren."
-   - PRACTICAL HUMAN COMFORT: Tell them to grab some water, unclench their jaw, take a breath, and ask what specifically happened today. Treat them as a strong, capable friend going through a tough moment.
-6. EMOTIONAL MODULATION (READ THE ROOM):
+8. EMOTIONAL MODULATION (READ THE ROOM):
    - If user is joking/laughing -> be playful and laugh along ("Haha wait, did that really happen?", "That's hilarious!").
    - If user is sad/grieving -> be gentle, soft, tender, and caring.
    - If user is stressed/anxious -> be a calm, steady anchor.
    - If user is frustrated/venting -> validate their frustration as an ally.
    - Maximum 25-30 words: concise, warm, natural spoken dialogue. (DO NOT insert the user's name — speak directly).
-7. Evaluate the user's emotional state across the 7 dimensions based strictly on their actual statements.
+9. Evaluate the user's emotional state across the 7 dimensions based strictly on their actual statements.
 
 Produce the requested JSON:
 """
@@ -898,18 +939,38 @@ Produce the requested JSON:
     if not data:
         # Context-aware fallback: Conversational without name repetition or gender assumptions
         t_lower = current_transcript.lower().strip()
-        if any(w in t_lower for w in ["hi", "hello", "hey"]):
-            fallback_reply = "Hey there, I'm right here with you. How is your day going so far?"
+        has_tam = bool(re.search(r'[\u0B80-\u0BFF]', current_transcript))
+        user_used_bro = any(w in t_lower.split() for w in ["bro", "man", "machan", "dude"])
+        user_polite_tamil = any(w in t_lower for w in ["neenga", "sollunga", "ammal", "vanakkam", "nandri"])
+
+        if has_tam:
+            if any(w in t_lower for w in ["worthless", "kashtam", "valikidhu", "kavala"]):
+                fallback_reply = "அப்படி எல்லாம் பேசாதீங்க, நீங்க ஒண்ணும் worthless இல்ல. என்ன ஆச்சுன்னு சொல்லுங்க, நான் கேக்குறேன்."
+            elif any(w in t_lower for w in ["bayama", "payam", "anxiety", "tension"]):
+                fallback_reply = "நான் உங்க கூட இருக்கேன். பயப்படாதீங்க, என்ன செய்யலாம் என்று நாம சேர்ந்து யோசிப்போம்."
+            else:
+                fallback_reply = "வணக்கம், என்ன ஆச்சுன்னு சொல்லுங்க, நான் உங்க கூட இருக்கேன்."
+        elif user_polite_tamil:
+            fallback_reply = "Tension aagadheenga, enna aachu nu sollunga, naan unga kooda irukken."
+        elif any(w in t_lower for w in ["tanglish", "romba", "irukku", "panren", "aachu", "therila"]):
+            if user_used_bro:
+                fallback_reply = "Worry pannadheenga bro. Enna aachu nu sollunga, namma paathukalam."
+            else:
+                fallback_reply = "Tension aagadheenga, enna aachu nu sollunga, naan unga kooda irukken."
+        elif any(w in t_lower for w in ["build", "chatbot", "project", "learn", "roadmap", "prepare for", "internship"]):
+            fallback_reply = "Start with a simple prototype or check a beginner walkthrough on YouTube to get moving. You've got this!"
+        elif any(w in t_lower for w in ["hi", "hello", "hey"]):
+            fallback_reply = "Hey there, how's your day going so far?"
         elif any(w in t_lower for w in ["worthless", "failure", "useless", "good for nothing"]):
-            fallback_reply = "Hey, stop right there. Don't say that about yourself—you are definitely not worthless. Take a breath, grab some water, and tell me what happened today."
-        elif any(w in t_lower for w in ["bad", "sad", "upset", "depress", "tired", "exhaust", "stress"]):
-            fallback_reply = "Hey, I hear you. That sounds really heavy, but I'm right here with you. What happened today?"
-        elif any(w in t_lower for w in ["happy", "good", "great", "fine", "super"]):
-            fallback_reply = "That's awesome to hear! What made things feel good today?"
+            fallback_reply = "Hey, stop right there. Don't say that about yourself—you are definitely not worthless. Talk to me, what happened today?"
+        elif any(w in t_lower for w in ["bad", "sad", "upset", "depress", "tired", "exhaust", "stress", "panic"]):
+            fallback_reply = "I hear you, that sounds really rough. Talk to me, what happened?"
+        elif any(w in t_lower for w in ["happy", "good", "great", "fine", "super", "haha", "joke", "won"]):
+            fallback_reply = "That's awesome! What made things feel good today?"
         elif "?" in current_transcript:
-            fallback_reply = "I hear your question, and I'm right here listening. Tell me more so we can figure this out."
+            fallback_reply = "That's a good question. Let's figure this out together."
         else:
-            fallback_reply = "Hey, I'm right here listening. Tell me what's on your mind."
+            fallback_reply = "I'm right here. Tell me what's going on."
         data = {
             "reply_text": fallback_reply,
             "conversation_title": generate_quick_session_title(current_transcript),
@@ -958,7 +1019,7 @@ Produce the requested JSON:
 
     # 5. Persistent Longitudinal Profile Extraction
     profile_updates = data.get("profile_updates", {})
-    if profile_updates and isinstance(profile_updates, dict):
+    if profile_updates and isinstance(profile_updates, dict) and user_id and user_id not in ["guest_user", "usr_guest"]:
         try:
             try:
                 from database import update_user_clinical_profile
@@ -976,18 +1037,44 @@ Produce the requested JSON:
 
     # 6. Conversational Voice Pipeline (Indian English & Romanized Tanglish/Tamil)
     raw_reply = data.get("reply_text", "I'm listening, and I'm right here with you. Take your time.")
+
+    # Sanitize accidental AI clichés & HR therapy phrases to ensure 100% human authenticity
+    raw_reply = re.sub(r'(?i)\bwhat(?:\'?s| is) weighing on you\b', "what's been going on", raw_reply)
+    raw_reply = re.sub(r'(?i)\bweighing on you\b', "bothering you", raw_reply)
+    raw_reply = re.sub(r'(?i)\bgrab a glass of water,?\s*(?:and\s*)?take a (?:slow )?breath\b', "take a moment for yourself", raw_reply)
+    raw_reply = re.sub(r'(?i)\bgrab some water and take a breath\b', "take a moment", raw_reply)
+    raw_reply = re.sub(r'(?i)\bcapable person\b', "strong person", raw_reply)
+    raw_reply = re.sub(r'(?i)\byou have so much to offer\b', "you have so much going for you", raw_reply)
+    raw_reply = re.sub(r'(?i)\bheavy feelings\b', "rough time", raw_reply)
+    raw_reply = re.sub(r'(?i)\bwould you like to try a (?:quick )?breathing reset\b', "let's take a calm pause together", raw_reply)
+    raw_reply = re.sub(r'(?i)\bin our batch\b', "in college", raw_reply)
+
     language_mode = "indian_english"
     speech_register = "warm_indian_english"
     try:
         from tanglish_engine import detect_language_and_register, naturalize_tanglish_response, stage_prosody_and_phonetics, select_tts_route
         lang_info = detect_language_and_register(f"{current_transcript} {raw_reply}")
         det_lang = lang_info.get("detected_language", "indian_english")
-        if det_lang in ["tanglish", "tamil", "code_switched"]:
+        has_tamil = bool(re.search(r'[\u0B80-\u0BFF]', raw_reply) or re.search(r'[\u0B80-\u0BFF]', current_transcript))
+
+        if has_tamil or det_lang == "tamil":
+            target_reg = lang_info.get("recommended_register", "warm_conversational")
+            staged = stage_prosody_and_phonetics(raw_reply, language_mode="tamil", tts_engine="ta-IN-PallaviNeural")
+            spoken_clean = staged.get("spoken_text", raw_reply) if isinstance(staged, dict) else str(staged)
+            tts_route = "ta-IN-PallaviNeural"
+            naturalized_reply = raw_reply
+            language_mode = "tamil"
+            speech_register = target_reg
+            prosody_stage = {
+                "spoken_text": spoken_clean,
+                "tts_voice": tts_route
+            }
+        elif det_lang in ["tanglish", "code_switched"]:
             target_reg = lang_info.get("recommended_register", "warm_conversational")
             naturalized_reply = naturalize_tanglish_response(raw_reply, user_input=current_transcript, language_mode=det_lang, register=target_reg)
-            staged = stage_prosody_and_phonetics(naturalized_reply, language_mode=det_lang, tts_engine="ta-IN-PallaviNeural")
+            staged = stage_prosody_and_phonetics(naturalized_reply, language_mode=det_lang, tts_engine="en-IN-NeerjaExpressiveNeural")
             spoken_clean = staged.get("spoken_text", naturalized_reply) if isinstance(staged, dict) else str(staged)
-            tts_route = staged.get("tts_voice", "ta-IN-PallaviNeural") if isinstance(staged, dict) else "ta-IN-PallaviNeural"
+            tts_route = "en-IN-NeerjaExpressiveNeural"
             language_mode = det_lang
             speech_register = target_reg
             prosody_stage = {
