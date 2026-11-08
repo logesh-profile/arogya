@@ -2305,7 +2305,8 @@ async function startRecording() {
             const isBrowserHallucination = currentText.toLowerCase().split(/\s+/).every(w => w === "you" || w === "thank");
             const finalClientText = (!isBrowserHallucination && currentText.length >= 2) ? currentText : "";
 
-            if ((lastRecordedBlob && lastRecordedBlob.size > 800) || finalClientText.length >= 2) {
+            const hasSpokenInput = vadHasSpoken || (finalClientText.length >= 2);
+            if (hasSpokenInput && ((lastRecordedBlob && lastRecordedBlob.size > 800) || finalClientText.length >= 2)) {
                 orbCaption.textContent = "Voice captured. Arogya is reflecting...";
                 setLiveStatus("Reflecting...", "listening");
                 if (isVoiceModalActive) {

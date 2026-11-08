@@ -180,8 +180,8 @@ def classify_user_emotion_from_voice_tone(
     median_f0 = acoustic_features.get("median_f0")
     t_lower = (transcript or "").lower()
 
-    # Determine if voice audio is present (energy > 0.005 and duration >= 0.5s)
-    has_audio_tone = bool(duration >= 0.5 and (rms > 0.005 or is_valid))
+    # Determine if voice audio is valid speech (energy >= 0.015, duration >= 0.5s, is_valid_speech == True)
+    has_audio_tone = bool(duration >= 0.5 and is_valid and rms >= 0.015)
 
     if has_audio_tone:
         # === ACOUSTIC BIOMARKER GROUND TRUTH (TONE-FIRST DECISION MATRIX) ===
@@ -498,6 +498,42 @@ def query_local_ollama(prompt: str, system_instruction: str, model_name: str = "
                     return cand
     except Exception:
         pass
+    return None
+
+def query_gemini_backup(prompt: str, system_instruction: str, max_tokens: int = 550) -> Optional[Dict[str, Any]]:
+    """
+    Automatic secondary LLM failover via Google Gemini Flash Lite (~400ms).
+    Triggered when Groq hits 429 rate limits, token exhaustion, or connection errors.
+    Uses the configured GEMINI_API_KEY with strict JSON output format.
+    """
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    if not gemini_key:
+        return None
+    try:
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=gemini_key)
+        config = types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            temperature=0.2,
+            max_output_tokens=max_tokens
+        )
+        resp = client.models.generate_content(
+            model="gemini-flash-lite-latest",
+            contents=prompt,
+            config=config
+        )
+        text = (resp.text or "").strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```(?:json)?\s*", "", text)
+            text = re.sub(r"\s*```$", "", text)
+        cand = json.loads(text)
+        if cand and isinstance(cand, dict) and "reply_text" in cand:
+            print("[+] Successfully responded via Secondary Backup (Gemini Flash Lite)")
+            return cand
+    except Exception as e:
+        print(f"[!] Secondary Gemini backup notice: {e}")
     return None
 
 # ---------------------------------------------------------------------------
@@ -935,6 +971,10 @@ Produce the requested JSON:
         data = query_local_ollama(prompt, SYSTEM_INSTRUCTION)
         if data:
             print("[+] Processed via Local Ollama on GPU")
+
+    # 3. Cloud Secondary LLM Backup (Gemini Flash Lite via google-genai)
+    if not data:
+        data = query_gemini_backup(prompt, SYSTEM_INSTRUCTION, max_tokens=550)
 
     if not data:
         # Context-aware fallback: Conversational without name repetition or gender assumptions

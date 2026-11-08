@@ -42,7 +42,10 @@ def _clean_database_url(url: Optional[str]) -> Optional[str]:
     try:
         parsed = urllib.parse.urlparse(cleaned)
         qs = urllib.parse.parse_qs(parsed.query)
-        allowed = {"sslmode", "connect_timeout", "application_name", "target_session_attrs"}
+        allowed = {
+            "sslmode", "connect_timeout", "application_name", "target_session_attrs",
+            "keepalives", "keepalives_idle", "keepalives_interval", "keepalives_count"
+        }
         clean_qs = {k: v[0] for k, v in qs.items() if k in allowed}
         new_query = urllib.parse.urlencode(clean_qs)
         cleaned = urllib.parse.urlunparse((parsed.scheme, parsed.netloc, parsed.path, '', new_query, ''))
@@ -119,7 +122,15 @@ def get_pg_pool(clean_url: str):
     global _pg_pool
     if _pg_pool is None:
         import psycopg2.pool
-        _pg_pool = psycopg2.pool.ThreadedConnectionPool(minconn=1, maxconn=10, dsn=clean_url)
+        _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+            minconn=1,
+            maxconn=10,
+            dsn=clean_url,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5
+        )
     return _pg_pool
 
 class PostgresConnectionWrapper:
@@ -157,6 +168,9 @@ def get_connection():
         try:
             pool = get_pg_pool(clean_url)
             conn = pool.getconn()
+            if getattr(conn, "closed", 0) != 0:
+                pool.putconn(conn, close=True)
+                conn = pool.getconn()
             return PostgresConnectionWrapper(conn, pool=pool)
         except Exception as e:
             print(f"[!] PostgreSQL pool connection notice: {e}, using SQLite at {DB_PATH}")

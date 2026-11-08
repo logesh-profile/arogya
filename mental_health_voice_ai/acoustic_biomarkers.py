@@ -156,6 +156,20 @@ def extract_acoustic_features(audio_input: Union[str, bytes, io.BytesIO, np.ndar
     analysis_y = y[:int(sr * 8.0)] if duration > 8.0 else y
     rms_energy = float(np.sqrt(np.mean(analysis_y**2)))
 
+    # 2. RMS Noise-Gate: Guard against analyzing silence, fan noise, or room hiss
+    if rms_energy < 0.015:
+        return {
+            "duration": round(duration, 2),
+            "pitch_semitone_std": "low_energy",
+            "median_f0": "low_energy",
+            "jitter_percent": "low_energy",
+            "shimmer_percent": "low_energy",
+            "rms_energy": round(rms_energy, 4),
+            "pause_ratio": 1.0,
+            "is_valid_speech": False,
+            "note": "Audio energy below threshold (ambient silence/room hiss)"
+        }
+
     # Frame-based pause/silence ratio (100ms frames)
     frame_len = max(1, int(sr * 0.1))
     n_frames = len(analysis_y) // frame_len
