@@ -631,16 +631,6 @@
                             </div>
                         </button>
                     </div>
-
-                    <!-- Hidden alias anchors for programmatic triggers -->
-                    <button id="openVoiceModeBtn" class="hidden"></button>
-                    <button id="openClinicalModalBtn" class="hidden"></button>
-                    <button id="toggleInsightsBtn" class="hidden"></button>
-                    <button id="openVoiceSelectorBtn" class="hidden"></button>
-                    <button id="themeToggleBtn" class="hidden"></button>
-                    <button id="installPwaBtn" class="hidden"></button>
-                    <span id="headerVoiceLabel" class="hidden">Voice: Ava</span>
-                    <span id="themeLabel" class="hidden">Dark</span>
                 </div>
             </header>
 
@@ -967,6 +957,18 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Off-screen programmatic triggers & state mirrors (isolated from header) -->
+    <div id="hiddenUtilityAnchors" style="display:none !important; visibility:hidden !important; position:absolute !important; width:0 !important; height:0 !important; overflow:hidden !important;" aria-hidden="true">
+        <button id="openVoiceModeBtn" type="button"></button>
+        <button id="openClinicalModalBtn" type="button"></button>
+        <button id="toggleInsightsBtn" type="button"></button>
+        <button id="openVoiceSelectorBtn" type="button"></button>
+        <button id="themeToggleBtn" type="button"></button>
+        <button id="installPwaBtn" type="button"></button>
+        <span id="headerVoiceLabel">Voice: Ava</span>
+        <span id="themeLabel">Dark</span>
     </div>
 
     <script src="/static/app.js"></script>

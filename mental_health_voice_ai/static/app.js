@@ -963,17 +963,22 @@ function initControls() {
     const sidebarBackdrop = document.getElementById("sidebarBackdrop");
     const sidebar = document.getElementById("sidebar");
 
-    function openMobileSidebar() {
+    function openMobileSidebar(e) {
+        if (e) e.stopPropagation();
         if (sidebar) sidebar.classList.add("mobile-open");
         if (sidebarBackdrop) sidebarBackdrop.classList.remove("hidden");
     }
 
-    function closeMobileSidebar() {
+    function closeMobileSidebar(e) {
+        if (e) e.stopPropagation();
         if (sidebar) sidebar.classList.remove("mobile-open");
         if (sidebarBackdrop) sidebarBackdrop.classList.add("hidden");
     }
 
-    if (mobileMenuBtn) mobileMenuBtn.addEventListener("click", openMobileSidebar);
+    if (mobileMenuBtn) {
+        mobileMenuBtn.addEventListener("pointerdown", (e) => e.stopPropagation());
+        mobileMenuBtn.addEventListener("click", openMobileSidebar);
+    }
     if (closeSidebarBtn) closeSidebarBtn.addEventListener("click", closeMobileSidebar);
     if (sidebarBackdrop) sidebarBackdrop.addEventListener("click", closeMobileSidebar);
 }
@@ -3116,18 +3121,31 @@ function initHeaderDropdownMenu() {
     const dropdown = document.getElementById("headerDropdownMenu");
 
     if (menuBtn && dropdown) {
-        menuBtn.addEventListener("click", (e) => {
-            e.stopPropagation();
+        const toggleDropdown = (e) => {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
             dropdown.classList.toggle("hidden");
+        };
+
+        // Instant zero-delay touch and mouse responsiveness
+        menuBtn.addEventListener("pointerdown", (e) => {
+            e.stopPropagation();
         });
 
-        document.addEventListener("click", (e) => {
+        menuBtn.addEventListener("click", toggleDropdown);
+
+        const handleOutsideDismiss = (e) => {
             if (!dropdown.classList.contains("hidden")) {
                 if (!dropdown.contains(e.target) && e.target !== menuBtn && !menuBtn.contains(e.target)) {
                     dropdown.classList.add("hidden");
                 }
             }
-        });
+        };
+
+        document.addEventListener("pointerdown", handleOutsideDismiss);
+        document.addEventListener("click", handleOutsideDismiss);
     }
 
     const menuClinicalBtn = document.getElementById("menuClinicalBtn");

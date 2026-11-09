@@ -33,3 +33,8 @@ __pycache__/
 *.sqlite3-journal
 mental_health_voice_ai/data/*.db
 scratch/
+
+# Quarantined & Legacy Unused Files (Never push to remote)
+can_delete/
+can_delete/**
+
