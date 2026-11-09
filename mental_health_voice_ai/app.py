@@ -827,7 +827,37 @@ async def process_voice_chat(
         whisper_task = loop.run_in_executor(None, transcribe_audio, bio)
         dsp_task = loop.run_in_executor(None, extract_acoustic_features, audio_bytes)
         whisper_text, acoustic_features = await asyncio.gather(whisper_task, dsp_task)
-        transcript = whisper_text or "I wanted to take a moment to reflect on my feelings."
+        if not whisper_text or not whisper_text.strip():
+            fallback_unclear = "Sorry bro, I didn't catch that clearly. Could you say that again?"
+            ai_audio_url = await synthesize_speech(
+                text=fallback_unclear,
+                mode=voice_mode,
+                wellness_score=75,
+                dominant_state="Calm",
+                voice=voice,
+                language_mode="indian_english"
+            )
+            return {
+                "transcript": "",
+                "reply_text": fallback_unclear,
+                "audio_url": ai_audio_url,
+                "acoustic_features": acoustic_features,
+                "user_emotion": "neutral",
+                "listening_face": "caring",
+                "speaking_face": "happy",
+                "overall_wellness": 75,
+                "evaluation": {
+                    "overall_wellness": 75,
+                    "dominant_state": "Calm",
+                    "dominant_emotion": "attentive"
+                },
+                "suggest_grounding": False,
+                "grounding_mode": "box",
+                "language_mode": "indian_english",
+                "speech_register": "warm_conversational",
+                "new_title": None
+            }
+        transcript = whisper_text.strip()
         eval_result = analyze_and_respond(
             current_transcript=transcript,
             acoustic_features=acoustic_features,

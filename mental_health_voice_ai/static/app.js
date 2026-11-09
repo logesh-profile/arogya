@@ -72,7 +72,12 @@ const crisisHelplineGrid = document.getElementById("crisisHelplineGrid");
 let isHandsFree = false;
 let vadSilenceTimer = null;
 let vadHasSpoken = false;
-let vadNoiseFloor = 6.0;
+let speechDetectedInCurrentTurn = false;
+let vadNoiseFloor = 8.0;
+let vadFrameCount = 0;
+let vadConsecutiveSpeechFrames = 0;
+let bargeInFrameCount = 0;
+let isTurnProcessing = false;
 let lastSpeechActivityTimestamp = 0;
 let lastFinalSpeechTimestamp = 0;
 let autoSubmitTriggered = false;
@@ -1445,6 +1450,14 @@ async function initMicDeviceSelector() {
             });
             micDeviceSelect._hasChangeListener = true;
         }
+
+        if (navigator.mediaDevices && !navigator.mediaDevices._hasDeviceChangeListener) {
+            navigator.mediaDevices._hasDeviceChangeListener = true;
+            navigator.mediaDevices.addEventListener("devicechange", async () => {
+                console.log("[*] Audio hardware change detected (headphone/mic connected or removed). Re-enumerating devices...");
+                await initMicDeviceSelector();
+            });
+        }
     } catch (err) {
         console.warn("Could not enumerate audio devices:", err);
         if (micDeviceSelect && micDeviceSelect.options.length === 0) {
@@ -1655,28 +1668,45 @@ function startVisualizer(stream) {
         }
 
         // 3. ChatGPT-Style Barge-In / Interruption Detection
-        if (audioPlayer && !audioPlayer.paused && audioPlayer.currentTime > 0) {
-            if (vocalPercent > 16) {
-                console.log("[*] Barge-in detected: User interrupted Arogya!");
-                audioPlayer.pause();
-                audioPlayer.currentTime = 0;
-                setLiveStatus("Listening...", "listening");
-                orbCaption.textContent = "You spoke — Arogya paused to listen to you";
-                if (modalStateText) modalStateText.textContent = "Arogya paused • Listening to you...";
-                if (orbWrap) {
-                    orbWrap.classList.remove("speaking");
-                    orbWrap.classList.add("listening");
+        // Grace period: ignore during first 800ms to eliminate false triggers from audio startup / speaker pop
+        if (audioPlayer && !audioPlayer.paused && audioPlayer.currentTime > 0.8) {
+            // Speaker echo from laptop/phone built-in speakers reaches ~20-35%.
+            // User intentional interruption requires high vocal energy (>= 54%) sustained over multiple frames (>= 4 frames ~ 130ms)
+            if (vocalPercent >= 54) {
+                bargeInFrameCount = (bargeInFrameCount || 0) + 1;
+                if (bargeInFrameCount >= 4) {
+                    console.log("[*] Intentional user voice barge-in detected. Pausing AI speech!");
+                    bargeInFrameCount = 0;
+                    audioPlayer.pause();
+                    audioPlayer.currentTime = 0;
+                    setLiveStatus("Listening...", "listening");
+                    orbCaption.textContent = "You spoke — Arogya paused to listen to you";
+                    if (modalStateText) modalStateText.textContent = "Arogya paused • Listening to you...";
+                    if (orbWrap) {
+                        orbWrap.classList.remove("speaking");
+                        orbWrap.classList.add("listening");
+                    }
+                    if (!isRecording && !isTurnProcessing) {
+                        startRecording();
+                    }
                 }
+            } else {
+                bargeInFrameCount = Math.max(0, (bargeInFrameCount || 0) - 1);
             }
+        } else {
+            bargeInFrameCount = 0;
         }
 
         // 4. Conversational Voice Activity Detection (VAD) & Fluid Auto-Turn Pacing
         if (isRecording) {
-            // Adaptive noise floor tracking (smoothly adapts to room ambient noise, AC, and fans)
-            if (vocalPercent < 15) {
-                vadNoiseFloor = 0.96 * vadNoiseFloor + 0.04 * vocalPercent;
+            // Adaptive noise floor tracking (adapts to room ambient noise, laptop fans, headphones)
+            if (vadFrameCount < 15) {
+                vadFrameCount++;
+                vadNoiseFloor = 0.8 * vadNoiseFloor + 0.2 * vocalPercent;
+            } else if (vocalPercent < vadNoiseFloor + 4) {
+                vadNoiseFloor = 0.98 * vadNoiseFloor + 0.02 * vocalPercent;
             }
-            const speechThreshold = Math.max(16, Math.round(vadNoiseFloor + 10));
+            const speechThreshold = Math.max(14, Math.round(vadNoiseFloor + 9));
             const isVocalEnergyActive = (vocalPercent >= speechThreshold);
             const hasRecognizedWords = Boolean((recognizedTranscript && recognizedTranscript.trim().length > 0) || (textInput && textInput.value && textInput.value.trim().length > 0));
 
@@ -1686,29 +1716,27 @@ function startVisualizer(stream) {
                     clearTimeout(initialSilenceTimer);
                     initialSilenceTimer = null;
                 }
-                vadVoicedFrameCount = (typeof vadVoicedFrameCount !== "undefined" ? vadVoicedFrameCount : 0) + 1;
-                if (vadVoicedFrameCount >= 2) {
+                vadConsecutiveSpeechFrames = (vadConsecutiveSpeechFrames || 0) + 1;
+                if (vadConsecutiveSpeechFrames >= 2) {
                     vadHasSpoken = true;
+                    speechDetectedInCurrentTurn = true;
                 }
                 lastSpeechActivityTimestamp = performance.now();
             } else {
-                if (typeof vadVoicedFrameCount !== "undefined") {
-                    vadVoicedFrameCount = Math.max(0, vadVoicedFrameCount - 1);
-                }
+                vadConsecutiveSpeechFrames = Math.max(0, (vadConsecutiveSpeechFrames || 0) - 1);
             }
 
             // Continuous Turn-Taking: Auto-submit when user stops speaking (no button click needed!)
-            if (!autoSubmitTriggered && (vadHasSpoken || hasRecognizedWords) && lastSpeechActivityTimestamp > 0) {
+            if (!autoSubmitTriggered && (vadHasSpoken || hasRecognizedWords || speechDetectedInCurrentTurn) && lastSpeechActivityTimestamp > 0) {
                 const now = performance.now();
                 const quietMs = now - lastSpeechActivityTimestamp;
-                const isFinalized = (lastFinalSpeechTimestamp > 0 && (now - lastFinalSpeechTimestamp >= 700));
-                const isNaturalPause = (quietMs >= 1200);
+                const isFinalized = (lastFinalSpeechTimestamp > 0 && (now - lastFinalSpeechTimestamp >= 650));
+                const isNaturalPause = (quietMs >= 1150);
 
                 if ((isFinalized || isNaturalPause) && (isVoiceModalActive || isHandsFree)) {
                     console.log(`[*] Conversational turn complete (${Math.round(quietMs)}ms quiet, finalized=${isFinalized}). Auto-submitting speech!`);
                     autoSubmitTriggered = true;
-                    vadHasSpoken = false;
-                    vadVoicedFrameCount = 0;
+                    // Keep vadHasSpoken and speechDetectedInCurrentTurn true so mediaRecorder.onstop knows speech was present!
                     lastSpeechActivityTimestamp = 0;
                     lastFinalSpeechTimestamp = 0;
                     stopRecording();
@@ -1919,16 +1947,16 @@ function setupAudioPlayerEvents() {
 
             // In Voice Mode: automatically resume listening for user's next turn
             setTimeout(() => {
-                if (isVoiceModalActive && !isRecording) {
+                if (isVoiceModalActive && !isRecording && !isTurnProcessing) {
+                    startRecording();
+                }
+            }, 400);
+        } else if (isHandsFree && !isRecording) {
+            setTimeout(() => {
+                if (isHandsFree && !isRecording && !isTurnProcessing) {
                     startRecording();
                 }
             }, 500);
-        } else if (isHandsFree && !isRecording) {
-            setTimeout(() => {
-                if (isHandsFree && !isRecording) {
-                    startRecording();
-                }
-            }, 600);
         }
     });
 
@@ -2371,24 +2399,11 @@ function initSpeechRecognition() {
         speechRecognizer.lang = "en-IN";
 
         speechRecognizer.onresult = (event) => {
-            // Real-time interruption management: stop playback instantly if user starts speaking!
+            // Guard: If Arogya is actively speaking, ignore mic acoustic bleed from device speakers
+            // so Arogya never interrupts itself or transcribes its own voice.
+            // Tap on orb / mic or spacebar provides instant 100% reliable interruption.
             if (audioPlayer && !audioPlayer.paused) {
-                console.log("[*] Interruption detected: stopping AI speech playback.");
-                audioPlayer.pause();
-                audioPlayer.currentTime = 0;
-                setLiveStatus("Listening...", "listening");
-                if (isVoiceModalActive) {
-                    const modalState = document.getElementById("modalVoiceStateText");
-                    if (modalState) modalState.textContent = "Arogya paused • Listening to you...";
-                    const orbWrap = document.getElementById("voiceOrbWrapper");
-                    if (orbWrap) {
-                        orbWrap.classList.remove("speaking");
-                        orbWrap.classList.add("listening");
-                    }
-                }
-                if (!isRecording) {
-                    startRecording();
-                }
+                return;
             }
 
             let interim = "";
@@ -2476,9 +2491,13 @@ async function startRecording() {
         if (textInput) textInput.value = "";
         autoSubmitTriggered = false;
         vadHasSpoken = false;
+        speechDetectedInCurrentTurn = false;
+        vadFrameCount = 0;
+        vadConsecutiveSpeechFrames = 0;
+        bargeInFrameCount = 0;
         lastSpeechActivityTimestamp = 0;
         lastFinalSpeechTimestamp = 0;
-        vadNoiseFloor = 6.0;
+        vadNoiseFloor = 8.0;
         if (vadSilenceTimer) {
             clearTimeout(vadSilenceTimer);
             vadSilenceTimer = null;
@@ -2503,15 +2522,22 @@ async function startRecording() {
             const isBrowserHallucination = currentText.toLowerCase().split(/\s+/).every(w => w === "you" || w === "thank");
             const finalClientText = (!isBrowserHallucination && currentText.length >= 2) ? currentText : "";
 
-            const hasSpokenInput = vadHasSpoken || (finalClientText.length >= 2);
-            if (hasSpokenInput && ((lastRecordedBlob && lastRecordedBlob.size > 800) || finalClientText.length >= 2)) {
+            const hasValidAudioBlob = Boolean(lastRecordedBlob && lastRecordedBlob.size > 900);
+            const userActuallySpoke = vadHasSpoken || speechDetectedInCurrentTurn || (finalClientText.length >= 2);
+
+            // Reset turn speech detection flags
+            vadHasSpoken = false;
+            speechDetectedInCurrentTurn = false;
+            vadConsecutiveSpeechFrames = 0;
+
+            if ((userActuallySpoke || (lastRecordedBlob && lastRecordedBlob.size > 2200)) && (hasValidAudioBlob || finalClientText.length >= 2)) {
                 orbCaption.textContent = "Voice captured. Arogya is reflecting...";
                 setLiveStatus("Reflecting...", "listening");
                 if (isVoiceModalActive) {
                     const modalState = document.getElementById("modalVoiceStateText");
                     if (modalState) modalState.textContent = "Arogya is reflecting...";
                     const userLive = document.getElementById("modalUserLiveText");
-                    if (userLive && finalClientText) userLive.textContent = `"${finalClientText}"`;
+                    if (userLive) userLive.textContent = finalClientText ? `"${finalClientText}"` : '"Listening to your thoughts..."';
                 }
                 await handleTextSubmit(finalClientText);
                 return;
@@ -2521,7 +2547,7 @@ async function startRecording() {
                     const modalState = document.getElementById("modalVoiceStateText");
                     if (modalState) modalState.textContent = "Listening... Speak when ready.";
                     setTimeout(() => {
-                        if (isVoiceModalActive && !isRecording && (audioPlayer.paused || audioPlayer.ended)) {
+                        if (isVoiceModalActive && !isRecording && (audioPlayer.paused || audioPlayer.ended) && !isTurnProcessing) {
                             startRecording();
                         }
                     }, 800);
@@ -2571,7 +2597,7 @@ function stopRecording() {
     if (isRecording) {
         isRecording = false;
         autoSubmitTriggered = true;
-        vadHasSpoken = false;
+        // vadHasSpoken and speechDetectedInCurrentTurn are retained for mediaRecorder.onstop inspection
         lastSpeechActivityTimestamp = 0;
         lastFinalSpeechTimestamp = 0;
         if (vadSilenceTimer) {
@@ -2614,35 +2640,40 @@ function stopRecording() {
 
 // --- SUBMISSION: CHATGPT-SPEED RESPONSE & IMMEDIATE TITLING ---
 async function handleTextSubmit(overrideText = null) {
-    let text = "";
-    if (typeof overrideText === "string" && overrideText.trim().length > 0 && !overrideText.includes("[object")) {
-        text = overrideText.trim();
-    } else if (textInput && typeof textInput.value === "string" && textInput.value.trim().length > 0) {
-        text = textInput.value.trim();
-    }
-
-    const audioToSend = lastRecordedBlob;
-    lastRecordedBlob = null;
-
-    if (!text && !audioToSend) {
-        orbCaption.textContent = "Please speak into the mic or type first.";
+    if (isTurnProcessing) {
+        console.log("[*] Turn already processing, ignoring duplicate trigger");
         return;
     }
-
-    if (textInput) textInput.value = "";
-    appendPendingUserToUI(text || "Voice reflection...");
-    setLiveStatus("Reflecting...", "listening");
-    orbCaption.textContent = "Arogya is reflecting...";
-    notifyEsp32Emotion("thinking");
-
-    if (isVoiceModalActive) {
-        const modalState = document.getElementById("modalVoiceStateText");
-        if (modalState) modalState.textContent = "Arogya is reflecting...";
-        const userLive = document.getElementById("modalUserLiveText");
-        if (userLive) userLive.textContent = `"${text || 'Listening to your voice...'}"`;
-    }
-
+    isTurnProcessing = true;
     try {
+        let text = "";
+        if (typeof overrideText === "string" && overrideText.trim().length > 0 && !overrideText.includes("[object")) {
+            text = overrideText.trim();
+        } else if (textInput && typeof textInput.value === "string" && textInput.value.trim().length > 0) {
+            text = textInput.value.trim();
+        }
+
+        const audioToSend = lastRecordedBlob;
+        lastRecordedBlob = null;
+
+        if (!text && !audioToSend) {
+            orbCaption.textContent = "Please speak into the mic or type first.";
+            return;
+        }
+
+        if (textInput) textInput.value = "";
+        appendPendingUserToUI(text || "Voice reflection...");
+        setLiveStatus("Reflecting...", "listening");
+        orbCaption.textContent = "Arogya is reflecting...";
+        notifyEsp32Emotion("thinking");
+
+        if (isVoiceModalActive) {
+            const modalState = document.getElementById("modalVoiceStateText");
+            if (modalState) modalState.textContent = "Arogya is reflecting...";
+            const userLive = document.getElementById("modalUserLiveText");
+            if (userLive) userLive.textContent = `"${text || 'Listening to your voice...'}"`;
+        }
+
         let res, data;
         if (audioToSend) {
             const formData = new FormData();
@@ -2730,6 +2761,8 @@ async function handleTextSubmit(overrideText = null) {
         console.error("Chat error:", err);
         setLiveStatus("Ready", "");
         orbCaption.textContent = "Could not connect to Arogya. Try again.";
+    } finally {
+        isTurnProcessing = false;
     }
 }
 

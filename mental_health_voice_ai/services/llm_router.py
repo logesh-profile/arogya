@@ -23,17 +23,17 @@ def get_groq_client():
                 print(f"[!] Groq import notice: {e}")
     return _groq_llm_client
 
-def query_groq_llm(prompt: str, system_instruction: str, max_tokens: int = 550, required_key: Optional[str] = "reply_text") -> Optional[Dict[str, Any]]:
+def query_groq_llm(prompt: str, system_instruction: str, max_tokens: int = 400, required_key: Optional[str] = "reply_text") -> Optional[Dict[str, Any]]:
     """
-    Sub-second conversational LLM reasoning via Groq LPU (~300ms).
-    Primary: openai/gpt-oss-120b, openai/gpt-oss-20b, qwen/qwen3.8-27b
+    Sub-second conversational LLM reasoning via Groq LPU (~300-500ms).
+    Primary: qwen/qwen3.8-27b (instant sub-second), openai/gpt-oss-20b, openai/gpt-oss-120b.
     """
     client = get_groq_client()
     if not client:
         return None
-    models = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
+    models = ["qwen/qwen3.8-27b", "openai/gpt-oss-20b", "openai/gpt-oss-120b"]
     for model_name in models:
-        tokens_to_request = 1500 if model_name.startswith("openai/") else max_tokens
+        tokens_to_request = max_tokens
         for attempt in range(2):
             try:
                 completion = client.chat.completions.create(
