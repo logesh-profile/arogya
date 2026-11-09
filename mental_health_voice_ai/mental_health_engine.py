@@ -37,6 +37,7 @@ from services.clinical_scoring import (
     check_crisis_risk,
     compute_deterministic_wellness,
     generate_quick_session_title,
+    generate_holistic_friendly_summary,
     PHQ9_QUESTIONS,
     GAD7_QUESTIONS,
     RESPONSE_SCALE,
@@ -49,7 +50,8 @@ from prompts.companion_persona import (
     EMOTION_FACE_MAP,
     normalize_text_for_speech,
     classify_user_emotion_from_voice_tone,
-    generate_memory_greeting
+    generate_memory_greeting,
+    generate_proactive_silence_opener
 )
 
 
@@ -487,5 +489,7 @@ __all__ = [
     "GAD7_QUESTIONS",
     "RESPONSE_SCALE",
     "score_phq9",
-    "score_gad7"
+    "score_gad7",
+    "generate_proactive_silence_opener",
+    "generate_holistic_friendly_summary"
 ]

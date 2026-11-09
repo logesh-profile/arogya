@@ -66,6 +66,8 @@ from mental_health_engine import (
     analyze_and_respond,
     generate_quick_session_title,
     generate_memory_greeting,
+    generate_proactive_silence_opener,
+    generate_holistic_friendly_summary,
     classify_user_emotion_from_voice_tone,
     PHQ9_QUESTIONS,
     GAD7_QUESTIONS,
@@ -551,6 +553,94 @@ async def get_initial_greeting(
         "speaking_face": "happy"
     }
 
+@app.post("/api/voice/proactive_opener")
+async def get_proactive_silence_opener(
+    request: Request,
+    session_id: Optional[str] = Form(None),
+    voice_mode: str = Form("fast"),
+    voice: Optional[str] = Form(None),
+    language_mode: str = Form("indian_english")
+):
+    """
+    Hands-free voice mode ice-breaker: Triggered when user enters voice mode and stays silent for 3.5 seconds.
+    Arogya warmly breaks the ice first so the user is never left in awkward silence.
+    Strictly ZERO clinical words. Strictly ZERO 'I hear you'.
+    """
+    user = get_effective_user(request)
+    opener_data = generate_proactive_silence_opener(
+        session_id=session_id,
+        user_id=user["id"],
+        language_mode=language_mode
+    )
+    reply_text = opener_data.get("reply_text", "Hey there! I'm right here whenever you're ready.")
+    spoken_text = opener_data.get("spoken_text", reply_text)
+    det_lang = opener_data.get("language_mode", language_mode)
+    tts_voice = opener_data.get("tts_voice") or voice
+
+    audio_url = None
+    if voice_mode != "none":
+        try:
+            audio_url = await synthesize_speech(
+                text=reply_text,
+                mode=voice_mode,
+                wellness_score=85,
+                dominant_state="Calm",
+                language_mode=det_lang,
+                spoken_text=spoken_text,
+                voice=tts_voice
+            )
+        except Exception as e:
+            print(f"[!] Proactive opener speech notice: {e}")
+
+    # Persist assistant opener to session so dialogue continuity is maintained
+    if session_id:
+        try:
+            save_message(session_id, "assistant", reply_text, audio_path=audio_url, user_id=user["id"])
+        except Exception as se:
+            print(f"[!] Session message save notice: {se}")
+
+    return {
+        "reply_text": reply_text,
+        "spoken_text": spoken_text,
+        "audio_url": audio_url,
+        "language_mode": det_lang
+    }
+
+@app.post("/api/sessions/{session_id}/finalize")
+def finalize_session(session_id: str, request: Request):
+    """
+    Synthesizes the entire multi-turn conversation when user taps 'End Conversation'.
+    Generates a holistic, uplifting Heart-to-Heart Summary & Wellness Vibe card.
+    Strictly ZERO clinical or diagnostic jargon.
+    """
+    user = get_effective_user(request)
+    messages = get_session_messages(session_id)
+
+    user_name = user.get("preferred_name") or user.get("given_name") or user.get("name")
+    summary = generate_holistic_friendly_summary(messages, user_name=user_name)
+
+    # Persist final overall wellness and vibe title in sessions table
+    overall_w = summary.get("overall_wellness", 80)
+    vibe_title = summary.get("vibe_title", "Feeling Balanced")
+    shift_text = summary.get("emotional_shift", "")
+
+    try:
+        update_session_meta(
+            session_id=session_id,
+            wellness=overall_w,
+            emotion=vibe_title,
+            summary=shift_text
+        )
+    except Exception as e:
+        print(f"[!] Session finalize DB update notice: {e}")
+
+    return {
+        "status": "success",
+        "session_id": session_id,
+        "summary": summary
+    }
+
+
 # ---------------------------------------------------------------------------
 # ESP32 ROBOT DISPLAY & AFFECTIVE ATTUNEMENT SERIAL ENDPOINTS
 # ---------------------------------------------------------------------------
@@ -883,7 +973,7 @@ async def process_text_chat(
     bridge.last_activity_time = time.time()
     bridge.send(f"EMO:{speaking_face}")
 
-    reply_text = eval_result.get("reply_text", "I hear you, and thank you for sharing that with me.")
+    reply_text = eval_result.get("reply_text", "I'm right here with you, and thank you for sharing that with me.")
     spoken_text = eval_result.get("spoken_text")
     language_mode = eval_result.get("language_mode", "indian_english")
     speech_register = eval_result.get("speech_register", "warm_conversational")

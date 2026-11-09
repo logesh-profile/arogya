@@ -86,6 +86,8 @@ let isVoiceModalActive = false;
 let voiceToneCentroid = 200;
 let currentAiReplyText = "";
 let currentSpeakingFace = "happy";
+let initialSilenceTimer = null;
+let isProactiveOpenerPlaying = false;
 
 // Web companion activity state stubs
 function notifyEsp32SpeechState(state, face = null) {}
@@ -1122,6 +1124,7 @@ function enterVoiceMode() {
         audioPlayer.currentTime = 0;
     }
     isVoiceModalActive = true;
+    isProactiveOpenerPlaying = false;
     const modal = document.getElementById("chatgptVoiceModal");
     if (modal) modal.classList.remove("hidden");
 
@@ -1149,9 +1152,69 @@ function enterVoiceMode() {
     if (!isRecording) {
         startRecording();
     }
+
+    // Proactive initial silence opener: If user enters voice mode and stays silent for 3.5s,
+    // Arogya warmly starts the conversation first!
+    if (initialSilenceTimer) {
+        clearTimeout(initialSilenceTimer);
+        initialSilenceTimer = null;
+    }
+    initialSilenceTimer = setTimeout(triggerSilenceOpener, 3500);
+}
+
+async function triggerSilenceOpener() {
+    if (!isVoiceModalActive || vadHasSpoken) return;
+    console.log("[*] Proactive silence opener triggering (3.5s elapsed without speech)...");
+
+    const modalState = document.getElementById("modalVoiceStateText");
+    if (modalState) modalState.textContent = "Arogya is saying hello...";
+
+    try {
+        const formData = new FormData();
+        formData.append("session_id", currentSessionId || "");
+        formData.append("voice_mode", voiceMode || "fast");
+        formData.append("voice", selectedVoice || "");
+        formData.append("language_mode", (typeof selectedLanguageMode !== "undefined" ? selectedLanguageMode : "indian_english"));
+
+        const res = await apiFetch("/api/voice/proactive_opener", {
+            method: "POST",
+            body: formData
+        });
+
+        if (res.ok) {
+            const data = await res.json();
+            if (!isVoiceModalActive) return; // User closed modal during fetch
+
+            const aiText = document.getElementById("modalAiLiveText");
+            if (aiText && data.reply_text) {
+                aiText.textContent = `"${data.reply_text}"`;
+            }
+
+            const orbWrap = document.getElementById("voiceOrbWrapper");
+            if (orbWrap) {
+                orbWrap.classList.remove("listening");
+                orbWrap.classList.add("speaking");
+            }
+            if (modalState) modalState.textContent = "Arogya speaking...";
+
+            if (data.audio_url) {
+                isProactiveOpenerPlaying = true;
+                playAudio(data.audio_url);
+            }
+        }
+    } catch (err) {
+        console.warn("Proactive silence opener notice:", err);
+        if (modalState) modalState.textContent = "Arogya is listening... speak freely";
+    }
 }
 
 function exitVoiceMode() {
+    if (initialSilenceTimer) {
+        clearTimeout(initialSilenceTimer);
+        initialSilenceTimer = null;
+    }
+    isProactiveOpenerPlaying = false;
+
     if (animFrameId) {
         cancelAnimationFrame(animFrameId);
         animFrameId = null;
@@ -1177,6 +1240,12 @@ function exitVoiceMode() {
 
 async function endVoiceConversation() {
     console.log("[*] Ending Voice Conversation Session...");
+    if (initialSilenceTimer) {
+        clearTimeout(initialSilenceTimer);
+        initialSilenceTimer = null;
+    }
+    isProactiveOpenerPlaying = false;
+
     exitVoiceMode();
 
     if (isRecording) {
@@ -1187,15 +1256,131 @@ async function endVoiceConversation() {
         audioPlayer.currentTime = 0;
     }
 
-    // Refresh and list out the complete conversation in the main view
+    // Call finalize endpoint to synthesize entire conversation into a friendly Heart-to-Heart summary
     if (currentSessionId) {
-        await loadSessionData(currentSessionId);
-        await loadSessions();
+        try {
+            setLiveStatus("Summarizing...", "listening");
+            if (orbCaption) orbCaption.textContent = "Synthesizing our conversation...";
+
+            const res = await apiFetch(`/api/sessions/${currentSessionId}/finalize`, { method: "POST" });
+            if (res.ok) {
+                const data = await res.json();
+                await loadSessionData(currentSessionId);
+                await loadSessions();
+
+                if (data && data.summary) {
+                    renderSessionSummaryCard(data.summary);
+                }
+            } else {
+                await loadSessionData(currentSessionId);
+                await loadSessions();
+            }
+        } catch (e) {
+            console.warn("Finalize notice:", e);
+            await loadSessionData(currentSessionId);
+            await loadSessions();
+        }
     }
 
-    if (orbCaption) orbCaption.textContent = "Conversation completed. All exchanges listed below.";
+    if (orbCaption) orbCaption.textContent = "Conversation completed. Heart-to-Heart summary below.";
     setLiveStatus("Completed", "");
 }
+
+// Friendly Heart-to-Heart Post-Session Summary Card (STRICTLY Zero Clinical Terms)
+function renderSessionSummaryCard(summary) {
+    if (!chatStream) return;
+
+    const existing = document.getElementById("sessionSummaryCard");
+    if (existing) existing.remove();
+
+    const score = summary.overall_wellness != null ? Math.round(summary.overall_wellness) : 80;
+    const scoreClass = score >= 75 ? "score-good" : (score >= 55 ? "score-fair" : "score-low");
+    const title = escapeHtml(summary.vibe_title || "Feeling Balanced & Grounded");
+    const peace = escapeHtml(summary.peace_of_mind || "Calm Waters");
+    const energy = escapeHtml(summary.energy_vibe || "Steady & Recharging");
+    const shift = escapeHtml(summary.emotional_shift || "You took time out to pause, reflect, and find your center.");
+
+    const takeaways = summary.companion_takeaways || [];
+    const takeawaysHtml = takeaways.map(t => `
+        <li class="summary-takeaway-item">
+            <span class="takeaway-bullet">🌿</span>
+            <span>${escapeHtml(t)}</span>
+        </li>
+    `).join("");
+
+    const highlights = summary.chat_highlights || [];
+    const highlightsHtml = highlights.length > 0 ? `
+        <div class="summary-section">
+            <div class="summary-section-label">Highlights from our chat</div>
+            <ul class="summary-highlights-list">
+                ${highlights.map(h => `<li>✨ ${escapeHtml(h)}</li>`).join("")}
+            </ul>
+        </div>
+    ` : "";
+
+    const card = document.createElement("div");
+    card.id = "sessionSummaryCard";
+    card.className = "session-summary-container";
+    card.innerHTML = `
+        <div class="summary-card-inner">
+            <div class="summary-header">
+                <div class="summary-header-badge">
+                    <span class="summary-pulse-dot"></span>
+                    <span>Heart-to-Heart Summary &amp; Wellness Vibe</span>
+                </div>
+                <button class="btn-summary-dismiss" onclick="document.getElementById('sessionSummaryCard')?.remove()" title="Close summary">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <div class="summary-hero-row">
+                <div class="summary-score-dial">
+                    <span class="summary-score-val tabular-num ${scoreClass}">${score}</span>
+                    <span class="summary-score-max">/100</span>
+                </div>
+                <div class="summary-hero-meta">
+                    <div class="summary-vibe-pill ${scoreClass}">${title}</div>
+                    <div class="summary-shift-text">${shift}</div>
+                </div>
+            </div>
+
+            <div class="summary-metrics-grid">
+                <div class="summary-metric-tile">
+                    <div class="summary-tile-label">🌊 Peace of Mind</div>
+                    <div class="summary-tile-value">${peace}</div>
+                </div>
+                <div class="summary-metric-tile">
+                    <div class="summary-tile-label">⚡ Energy Level</div>
+                    <div class="summary-tile-value">${energy}</div>
+                </div>
+            </div>
+
+            ${takeaways.length > 0 ? `
+            <div class="summary-section">
+                <div class="summary-section-label">Friendly Reminders for Today</div>
+                <ul class="summary-takeaways-list">
+                    ${takeawaysHtml}
+                </ul>
+            </div>
+            ` : ""}
+
+            ${highlightsHtml}
+
+            <div class="summary-footer-actions">
+                <button type="button" class="btn-summary-action primary" onclick="startNewSession(true)">
+                    <span>Start Fresh Reflection</span>
+                </button>
+                <button type="button" class="btn-summary-action secondary" onclick="enterVoiceMode()">
+                    <span>Resume Live Voice</span>
+                </button>
+            </div>
+        </div>
+    `;
+
+    chatStream.appendChild(card);
+    chatStream.scrollTop = chatStream.scrollHeight;
+}
+
 
 // --- MICROPHONE DETECTION WITH HARDWARE GUARANTEE ---
 async function initMicDeviceSelector() {
@@ -1497,6 +1682,10 @@ function startVisualizer(stream) {
 
             if (isVocalEnergyActive) {
                 // User is actively vocalizing right now
+                if (initialSilenceTimer) {
+                    clearTimeout(initialSilenceTimer);
+                    initialSilenceTimer = null;
+                }
                 vadVoicedFrameCount = (typeof vadVoicedFrameCount !== "undefined" ? vadVoicedFrameCount : 0) + 1;
                 if (vadVoicedFrameCount >= 2) {
                     vadHasSpoken = true;
@@ -2223,6 +2412,10 @@ function initSpeechRecognition() {
             }
 
             if (liveText.length >= 2) {
+                if (initialSilenceTimer) {
+                    clearTimeout(initialSilenceTimer);
+                    initialSilenceTimer = null;
+                }
                 vadHasSpoken = true;
                 lastSpeechActivityTimestamp = performance.now();
             }

@@ -23,7 +23,7 @@ def get_groq_client():
                 print(f"[!] Groq import notice: {e}")
     return _groq_llm_client
 
-def query_groq_llm(prompt: str, system_instruction: str, max_tokens: int = 550) -> Optional[Dict[str, Any]]:
+def query_groq_llm(prompt: str, system_instruction: str, max_tokens: int = 550, required_key: Optional[str] = "reply_text") -> Optional[Dict[str, Any]]:
     """
     Sub-second conversational LLM reasoning via Groq LPU (~300ms).
     Primary: openai/gpt-oss-120b, openai/gpt-oss-20b, qwen/qwen3.8-27b
@@ -51,7 +51,7 @@ def query_groq_llm(prompt: str, system_instruction: str, max_tokens: int = 550) 
                     raw = re.sub(r"^```(?:json)?\s*", "", raw)
                     raw = re.sub(r"\s*```$", "", raw)
                 cand = json.loads(raw)
-                if cand and isinstance(cand, dict) and "reply_text" in cand:
+                if cand and isinstance(cand, dict) and (not required_key or required_key in cand):
                     print(f"[+] Successfully responded via Groq LPU ({model_name}) in sub-second speed")
                     return cand
             except Exception as e:
@@ -67,7 +67,7 @@ def query_groq_llm(prompt: str, system_instruction: str, max_tokens: int = 550) 
                 break
     return None
 
-def query_local_ollama(prompt: str, system_instruction: str, model_name: str = "qwen2.5:3b") -> Optional[Dict[str, Any]]:
+def query_local_ollama(prompt: str, system_instruction: str, model_name: str = "qwen2.5:3b", required_key: Optional[str] = "reply_text") -> Optional[Dict[str, Any]]:
     """
     Sub-second offline local inference via Ollama (only if explicitly enabled via ENABLE_LOCAL_OLLAMA=1).
     Zero-delay skip on cloud instances.
@@ -99,14 +99,14 @@ def query_local_ollama(prompt: str, system_instruction: str, model_name: str = "
                     response_str = re.sub(r"^```(?:json)?\s*", "", response_str)
                     response_str = re.sub(r"\s*```$", "", response_str)
                 cand = json.loads(response_str)
-                if cand and isinstance(cand, dict) and "reply_text" in cand:
+                if cand and isinstance(cand, dict) and (not required_key or required_key in cand):
                     print(f"[+] Successfully responded via Local Ollama ({target_model}) on GPU")
                     return cand
     except Exception:
         pass
     return None
 
-def query_gemini_backup(prompt: str, system_instruction: str, max_tokens: int = 550) -> Optional[Dict[str, Any]]:
+def query_gemini_backup(prompt: str, system_instruction: str, max_tokens: int = 550, required_key: Optional[str] = "reply_text") -> Optional[Dict[str, Any]]:
     """
     Automatic secondary LLM failover via Google Gemini Flash Lite (~400ms).
     Triggered when Groq hits 429 rate limits, token exhaustion, or connection errors.
@@ -135,7 +135,7 @@ def query_gemini_backup(prompt: str, system_instruction: str, max_tokens: int = 
             text = re.sub(r"^```(?:json)?\s*", "", text)
             text = re.sub(r"\s*```$", "", text)
         cand = json.loads(text)
-        if cand and isinstance(cand, dict) and "reply_text" in cand:
+        if cand and isinstance(cand, dict) and (not required_key or required_key in cand):
             print("[+] Successfully responded via Secondary Backup (Gemini Flash Lite)")
             return cand
     except Exception as e:

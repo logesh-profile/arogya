@@ -284,3 +284,152 @@ def score_gad7(answers: Dict[str, Any]) -> Dict[str, Any]:
         "is_crisis": False
     }
 
+
+# ---------------------------------------------------------------------------
+# 5. HOLISTIC FRIENDLY SESSION SUMMARY & WELLNESS VIBE
+# ---------------------------------------------------------------------------
+def generate_holistic_friendly_summary(
+    session_messages: List[Dict[str, Any]],
+    user_name: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Synthesizes the entire multi-turn conversation into a comprehensive,
+    uplifting, friendly Heart-to-Heart Summary & Wellness Vibe card.
+    STRICTLY ZERO clinical words (no PHQ, GAD, depression, anxiety disorder,
+    psychopathology, clinical assessment, diagnosis, symptomatology).
+    ONLY genuine, supportive, friendly companion language.
+    """
+    clean_user = user_name if (user_name and user_name.lower() not in ["friend", "user", "guest", "guest_user", "primary_user"]) else "Friend"
+
+    # Extract dialogue turns
+    user_turns = []
+    dialogue_snippets = []
+
+    for m in session_messages:
+        role = m.get("role")
+        text = (m.get("text") or "").strip()
+        if not text:
+            continue
+        if role == "user":
+            user_turns.append(text)
+            dialogue_snippets.append(f"User: {text}")
+        elif role == "assistant":
+            dialogue_snippets.append(f"Arogya: {text}")
+
+    # Handle short or quiet session with warm zero-lag defaults
+    if not user_turns:
+        return {
+            "has_dialogue": False,
+            "overall_wellness": 85,
+            "vibe_title": "Quiet Heart-to-Heart",
+            "peace_of_mind": "Peaceful & Settled",
+            "energy_vibe": "Calm & Grounded",
+            "emotional_shift": "Took a quiet pause to check in and connect.",
+            "companion_takeaways": [
+                "Even taking a few seconds to breathe and pause is a healthy gift to yourself.",
+                "I'm always right here whenever you want to talk or unwind."
+            ],
+            "chat_highlights": [
+                "Checked in for a brief peaceful pause."
+            ]
+        }
+
+    full_conversation_text = "\n".join(dialogue_snippets[-12:])
+
+    # Sub-second inference via Groq LPU with Gemini fallback
+    from services.llm_router import get_groq_client, query_groq_llm, query_gemini_backup
+    client = get_groq_client()
+
+    prompt = f"""
+You are Arogya, a warm, loyal best friend and confidant to {clean_user}.
+Review the following multi-turn conversation:
+
+--- CONVERSATION TRANSCRIPT ---
+{full_conversation_text}
+--- END TRANSCRIPT ---
+
+TASK:
+Create a holistic, uplifting, genuinely friendly post-chat Heart-to-Heart Summary & Wellness Vibe.
+
+STRICT CONSTRAINTS (MANDATORY):
+1. ABSOLUTELY ZERO CLINICAL WORDS:
+   Do NOT use: 'depression', 'depressive', 'anxiety', 'disorder', 'clinical', 'diagnosis', 'symptom', 'psychiatric', 'pathology', 'triage', 'PHQ', 'GAD', 'comorbidity', 'assessment', 'intervention'.
+2. ONLY FRIENDLY, UPLIFTING, AUTHENTIC FRIEND WORDS:
+   Use terms like: 'peace of mind', 'vibe', 'energy level', 'catching your breath', 'headspace', 'carrying a bit of stress', 'recharging', 'grounded', 'unwinding'.
+3. STRICT BAN ON CLICHÉS:
+   NEVER write 'I hear you' or robotic therapist lines. Talk like an authentic, supportive buddy.
+4. WELLNESS SCORE:
+   Assign an overall wellness score from 40 to 98 based on how they're feeling (e.g. 80-98 = feeling balanced/positive, 60-79 = unwinding/managing, below 60 = had a very exhausting/stressful day).
+
+Output strictly valid JSON with this exact structure:
+{{
+  "overall_wellness": 82,
+  "vibe_title": "Feeling Lighter & Balanced",
+  "peace_of_mind": "Calm Waters",
+  "energy_vibe": "Steady & Recharging",
+  "emotional_shift": "1-2 warm sentences describing how they felt across the chat (e.g. You came in feeling run-down by deadlines, but talking it through helped you catch your breath and feel much more grounded).",
+  "companion_takeaways": [
+    "2-3 warm, positive, actionable reminders from a real friend (e.g. Put your work laptop away tonight—give yourself a real break.)"
+  ],
+  "chat_highlights": [
+    "1-2 specific positive or honest moments they shared during our chat"
+  ]
+}}
+"""
+
+    if client:
+        try:
+            cand = query_groq_llm(prompt, "You are a warm, loyal companion writing a friendly Heart-to-Heart summary with zero clinical jargon.", max_tokens=450, required_key="overall_wellness")
+            if not cand:
+                cand = query_gemini_backup(prompt, "You are a warm, loyal companion writing a friendly Heart-to-Heart summary with zero clinical jargon.", max_tokens=450, required_key="overall_wellness")
+
+            if cand and isinstance(cand, dict) and "overall_wellness" in cand:
+                wellness_val = int(cand.get("overall_wellness", 80))
+                wellness_val = max(35, min(98, wellness_val))
+
+                takeaways = cand.get("companion_takeaways", [])
+                if not isinstance(takeaways, list) or len(takeaways) == 0:
+                    takeaways = ["Take it easy tonight and give your mind some well-deserved rest."]
+
+                clean_takeaways = []
+                for t in takeaways:
+                    t_str = str(t)
+                    t_str = re.sub(r'(?i)\bi hear you,?\s*', "Honestly, ", t_str)
+                    t_str = re.sub(r'(?i)\bclinical\b', "personal", t_str)
+                    clean_takeaways.append(t_str)
+
+                shift = str(cand.get("emotional_shift") or "You took time out of your busy day to pause, reflect, and find your center.")
+                shift = re.sub(r'(?i)\bi hear you,?\s*', "", shift)
+
+                return {
+                    "has_dialogue": True,
+                    "overall_wellness": wellness_val,
+                    "vibe_title": str(cand.get("vibe_title") or "Feeling Balanced & Grounded"),
+                    "peace_of_mind": str(cand.get("peace_of_mind") or "Calm & Settled"),
+                    "energy_vibe": str(cand.get("energy_vibe") or "Steady & Recharging"),
+                    "emotional_shift": shift,
+                    "companion_takeaways": clean_takeaways[:3],
+                    "chat_highlights": cand.get("chat_highlights", ["Shared an honest heart-to-heart reflection."])[:2]
+                }
+        except Exception as e:
+            print(f"[!] Holistic friendly summary LLM notice: {e}")
+
+    # Instant deterministic friendly fallback (Guarantees zero-lag performance under all network conditions)
+    return {
+        "has_dialogue": True,
+        "overall_wellness": 80,
+        "vibe_title": "Feeling Lighter & Balanced",
+        "peace_of_mind": "Steady Waters",
+        "energy_vibe": "Recharging",
+        "emotional_shift": "You took a moment to share what was on your mind and found a calmer, steadier pace.",
+        "companion_takeaways": [
+            "Put work and stress aside for the rest of today.",
+            "Get some good, uninterrupted sleep tonight.",
+            "Remember I've always got your back whenever you need to talk."
+        ],
+        "chat_highlights": [
+            "Talked through what was on your mind and ended on a grounded note."
+        ]
+    }
+
+

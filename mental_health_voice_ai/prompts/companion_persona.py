@@ -421,3 +421,69 @@ Keep it simple, serene, and warm. Output strictly valid JSON.
         "tts_voice": "en-IN-NeerjaExpressiveNeural"
     }
 
+
+# ---------------------------------------------------------------------------
+# 5. PROACTIVE SILENCE ICE-BREAKER (When User Enters Voice Mode and Stays Silent)
+# ---------------------------------------------------------------------------
+def generate_proactive_silence_opener(
+    session_id: Optional[str] = None,
+    user_id: str = "guest_user",
+    language_mode: str = "indian_english"
+) -> Dict[str, Any]:
+    """
+    Ultra-warm, natural 1-sentence icebreaker triggered when the user enters
+    voice mode but stays quiet for 3.5 seconds.
+    ZERO clinical words. ZERO 'I hear you'. ZERO interrogation.
+    """
+    from services.llm_router import get_groq_client, query_groq_llm
+    try:
+        from database import get_recent_session_memory_anchor, get_user_clinical_profile, get_user_by_id
+    except ImportError:
+        from mental_health_voice_ai.database import get_recent_session_memory_anchor, get_user_clinical_profile, get_user_by_id
+
+    anchor = get_recent_session_memory_anchor(user_id=user_id, exclude_session_id=session_id)
+    profile = anchor.get("profile") or get_user_clinical_profile(user_id)
+    companion_name = profile.get("companion_name") or "Arogya"
+
+    user_info = get_user_by_id(user_id) if user_id else None
+    name = None
+    if user_info:
+        name = user_info.get("preferred_name") or user_info.get("given_name") or user_info.get("name")
+    if not name or name.strip().lower() in ["user", "friend", "primary_user", "guest_user"]:
+        name = profile.get("user_name")
+    if not name or name.strip().lower() in ["user", "friend", "primary_user", "guest_user"]:
+        name = None
+    short_name = name.split()[0] if name else None
+
+    # Immediate authentic language branching
+    if language_mode == "tamil":
+        spoken = "வணக்கம்! நான் இங்கேயே தான் இருக்கிறேன், நீங்கள் பேச நினைக்கும்போது சொல்லுங்கள்."
+        return {
+            "reply_text": spoken,
+            "spoken_text": spoken,
+            "language_mode": "tamil",
+            "tts_voice": "ta-IN-PallaviNeural"
+        }
+    elif language_mode in ["tanglish", "code_switched"]:
+        spoken = f"Hey {short_name + ', ' if short_name else ''}naan inga dhaan irukken. Edhavadhu share pannanumna sollunga, chill-ah pesalaam."
+        return {
+            "reply_text": spoken,
+            "spoken_text": spoken,
+            "language_mode": "tanglish",
+            "tts_voice": "en-IN-NeerjaExpressiveNeural"
+        }
+
+    # English / General: Instant zero-latency personalized friendly icebreaker
+    if short_name:
+        default_en = f"Hey {short_name}, I'm right here whenever you're ready. What's on your mind today?"
+    else:
+        default_en = "Hey there! I'm right here whenever you're ready. What's on your mind today?"
+
+    return {
+        "reply_text": default_en,
+        "spoken_text": default_en,
+        "language_mode": "indian_english",
+        "tts_voice": "en-IN-NeerjaExpressiveNeural"
+    }
+
+
