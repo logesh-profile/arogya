@@ -141,3 +141,4 @@ def query_gemini_backup(prompt: str, system_instruction: str, max_tokens: int = 
     except Exception as e:
         print(f"[!] Secondary Gemini backup notice: {e}")
     return None
+

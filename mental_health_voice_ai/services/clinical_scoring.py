@@ -283,3 +283,4 @@ def score_gad7(answers: Dict[str, Any]) -> Dict[str, Any]:
         "answers": clean_answers,
         "is_crisis": False
     }
+
