@@ -2272,7 +2272,7 @@ html, body {
 }
 
 /* --------------------------------------------------------------------------
-   CHATGPT IMMERSIVE VOICE MODE MODAL
+   CHATGPT IMMERSIVE VOICE MODE MODAL (Screenshots 1, 2, 3, 4, 5)
    -------------------------------------------------------------------------- */
 .chatgpt-voice-modal {
     position: fixed;
@@ -2281,6 +2281,7 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: center;
+    background: #000000;
     transition: opacity 0.3s ease, visibility 0.3s ease;
 }
 
@@ -2293,28 +2294,21 @@ html, body {
 .chatgpt-voice-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.92);
-    backdrop-filter: blur(28px);
-    -webkit-backdrop-filter: blur(28px);
-}
-
-[data-theme="light"] .chatgpt-voice-backdrop {
-    background: rgba(255, 255, 255, 0.94);
+    background: #000000;
 }
 
 .chatgpt-voice-container {
     position: relative;
     z-index: 2;
     width: 100%;
-    max-width: 680px;
-    height: 90vh;
-    height: 90dvh;
-    max-height: 800px;
+    max-width: 720px;
+    height: 100vh;
+    height: 100dvh;
     display: flex;
     flex-direction: column;
     justify-content: space-between;
     align-items: center;
-    padding: max(18px, calc(14px + env(safe-area-inset-top, 0px))) max(20px, calc(14px + env(safe-area-inset-right, 0px))) max(20px, calc(14px + env(safe-area-inset-bottom, 0px))) max(20px, calc(14px + env(safe-area-inset-left, 0px)));
+    padding: max(16px, env(safe-area-inset-top, 0px)) 20px max(24px, env(safe-area-inset-bottom, 0px));
     box-sizing: border-box;
 }
 
@@ -2324,6 +2318,8 @@ html, body {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    padding-bottom: 8px;
+    flex-shrink: 0;
 }
 
 .voice-topbar-brand {
@@ -2341,12 +2337,12 @@ html, body {
     font-family: var(--font-ui);
     font-size: 14px;
     font-weight: 700;
-    color: var(--text-primary);
+    color: #f8fafc;
 }
 
 .voice-mode-sub {
     font-size: 11px;
-    color: var(--text-muted);
+    color: #64748b;
 }
 
 .voice-topbar-actions {
@@ -2357,9 +2353,9 @@ html, body {
 
 .btn-voice-minimize {
     background: transparent;
-    border: 1px solid var(--border-base);
-    color: var(--text-secondary);
-    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #94a3b8;
+    border-radius: 8px;
     padding: 6px;
     cursor: pointer;
     display: flex;
@@ -2369,30 +2365,95 @@ html, body {
 }
 
 .btn-voice-minimize:hover {
-    color: var(--text-primary);
-    border-color: var(--border-hover);
-    background: var(--bg-surface);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.08);
 }
 
-/* Modal Stage: Spectacular Voice Orb */
-.chatgpt-voice-stage {
+/* ChatGPT Live Scrollable Conversation Stream (Screenshots 2 & 3) */
+.voice-conversation-stream {
+    flex: 1;
+    width: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px 8px 24px;
+    box-sizing: border-box;
+    scroll-behavior: smooth;
+    mask-image: linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 5%, black 95%, transparent 100%);
+}
+
+.voice-conversation-stream::-webkit-scrollbar {
+    width: 4px;
+}
+.voice-conversation-stream::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+}
+
+/* User speech bubble in voice mode (Screenshot 2 & 3) */
+.voice-bubble-user {
+    align-self: flex-end;
+    max-width: 82%;
+    background: #1d4ed8;
+    color: #ffffff;
+    font-size: 15px;
+    line-height: 1.48;
+    padding: 10px 16px;
+    border-radius: 20px 20px 4px 20px;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.35);
+    word-break: break-word;
+    animation: fadeInSlideUp 0.22s ease-out;
+}
+
+/* AI spoken text in voice mode (Screenshot 2 & 3) */
+.voice-bubble-ai {
+    align-self: flex-start;
+    max-width: 88%;
+    color: #f1f5f9;
+    font-size: 15.5px;
+    line-height: 1.58;
+    padding: 4px 2px;
+    word-break: break-word;
+    animation: fadeInSlideUp 0.22s ease-out;
+}
+
+.voice-bubble-ai p {
+    margin: 0 0 8px 0;
+}
+.voice-bubble-ai p:last-child {
+    margin-bottom: 0;
+}
+
+/* Floating Sound & Tone Reactive Voice Orb (Center-Bottom) */
+.chatgpt-voice-floating-orb-area {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    width: 100%;
-    flex: 1;
-    gap: 24px;
+    margin-top: 4px;
+    margin-bottom: 12px;
+    flex-shrink: 0;
 }
 
 .voice-orb-wrapper {
     position: relative;
-    width: clamp(200px, 45vmin, 360px);
-    height: clamp(200px, 45vmin, 360px);
+    width: 140px;
+    height: 140px;
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.voice-orb-wrapper:hover {
+    transform: scale(1.04);
 }
 
 #voiceOrbCanvas {
@@ -2409,156 +2470,197 @@ html, body {
 .voice-orb-center-badge {
     position: relative;
     z-index: 3;
-    width: 80px;
-    height: 80px;
+    width: 58px;
+    height: 58px;
     border-radius: 50%;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-base);
-    box-shadow: 0 0 24px rgba(255, 255, 255, 0.08);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-primary);
+    background: radial-gradient(circle, #3b82f6 0%, #1d4ed8 70%);
+    box-shadow: 0 0 28px rgba(37, 99, 235, 0.6);
     transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .voice-orb-wrapper.speaking .voice-orb-center-badge {
-    box-shadow: 0 0 40px rgba(56, 189, 248, 0.3);
-    border-color: rgba(56, 189, 248, 0.5);
-    color: #38bdf8;
+    background: radial-gradient(circle, #60a5fa 0%, #2563eb 70%);
+    box-shadow: 0 0 44px rgba(96, 165, 250, 0.85);
+    transform: scale(1.1);
 }
 
 .voice-orb-wrapper.listening .voice-orb-center-badge {
-    box-shadow: 0 0 40px rgba(255, 255, 255, 0.25);
-    border-color: var(--border-focus);
-}
-
-/* Dialogue Card in Voice Mode */
-.voice-dialogue-card {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    max-width: 520px;
-    gap: 12px;
+    box-shadow: 0 0 32px rgba(59, 130, 246, 0.5);
 }
 
 .voice-state-pill {
+    margin-top: 8px;
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    padding: 5px 12px;
+    padding: 4px 12px;
     border-radius: 16px;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-base);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
     font-size: 11.5px;
     font-weight: 500;
-    color: var(--text-secondary);
+    color: #cbd5e1;
 }
 
 .voice-pulsing-dot {
-    width: 7px;
-    height: 7px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
-    background: var(--text-primary);
-    box-shadow: 0 0 6px rgba(255, 255, 255, 0.6);
-}
-
-.chatgpt-voice-modal:not(.hidden) .voice-pulsing-dot {
+    background: #38bdf8;
+    box-shadow: 0 0 8px #38bdf8;
     animation: livePulse 1s infinite alternate;
 }
 
-.voice-live-caption-area {
-    min-height: 52px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.voice-user-live-text {
-    font-family: var(--font-caption);
-    font-size: 17px;
-    font-style: italic;
-    font-weight: 300;
-    color: var(--text-user-echo);
-    line-height: 1.45;
-}
-
-.voice-ai-live-text {
-    font-family: var(--font-caption);
-    font-size: 19px;
-    font-weight: 300;
-    color: var(--text-caption);
-    line-height: 1.5;
-}
-
-.voice-interrupt-tip {
-    font-size: 11px;
-    color: var(--text-muted);
-    letter-spacing: 0.01em;
-}
-
-/* Modal Bottom Bar: Big Mic + End Conversation */
-.chatgpt-voice-bottombar {
+/* Inline Quick Text Input Bar (Toggled via '+ Type') */
+.voice-inline-type-bar {
     width: 100%;
+    max-width: 480px;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 20px;
-    padding-top: 16px;
+    gap: 8px;
+    background: rgba(24, 24, 27, 0.95);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 28px;
+    padding: 6px 12px 6px 16px;
+    margin-bottom: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+    animation: fadeInSlideUp 0.2s ease-out;
+    flex-shrink: 0;
 }
 
-.btn-voice-mic-large {
-    width: 56px;
-    height: 56px;
+.voice-inline-type-bar.hidden {
+    display: none;
+}
+
+.voice-inline-type-bar input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: #ffffff;
+    font-size: 14px;
+    outline: none;
+}
+
+.btn-voice-inline-send {
+    background: #2563eb;
+    border: none;
     border-radius: 50%;
-    background: var(--bg-surface);
-    border: 1px solid var(--border-base);
-    color: var(--text-primary);
+    width: 30px;
+    height: 30px;
+    color: #ffffff;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    transition: all 0.15s ease;
+}
+.btn-voice-inline-send:hover {
+    background: #1d4ed8;
+    transform: scale(1.08);
 }
 
-.btn-voice-mic-large:hover {
-    transform: scale(1.06);
-    border-color: var(--border-focus);
+/* ChatGPT Floating Bottom Dock (Screenshots 2 & 3) */
+.chatgpt-voice-floating-dock {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: rgba(28, 28, 30, 0.92);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 9999px;
+    padding: 8px 18px;
+    box-shadow: 0 10px 36px rgba(0, 0, 0, 0.65);
+    flex-shrink: 0;
 }
 
-.btn-voice-mic-large.recording {
-    background: var(--text-primary);
-    color: var(--bg-root);
-    border-color: var(--text-primary);
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.25);
-}
-
-/* The Prominent End Conversation Button */
-.btn-end-conversation {
+.btn-dock-type {
     display: inline-flex;
     align-items: center;
-    gap: 9px;
-    padding: 12px 24px;
-    border-radius: 28px;
-    background: rgba(239, 68, 68, 0.12);
-    border: 1px solid rgba(239, 68, 68, 0.35);
-    color: #ef4444;
-    font-family: var(--font-ui);
-    font-size: 13px;
-    font-weight: 600;
+    gap: 6px;
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 14px;
+    font-weight: 500;
     cursor: pointer;
-    box-shadow: 0 4px 14px rgba(239, 68, 68, 0.1);
+    padding: 6px 10px;
+    border-radius: 20px;
+    transition: all 0.15s ease;
+}
+
+.btn-dock-type:hover {
+    color: #ffffff;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.btn-dock-mute {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.09);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #f1f5f9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.btn-dock-mute:hover {
+    background: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+}
+
+.btn-dock-mute.muted {
+    background: rgba(239, 68, 68, 0.2);
+    border-color: rgba(239, 68, 68, 0.4);
+    color: #ef4444;
+}
+
+.btn-dock-close {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #2563eb;
+    border: none;
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 0 14px rgba(37, 99, 235, 0.5);
     transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.btn-end-conversation:hover {
-    background: #ef4444;
+.btn-dock-close:hover {
+    background: #1d4ed8;
+    transform: scale(1.08);
+}
+
+/* ChatGPT Circular Waveform "Start Voice" Button on Main Input Bar (Screenshot 1) */
+.btn-start-voice-circle {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: #2563eb;
     color: #ffffff;
-    border-color: #ef4444;
-    transform: translateY(-1px);
-    box-shadow: 0 6px 20px rgba(239, 68, 68, 0.35);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    margin-left: 6px;
+    box-shadow: 0 2px 10px rgba(37, 99, 235, 0.45);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    flex-shrink: 0;
+}
+
+.btn-start-voice-circle:hover {
+    background: #1d4ed8;
+    transform: scale(1.08);
+    box-shadow: 0 0 16px rgba(37, 99, 235, 0.7);
 }
 
 /* --------------------------------------------------------------------------

@@ -95,6 +95,59 @@ let initialSilenceTimer = null;
 let isProactiveOpenerPlaying = false;
 let currentBufferSource = null;
 let isAiAudioPlaying = false;
+let currentTurnAbortController = null;
+let isMicMuted = false;
+let bargeInConsecutiveFrames = 0;
+
+// ChatGPT Voice Mode Stream Helpers (Screenshots 2 & 3)
+function appendVoiceBubbleUser(text) {
+    const stream = document.getElementById("voiceChatStream");
+    if (!stream || !text) return;
+    const bubble = document.createElement("div");
+    bubble.className = "voice-bubble-user";
+    bubble.textContent = text;
+    stream.appendChild(bubble);
+    stream.scrollTop = stream.scrollHeight;
+}
+
+function appendVoiceBubbleAi(text) {
+    const stream = document.getElementById("voiceChatStream");
+    if (!stream || !text) return;
+    const bubble = document.createElement("div");
+    bubble.className = "voice-bubble-ai";
+    bubble.textContent = text;
+    stream.appendChild(bubble);
+    stream.scrollTop = stream.scrollHeight;
+}
+
+function populateVoiceStreamFromHistory() {
+    const stream = document.getElementById("voiceChatStream");
+    if (!stream) return;
+    stream.innerHTML = "";
+
+    const existingCards = document.querySelectorAll("#chatMessages .message-card");
+    if (existingCards && existingCards.length > 0) {
+        existingCards.forEach(card => {
+            const userTextEl = card.querySelector(".user-speech-bubble, .message-bubble.user, .user-bubble, .message-user-text");
+            const aiTextEl = card.querySelector(".ai-reply-text, .message-bubble.ai, .ai-bubble, .message-ai-text");
+            if (userTextEl && userTextEl.textContent.trim()) {
+                appendVoiceBubbleUser(userTextEl.textContent.trim());
+            }
+            if (aiTextEl && aiTextEl.textContent.trim()) {
+                appendVoiceBubbleAi(aiTextEl.textContent.trim());
+            }
+        });
+    }
+
+    if (stream.children.length === 0) {
+        const welcome = document.createElement("div");
+        welcome.className = "voice-bubble-ai";
+        welcome.style.opacity = "0.75";
+        welcome.textContent = "Hey, I'm Arogya. Feel free to talk to me about anything on your mind, I'm here and listening.";
+        stream.appendChild(welcome);
+    }
+    stream.scrollTop = stream.scrollHeight;
+}
 
 // Web companion activity state stubs
 function notifyEsp32SpeechState(state, face = null) {}
@@ -1046,6 +1099,12 @@ function initPhase2Controls() {
 
 // --- CHATGPT-STYLE LIVE VOICE MODE CONTROLS ---
 function initVoiceModeControls() {
+    // 1. Circular Waveform "Start Voice" Button on Main Input Bar (Screenshot 1)
+    const startVoiceModeBtn = document.getElementById("startVoiceModeBtn");
+    if (startVoiceModeBtn) {
+        startVoiceModeBtn.addEventListener("click", enterVoiceMode);
+    }
+
     const openVoiceModeBtn = document.getElementById("openVoiceModeBtn");
     if (openVoiceModeBtn) {
         openVoiceModeBtn.addEventListener("click", enterVoiceMode);
@@ -1056,37 +1115,112 @@ function initVoiceModeControls() {
         modalMinimizeBtn.addEventListener("click", exitVoiceMode);
     }
 
+    // 2. Microphone Mute / Unmute & Voice Interruption Button in Floating Dock
     const modalMicToggleBtn = document.getElementById("modalMicToggleBtn");
     if (modalMicToggleBtn) {
         modalMicToggleBtn.addEventListener("click", () => {
-            // Instant interruption: if AI is speaking, tap stops AI speech and starts user turn
+            // Instant interruption: if AI is speaking, tap immediately stops AI speech and starts user turn
             if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
+                console.log("[*] Tap on mic button: interrupting AI speech playback.");
                 stopAllAudioPlayback();
-                setLiveStatus("Listening...", "listening");
+                if (currentTurnAbortController) {
+                    try { currentTurnAbortController.abort(); } catch(e){}
+                    currentTurnAbortController = null;
+                }
+                isAiAudioPlaying = false;
+                const modalState = document.getElementById("modalVoiceStateText");
+                if (modalState) modalState.textContent = "Listening to you...";
+                const orbWrap = document.getElementById("voiceOrbWrapper");
+                if (orbWrap) {
+                    orbWrap.classList.remove("speaking");
+                    orbWrap.classList.add("listening");
+                }
                 startRecording();
                 return;
             }
-            if (isRecording) {
-                stopRecording();
+
+            // Toggle Mute / Unmute
+            isMicMuted = !isMicMuted;
+            const modalState = document.getElementById("modalVoiceStateText");
+            if (isMicMuted) {
+                modalMicToggleBtn.classList.add("muted");
+                if (modalState) modalState.textContent = "Microphone muted";
+                if (isRecording) stopRecording();
             } else {
-                startRecording();
+                modalMicToggleBtn.classList.remove("muted");
+                if (modalState) modalState.textContent = "Listening...";
+                if (!isRecording) startRecording();
             }
         });
     }
 
+    // 3. Tapping the voice orb interrupts playback instantly
     const voiceOrbWrapper = document.getElementById("voiceOrbWrapper");
     if (voiceOrbWrapper) {
         voiceOrbWrapper.addEventListener("click", () => {
-            // Instant interruption when tapping on the central orb
             if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
                 console.log("[*] Tap on voice orb: interrupting AI playback.");
                 stopAllAudioPlayback();
-                setLiveStatus("Listening...", "listening");
+                if (currentTurnAbortController) {
+                    try { currentTurnAbortController.abort(); } catch(e){}
+                    currentTurnAbortController = null;
+                }
+                isAiAudioPlaying = false;
+                const modalState = document.getElementById("modalVoiceStateText");
+                if (modalState) modalState.textContent = "Listening to you...";
+                const orbWrap = document.getElementById("voiceOrbWrapper");
+                if (orbWrap) {
+                    orbWrap.classList.remove("speaking");
+                    orbWrap.classList.add("listening");
+                }
                 startRecording();
             }
         });
     }
 
+    // 4. Quick Inline Text Typing in Voice Mode ('+ Type' button in Floating Dock)
+    const voiceDockTypeBtn = document.getElementById("voiceDockTypeBtn");
+    const voiceInlineTypeBar = document.getElementById("voiceInlineTypeBar");
+    const voiceInlineTextInput = document.getElementById("voiceInlineTextInput");
+    const voiceInlineSendBtn = document.getElementById("voiceInlineSendBtn");
+
+    if (voiceDockTypeBtn && voiceInlineTypeBar) {
+        voiceDockTypeBtn.addEventListener("click", () => {
+            voiceInlineTypeBar.classList.toggle("hidden");
+            if (!voiceInlineTypeBar.classList.contains("hidden") && voiceInlineTextInput) {
+                voiceInlineTextInput.focus();
+            }
+        });
+    }
+
+    const sendInlineText = () => {
+        if (!voiceInlineTextInput) return;
+        const text = voiceInlineTextInput.value.trim();
+        if (!text) return;
+        voiceInlineTextInput.value = "";
+        if (voiceInlineTypeBar) voiceInlineTypeBar.classList.add("hidden");
+        // Interrupt AI if currently playing and send typed prompt
+        stopAllAudioPlayback();
+        if (currentTurnAbortController) {
+            try { currentTurnAbortController.abort(); } catch(e){}
+            currentTurnAbortController = null;
+        }
+        handleTextSubmit(text);
+    };
+
+    if (voiceInlineSendBtn) {
+        voiceInlineSendBtn.addEventListener("click", sendInlineText);
+    }
+    if (voiceInlineTextInput) {
+        voiceInlineTextInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") {
+                e.preventDefault();
+                sendInlineText();
+            }
+        });
+    }
+
+    // 5. Circular Blue 'X' Button to End Conversation & View Summary (Screenshots 2 & 3)
     const endConversationBtn = document.getElementById("endConversationBtn");
     if (endConversationBtn) {
         endConversationBtn.addEventListener("click", endVoiceConversation);
@@ -1107,11 +1241,22 @@ function initVoiceModeControls() {
     const chatgptVoiceModal = document.getElementById("chatgptVoiceModal");
     if (chatgptVoiceModal) {
         chatgptVoiceModal.addEventListener("click", (e) => {
-            if (e.target.closest("#endConversationBtn") || e.target.closest("#modalMinimizeBtn") || e.target.closest("#modalMicToggleBtn")) return;
+            if (e.target.closest("#endConversationBtn") || e.target.closest("#modalMinimizeBtn") || e.target.closest("#modalMicToggleBtn") || e.target.closest("#voiceDockTypeBtn") || e.target.closest("#voiceInlineTypeBar")) return;
             if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
                 console.log("[*] Tap on voice modal: interrupting AI speech playback.");
                 stopAllAudioPlayback();
-                setLiveStatus("Listening...", "listening");
+                if (currentTurnAbortController) {
+                    try { currentTurnAbortController.abort(); } catch(e){}
+                    currentTurnAbortController = null;
+                }
+                isAiAudioPlaying = false;
+                const modalState = document.getElementById("modalVoiceStateText");
+                if (modalState) modalState.textContent = "Listening to you...";
+                const orbWrap = document.getElementById("voiceOrbWrapper");
+                if (orbWrap) {
+                    orbWrap.classList.remove("speaking");
+                    orbWrap.classList.add("listening");
+                }
                 startRecording();
             }
         });
@@ -1124,7 +1269,18 @@ function initVoiceModeControls() {
             if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
                 console.log("[*] Spacebar pressed: interrupting AI speech playback.");
                 stopAllAudioPlayback();
-                setLiveStatus("Listening...", "listening");
+                if (currentTurnAbortController) {
+                    try { currentTurnAbortController.abort(); } catch(e){}
+                    currentTurnAbortController = null;
+                }
+                isAiAudioPlaying = false;
+                const modalState = document.getElementById("modalVoiceStateText");
+                if (modalState) modalState.textContent = "Listening to you...";
+                const orbWrap = document.getElementById("voiceOrbWrapper");
+                if (orbWrap) {
+                    orbWrap.classList.remove("speaking");
+                    orbWrap.classList.add("listening");
+                }
                 startRecording();
             } else if (isRecording) {
                 stopRecording();
@@ -1137,6 +1293,10 @@ function initVoiceModeControls() {
 
 function enterVoiceMode() {
     stopAllAudioPlayback();
+    if (currentTurnAbortController) {
+        try { currentTurnAbortController.abort(); } catch(e){}
+        currentTurnAbortController = null;
+    }
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
@@ -1152,6 +1312,7 @@ function enterVoiceMode() {
     }
     isVoiceModalActive = true;
     isProactiveOpenerPlaying = false;
+    isMicMuted = false;
     const modal = document.getElementById("chatgptVoiceModal");
     if (modal) modal.classList.remove("hidden");
 
@@ -1159,13 +1320,7 @@ function enterVoiceMode() {
     if (inlineStage) inlineStage.classList.add("hidden");
 
     const modalState = document.getElementById("modalVoiceStateText");
-    if (modalState) modalState.textContent = "Arogya is listening... speak freely";
-
-    const userText = document.getElementById("modalUserLiveText");
-    if (userText) userText.textContent = "Listening to your voice...";
-
-    const aiText = document.getElementById("modalAiLiveText");
-    if (aiText) aiText.textContent = "";
+    if (modalState) modalState.textContent = "Listening...";
 
     const orbWrap = document.getElementById("voiceOrbWrapper");
     if (orbWrap) {
@@ -1174,7 +1329,13 @@ function enterVoiceMode() {
     }
 
     const modalMic = document.getElementById("modalMicToggleBtn");
-    if (modalMic) modalMic.classList.add("recording");
+    if (modalMic) {
+        modalMic.classList.remove("muted");
+        modalMic.classList.add("recording");
+    }
+
+    // Populate ChatGPT-style conversation stream from history (Screenshots 2 & 3)
+    populateVoiceStreamFromHistory();
 
     if (!isRecording) {
         startRecording();
@@ -1212,9 +1373,8 @@ async function triggerSilenceOpener() {
             const data = await res.json();
             if (!isVoiceModalActive) return; // User closed modal during fetch
 
-            const aiText = document.getElementById("modalAiLiveText");
-            if (aiText && data.reply_text) {
-                aiText.textContent = `"${data.reply_text}"`;
+            if (data.reply_text) {
+                appendVoiceBubbleAi(data.reply_text);
             }
 
             const orbWrap = document.getElementById("voiceOrbWrapper");
@@ -1708,14 +1868,43 @@ function startVisualizer(stream) {
             }
         }
 
-        // 3. User Interruption Management:
-        // Instant interruption is handled reliably via tapping the central orb, mic button, or Spacebar.
-        // We explicitly do NOT use raw microphone energy thresholds to pause playback because speaker
-        // bleed on mobile and laptop built-in speakers vibrates the mic and causes false self-muting.
+        // 3. Full-Duplex Voice Barge-In (Interruption while AI is Speaking - Screenshot 5)
+        // With browser echoCancellation active, user speech produces an energy spike above ambient floor
+        if (isVoiceModalActive && (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused))) {
+            const bargeInThreshold = Math.max(12, Math.round(vadNoiseFloor + 7));
+            if (percent >= bargeInThreshold) {
+                bargeInConsecutiveFrames = (bargeInConsecutiveFrames || 0) + 1;
+                if (bargeInConsecutiveFrames >= 3) {
+                    console.log("[*] Full-duplex voice barge-in detected! Instantly halting AI playback.");
+                    bargeInConsecutiveFrames = 0;
+                    stopAllAudioPlayback();
+                    if (currentTurnAbortController) {
+                        try { currentTurnAbortController.abort(); } catch(e){}
+                        currentTurnAbortController = null;
+                    }
+                    isAiAudioPlaying = false;
+                    const modalState = document.getElementById("modalVoiceStateText");
+                    if (modalState) modalState.textContent = "Listening to you...";
+                    const orbWrap = document.getElementById("voiceOrbWrapper");
+                    if (orbWrap) {
+                        orbWrap.classList.remove("speaking");
+                        orbWrap.classList.add("listening");
+                    }
+                    if (!isRecording) {
+                        startRecording();
+                    }
+                    vadHasSpoken = true;
+                    speechDetectedInCurrentTurn = true;
+                    lastSpeechActivityTimestamp = performance.now();
+                }
+            } else {
+                bargeInConsecutiveFrames = Math.max(0, (bargeInConsecutiveFrames || 0) - 1);
+            }
+        }
 
-        // 4. Conversational Voice Activity Detection (VAD) & Fluid Auto-Turn Pacing
-        // Strictly active only when Arogya is NOT speaking, eliminating any echo feedback loop
-        if (isRecording && !isAiAudioPlaying && (!audioPlayer || audioPlayer.paused)) {
+        // 4. Conversational Voice Activity Detection (VAD) & Fluid Auto-Turn Pacing (ChatGPT Pacing)
+        // Natural 1,300ms pause buffer ensures user is NEVER cut off mid-thought while speaking
+        if (isRecording && !isAiAudioPlaying && (!audioPlayer || audioPlayer.paused) && !isMicMuted) {
             // Adaptive noise floor tracking (adapts to room ambient noise, laptop fans, headphones)
             if (vadFrameCount < 12) {
                 vadFrameCount++;
@@ -1744,15 +1933,15 @@ function startVisualizer(stream) {
                 vadConsecutiveSpeechFrames = Math.max(0, (vadConsecutiveSpeechFrames || 0) - 1);
             }
 
-            // Continuous Turn-Taking: Auto-submit when user stops speaking (no button click needed!)
+            // Continuous Turn-Taking: Auto-submit only on a true natural pause (1,300ms buffer)
             if (!autoSubmitTriggered && (vadHasSpoken || hasRecognizedWords || speechDetectedInCurrentTurn) && lastSpeechActivityTimestamp > 0) {
                 const now = performance.now();
                 const quietMs = now - lastSpeechActivityTimestamp;
-                const isFinalized = (lastFinalSpeechTimestamp > 0 && (now - lastFinalSpeechTimestamp >= 400));
-                const isNaturalPause = (quietMs >= 650);
+                const isFinalized = (lastFinalSpeechTimestamp > 0 && (now - lastFinalSpeechTimestamp >= 1100));
+                const isNaturalPause = (quietMs >= 1300);
 
                 if ((isFinalized || isNaturalPause) && (isVoiceModalActive || isHandsFree)) {
-                    console.log(`[*] Conversational turn complete (${Math.round(quietMs)}ms quiet, finalized=${isFinalized}). Auto-submitting speech!`);
+                    console.log(`[*] Conversational turn complete (${Math.round(quietMs)}ms natural pause). Auto-submitting speech!`);
                     autoSubmitTriggered = true;
                     lastSpeechActivityTimestamp = 0;
                     lastFinalSpeechTimestamp = 0;
@@ -2497,8 +2686,36 @@ function initSpeechRecognition() {
         speechRecognizer.lang = "en-IN";
 
         speechRecognizer.onresult = (event) => {
-            // Guard: If Arogya is actively speaking, ignore mic acoustic bleed from device speakers
+            // Voice Barge-In: If Arogya is speaking and user vocalizes words, instantly halt AI playback!
             if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
+                let spokenWords = "";
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    spokenWords += event.results[i][0].transcript + " ";
+                }
+                if (spokenWords.trim().length > 0) {
+                    console.log("[*] Interruption detected via browser speech recognition! Instantly halting AI playback.");
+                    stopAllAudioPlayback();
+                    if (currentTurnAbortController) {
+                        try { currentTurnAbortController.abort(); } catch(e){}
+                        currentTurnAbortController = null;
+                    }
+                    isAiAudioPlaying = false;
+                    if (isVoiceModalActive) {
+                        const modalState = document.getElementById("modalVoiceStateText");
+                        if (modalState) modalState.textContent = "Listening to you...";
+                        const orbWrap = document.getElementById("voiceOrbWrapper");
+                        if (orbWrap) {
+                            orbWrap.classList.remove("speaking");
+                            orbWrap.classList.add("listening");
+                        }
+                    }
+                    if (!isRecording) {
+                        startRecording();
+                    }
+                    vadHasSpoken = true;
+                    speechDetectedInCurrentTurn = true;
+                    lastSpeechActivityTimestamp = performance.now();
+                }
                 return;
             }
 
@@ -2780,8 +2997,10 @@ async function handleTextSubmit(overrideText = null) {
             if (modalState) modalState.textContent = "Arogya is reflecting...";
             const userLive = document.getElementById("modalUserLiveText");
             if (userLive) userLive.textContent = `"${text || 'Listening to your voice...'}"`;
+            appendVoiceBubbleUser(text || "Voice reflection...");
         }
 
+        currentTurnAbortController = new AbortController();
         let res, data;
         if (audioToSend) {
             const formData = new FormData();
@@ -2793,19 +3012,21 @@ async function handleTextSubmit(overrideText = null) {
 
             res = await apiFetch("/api/chat/voice", {
                 method: "POST",
-                body: formData
+                body: formData,
+                signal: currentTurnAbortController.signal
             });
             data = await res.json();
         } else {
-            // Text input: Send voice_mode="none" for instant sub-second text display without waiting for audio
+            // Text input: Send voice_mode based on current mode
             const formData = new FormData();
             formData.append("text", text);
             formData.append("session_id", currentSessionId);
-            formData.append("voice_mode", "none");
+            formData.append("voice_mode", (isVoiceModalActive ? (voiceMode || "fast") : "none"));
 
             res = await apiFetch("/api/chat/text", {
                 method: "POST",
-                body: formData
+                body: formData,
+                signal: currentTurnAbortController.signal
             });
             data = await res.json();
         }
@@ -2821,6 +3042,9 @@ async function handleTextSubmit(overrideText = null) {
             if (userLive) userLive.textContent = `"${finalUserSpokenText}"`;
             const modalState = document.getElementById("modalVoiceStateText");
             if (modalState) modalState.textContent = "Arogya is speaking... (tap or speak to interrupt)";
+            if (data.reply_text) {
+                appendVoiceBubbleAi(data.reply_text);
+            }
         }
 
         const turnScore = (data.evaluation && data.evaluation.overall_wellness !== undefined) ? data.evaluation.overall_wellness : data.overall_wellness;
@@ -2866,11 +3090,16 @@ async function handleTextSubmit(overrideText = null) {
         setLiveStatus("Ready", "");
         orbCaption.textContent = "Click microphone or type to reflect";
     } catch (err) {
+        if (err.name === 'AbortError') {
+            console.log("[*] Turn request aborted due to interruption.");
+            return;
+        }
         console.error("Chat error:", err);
         setLiveStatus("Ready", "");
         orbCaption.textContent = "Could not connect to Arogya. Try again.";
     } finally {
         isTurnProcessing = false;
+        currentTurnAbortController = null;
     }
 }
 
