@@ -1,16 +1,13 @@
-// Arogya Companion • High-Performance PWA Service Worker (v1)
-const CACHE_NAME = 'arogya-pwa-v1';
+// Arogya Companion • High-Performance PWA Service Worker (v2.4)
+const CACHE_NAME = 'arogya-pwa-v2.4';
 const CORE_ASSETS = [
   '/',
   '/login',
   '/analytics',
   '/static/manifest.json',
   '/static/style.css',
-  '/static/app.js',
   '/static/login.css',
-  '/static/login.js',
   '/static/analytics.css',
-  '/static/analytics.js',
   '/static/assets/icon-192.png',
   '/static/assets/icon-512.png',
   '/static/assets/companion_robot_chatting.jpg',
@@ -76,7 +73,15 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Static Assets (CSS, JS, Images, Fonts): Cache-First with Background Refresh
+  // Script files (app.js, login.js, analytics.js): Direct Network to eliminate stale cache issues
+  if (url.pathname.endsWith('.js')) {
+    event.respondWith(
+      fetch(request).catch(() => caches.match(request))
+    );
+    return;
+  }
+
+  // Static Assets (CSS, Images, Fonts): Cache-First with Background Refresh
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       if (cachedResponse) {

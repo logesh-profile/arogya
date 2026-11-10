@@ -100,6 +100,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def add_no_cache_headers(request: Request, call_next):
+    response = await call_next(request)
+    path = request.url.path
+    if path in ["/", "/login", "/analytics", "/sw.js", "/manifest.json"] or path.endswith(".js") or path.endswith(".html"):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 CACHE_DIR = os.path.join(BASE_DIR, "audio_cache")
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -198,7 +208,11 @@ def service_worker():
     return FileResponse(
         os.path.join(STATIC_DIR, "sw.js"),
         media_type="application/javascript",
-        headers={"Service-Worker-Allowed": "/"}
+        headers={
+            "Service-Worker-Allowed": "/",
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache"
+        }
     )
 
 @app.get("/analytics")

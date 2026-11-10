@@ -36,13 +36,13 @@ def query_groq_llm(prompt: str, system_instruction: str, max_tokens: int = 400, 
         tokens_to_request = max_tokens
         for attempt in range(2):
             try:
+                # Do NOT pass brittle response_format={"type": "json_object"} which triggers Groq 400 json_validate_failed
                 completion = client.chat.completions.create(
                     model=model_name,
                     messages=[
-                        {"role": "system", "content": system_instruction},
+                        {"role": "system", "content": f"{system_instruction}\n\nIMPORTANT: Output valid JSON directly without markdown codeblocks."},
                         {"role": "user", "content": prompt}
                     ],
-                    response_format={"type": "json_object"},
                     temperature=0.15,
                     max_tokens=tokens_to_request
                 )
@@ -50,7 +50,19 @@ def query_groq_llm(prompt: str, system_instruction: str, max_tokens: int = 400, 
                 if raw.startswith("```"):
                     raw = re.sub(r"^```(?:json)?\s*", "", raw)
                     raw = re.sub(r"\s*```$", "", raw)
-                cand = json.loads(raw)
+                
+                # Extract JSON if enclosed in text
+                json_match = re.search(r"(\{[\s\S]*\})", raw)
+                json_str = json_match.group(1) if json_match else raw
+                
+                cand = None
+                try:
+                    cand = json.loads(json_str)
+                except Exception:
+                    # If model returned pure text response, wrap it cleanly
+                    if raw and required_key == "reply_text":
+                        cand = {"reply_text": raw}
+
                 if cand and isinstance(cand, dict) and (not required_key or required_key in cand):
                     print(f"[+] Successfully responded via Groq LPU ({model_name}) in sub-second speed")
                     return cand

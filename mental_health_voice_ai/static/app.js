@@ -1104,6 +1104,20 @@ function initVoiceModeControls() {
         inlineExpandBtn.addEventListener("click", enterVoiceMode);
     }
 
+    const chatgptVoiceModal = document.getElementById("chatgptVoiceModal");
+    if (chatgptVoiceModal) {
+        chatgptVoiceModal.addEventListener("click", (e) => {
+            if (e.target.closest("#endConversationBtn") || e.target.closest("#modalMinimizeBtn") || e.target.closest("#modalMicToggleBtn")) return;
+            if (audioPlayer && !audioPlayer.paused) {
+                console.log("[*] Tap on voice modal: interrupting AI speech playback.");
+                audioPlayer.pause();
+                audioPlayer.currentTime = 0;
+                setLiveStatus("Listening...", "listening");
+                startRecording();
+            }
+        });
+    }
+
     // Spacebar tap-to-interrupt / push-to-talk in voice mode
     window.addEventListener("keydown", (e) => {
         if (isVoiceModalActive && e.code === "Space" && e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA") {
@@ -1124,9 +1138,16 @@ function initVoiceModeControls() {
 }
 
 function enterVoiceMode() {
-    if (audioPlayer && !audioPlayer.paused) {
-        audioPlayer.pause();
-        audioPlayer.currentTime = 0;
+    if (audioPlayer) {
+        if (!audioPlayer.paused) {
+            audioPlayer.pause();
+            audioPlayer.currentTime = 0;
+        }
+        // Unlock HTML5 Audio on mobile / Safari on direct user tap
+        audioPlayer.play().then(() => {
+            audioPlayer.pause();
+            audioPlayer.currentTime = 0;
+        }).catch(() => {});
     }
     isVoiceModalActive = true;
     isProactiveOpenerPlaying = false;
@@ -1667,57 +1688,34 @@ function startVisualizer(stream) {
             }
         }
 
-        // 3. ChatGPT-Style Barge-In / Interruption Detection
-        // Grace period: ignore during first 800ms to eliminate false triggers from audio startup / speaker pop
-        if (audioPlayer && !audioPlayer.paused && audioPlayer.currentTime > 0.8) {
-            // Speaker echo from laptop/phone built-in speakers reaches ~20-35%.
-            // User intentional interruption requires high vocal energy (>= 54%) sustained over multiple frames (>= 4 frames ~ 130ms)
-            if (vocalPercent >= 54) {
-                bargeInFrameCount = (bargeInFrameCount || 0) + 1;
-                if (bargeInFrameCount >= 4) {
-                    console.log("[*] Intentional user voice barge-in detected. Pausing AI speech!");
-                    bargeInFrameCount = 0;
-                    audioPlayer.pause();
-                    audioPlayer.currentTime = 0;
-                    setLiveStatus("Listening...", "listening");
-                    orbCaption.textContent = "You spoke — Arogya paused to listen to you";
-                    if (modalStateText) modalStateText.textContent = "Arogya paused • Listening to you...";
-                    if (orbWrap) {
-                        orbWrap.classList.remove("speaking");
-                        orbWrap.classList.add("listening");
-                    }
-                    if (!isRecording && !isTurnProcessing) {
-                        startRecording();
-                    }
-                }
-            } else {
-                bargeInFrameCount = Math.max(0, (bargeInFrameCount || 0) - 1);
-            }
-        } else {
-            bargeInFrameCount = 0;
-        }
+        // 3. User Interruption Management:
+        // Instant interruption is handled reliably via tapping the central orb, mic button, or Spacebar.
+        // We explicitly do NOT use raw microphone energy thresholds to pause playback because speaker
+        // bleed on mobile and laptop built-in speakers vibrates the mic and causes false self-muting.
 
         // 4. Conversational Voice Activity Detection (VAD) & Fluid Auto-Turn Pacing
-        if (isRecording) {
+        // Strictly active only when Arogya is NOT speaking, eliminating any echo feedback loop
+        if (isRecording && (!audioPlayer || audioPlayer.paused)) {
             // Adaptive noise floor tracking (adapts to room ambient noise, laptop fans, headphones)
-            if (vadFrameCount < 15) {
+            if (vadFrameCount < 10) {
                 vadFrameCount++;
                 vadNoiseFloor = 0.8 * vadNoiseFloor + 0.2 * vocalPercent;
-            } else if (vocalPercent < vadNoiseFloor + 4) {
-                vadNoiseFloor = 0.98 * vadNoiseFloor + 0.02 * vocalPercent;
+            } else if (vocalPercent < vadNoiseFloor + 3) {
+                vadNoiseFloor = 0.95 * vadNoiseFloor + 0.05 * vocalPercent;
             }
-            const speechThreshold = Math.max(14, Math.round(vadNoiseFloor + 9));
-            const isVocalEnergyActive = (vocalPercent >= speechThreshold);
+            // Sensitive speech threshold adapted for headsets, mobile mics, and quiet voices
+            const speechThreshold = Math.max(7, Math.round(vadNoiseFloor + 4));
+            const isVocalEnergyActive = (vocalPercent >= speechThreshold || percent >= speechThreshold);
             const hasRecognizedWords = Boolean((recognizedTranscript && recognizedTranscript.trim().length > 0) || (textInput && textInput.value && textInput.value.trim().length > 0));
 
-            if (isVocalEnergyActive) {
+            if (isVocalEnergyActive || hasRecognizedWords) {
                 // User is actively vocalizing right now
                 if (initialSilenceTimer) {
                     clearTimeout(initialSilenceTimer);
                     initialSilenceTimer = null;
                 }
                 vadConsecutiveSpeechFrames = (vadConsecutiveSpeechFrames || 0) + 1;
-                if (vadConsecutiveSpeechFrames >= 2) {
+                if (vadConsecutiveSpeechFrames >= 2 || hasRecognizedWords) {
                     vadHasSpoken = true;
                     speechDetectedInCurrentTurn = true;
                 }
@@ -1902,7 +1900,7 @@ function setupAudioPlayerEvents() {
             if (aiText && currentAiReplyText) aiText.textContent = currentAiReplyText;
 
             const modalState = document.getElementById("modalVoiceStateText");
-            if (modalState) modalState.textContent = "Arogya is speaking... (tap or speak to interrupt)";
+            if (modalState) modalState.textContent = "Arogya is speaking... (tap anywhere to interrupt)";
 
             const orbWrap = document.getElementById("voiceOrbWrapper");
             if (orbWrap) {
@@ -1911,9 +1909,9 @@ function setupAudioPlayerEvents() {
             }
         }
 
-        // Keep speechRecognizer active during playback so voice barge-in is caught in real time!
-        if ((isVoiceModalActive || isHandsFree) && speechRecognizer) {
-            try { speechRecognizer.start(); } catch(e){}
+        // Pause speech recognizer while Arogya is speaking so it never transcribes speaker output
+        if (speechRecognizer) {
+            try { speechRecognizer.stop(); } catch(e){}
         }
     });
 
@@ -2343,9 +2341,29 @@ function appendPendingUserToUI(text) {
 
 function playAudio(url) {
     if (!audioPlayer) return;
+    // Mute mic capturing immediately during AI audio output to prevent recording device speaker sound
+    if (isRecording) {
+        isRecording = false;
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
+            try { mediaRecorder.stop(); } catch(e){}
+        }
+        audioChunks = [];
+        lastRecordedBlob = null;
+        vadHasSpoken = false;
+        speechDetectedInCurrentTurn = false;
+        if (speechRecognizer) {
+            try { speechRecognizer.stop(); } catch(e){}
+        }
+    }
     audioPlayer.src = url;
     audioPlayer.play().catch(err => {
-        console.warn("Autoplay notice:", err);
+        console.warn("Autoplay notice or play error:", err);
+        // If audio playback couldn't start, ensure hands-free turn transitions aren't blocked
+        if (isVoiceModalActive && !isRecording && !isTurnProcessing) {
+            setTimeout(() => {
+                if (isVoiceModalActive && !isRecording) startRecording();
+            }, 500);
+        }
     });
 }
 
@@ -2522,15 +2540,15 @@ async function startRecording() {
             const isBrowserHallucination = currentText.toLowerCase().split(/\s+/).every(w => w === "you" || w === "thank");
             const finalClientText = (!isBrowserHallucination && currentText.length >= 2) ? currentText : "";
 
-            const hasValidAudioBlob = Boolean(lastRecordedBlob && lastRecordedBlob.size > 900);
-            const userActuallySpoke = vadHasSpoken || speechDetectedInCurrentTurn || (finalClientText.length >= 2);
+            const hasValidAudioBlob = Boolean(lastRecordedBlob && lastRecordedBlob.size > 500);
+            const userActuallySpoke = vadHasSpoken || speechDetectedInCurrentTurn || hasValidAudioBlob || (finalClientText.length >= 2);
 
             // Reset turn speech detection flags
             vadHasSpoken = false;
             speechDetectedInCurrentTurn = false;
             vadConsecutiveSpeechFrames = 0;
 
-            if ((userActuallySpoke || (lastRecordedBlob && lastRecordedBlob.size > 2200)) && (hasValidAudioBlob || finalClientText.length >= 2)) {
+            if (userActuallySpoke && (hasValidAudioBlob || finalClientText.length >= 2)) {
                 orbCaption.textContent = "Voice captured. Arogya is reflecting...";
                 setLiveStatus("Reflecting...", "listening");
                 if (isVoiceModalActive) {
@@ -2542,15 +2560,15 @@ async function startRecording() {
                 await handleTextSubmit(finalClientText);
                 return;
             } else {
-                orbCaption.textContent = "Microphone captured silence. Speak into the mic or type.";
+                orbCaption.textContent = "Listening... speak whenever you're ready.";
                 if (isVoiceModalActive) {
                     const modalState = document.getElementById("modalVoiceStateText");
-                    if (modalState) modalState.textContent = "Listening... Speak when ready.";
+                    if (modalState) modalState.textContent = "Arogya is listening... speak freely";
                     setTimeout(() => {
                         if (isVoiceModalActive && !isRecording && (audioPlayer.paused || audioPlayer.ended) && !isTurnProcessing) {
                             startRecording();
                         }
-                    }, 800);
+                    }, 500);
                 }
                 setLiveStatus("Ready", "");
                 if (textInput) textInput.focus();
@@ -3119,15 +3137,36 @@ function stopBreathing() {
 
 // --- PROGRESSIVE WEB APP (PWA) REGISTRATION & INSTALL LOGIC ---
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js')
-            .then((registration) => {
-                console.log('[*] Arogya Service Worker registered with scope:', registration.scope);
-            })
-            .catch((err) => {
-                console.warn('[!] Arogya Service Worker registration error:', err);
+    const isLocalhost = Boolean(
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '[::1]' ||
+        window.location.hostname.match(/^127(?:\.(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)){3}$/)
+    );
+    if (isLocalhost) {
+        // Unregister service worker and clear stale caches on localhost so updates apply instantly
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+            for (let registration of registrations) {
+                registration.unregister();
+                console.log('[*] Arogya dev: Unregistered service worker on localhost');
+            }
+        });
+        if ('caches' in window) {
+            caches.keys().then((names) => {
+                for (let name of names) caches.delete(name);
             });
-    });
+        }
+    } else {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then((registration) => {
+                    console.log('[*] Arogya Service Worker registered with scope:', registration.scope);
+                    registration.update();
+                })
+                .catch((err) => {
+                    console.warn('[!] Arogya Service Worker registration error:', err);
+                });
+        });
+    }
 }
 
 let deferredPwaPrompt = null;

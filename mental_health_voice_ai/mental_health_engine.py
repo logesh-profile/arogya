@@ -254,7 +254,7 @@ Produce the requested JSON:
     data = None
 
     # 1. Primary: Ultra-fast Groq LPU Reasoning (~300-500ms via Qwen/Llama)
-    data = query_groq_llm(prompt, SYSTEM_INSTRUCTION, max_tokens=320)
+    data = query_groq_llm(prompt, SYSTEM_INSTRUCTION, max_tokens=650)
 
     # 2. Local GPU Ollama if explicitly enabled (ENABLE_LOCAL_OLLAMA=1)
     if not data:

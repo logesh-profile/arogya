@@ -1,4 +1,5 @@
 import os
+import time
 import sqlite3
 import json
 import secrets
@@ -117,20 +118,36 @@ class PostgresCursorWrapper:
             pass
 
 _pg_pool = None
+_pg_pool_failed = False
+_last_pg_attempt = 0
 
 def get_pg_pool(clean_url: str):
-    global _pg_pool
+    global _pg_pool, _pg_pool_failed, _last_pg_attempt
+    now = time.time()
+    if _pg_pool_failed and (now - _last_pg_attempt < 300):
+        raise RuntimeError("PostgreSQL previously unreachable, skipping to SQLite.")
+    _last_pg_attempt = now
     if _pg_pool is None:
         import psycopg2.pool
-        _pg_pool = psycopg2.pool.ThreadedConnectionPool(
-            minconn=1,
-            maxconn=10,
-            dsn=clean_url,
-            keepalives=1,
-            keepalives_idle=30,
-            keepalives_interval=10,
-            keepalives_count=5
-        )
+        try:
+            # Enforce 2 second connect timeout so DNS/network failure never blocks the app
+            url_with_timeout = clean_url
+            if "connect_timeout=" not in url_with_timeout:
+                sep = "&" if "?" in url_with_timeout else "?"
+                url_with_timeout = f"{url_with_timeout}{sep}connect_timeout=2"
+            _pg_pool = psycopg2.pool.ThreadedConnectionPool(
+                minconn=1,
+                maxconn=10,
+                dsn=url_with_timeout,
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=5
+            )
+            _pg_pool_failed = False
+        except Exception as e:
+            _pg_pool_failed = True
+            raise e
     return _pg_pool
 
 class PostgresConnectionWrapper:
