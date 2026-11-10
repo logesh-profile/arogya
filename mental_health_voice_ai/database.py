@@ -194,7 +194,7 @@ def get_connection():
 
     os.makedirs(DB_DIR, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+    conn.row_factory = lambda cursor, row: RowWrapper({col[0]: row[idx] for idx, col in enumerate(cursor.description)})
     return conn
 
 def init_db():
@@ -1308,14 +1308,15 @@ def get_historical_context(current_session_id: Optional[str] = None, user_id: st
         substantive = [m for m in all_u_msgs if m.lower().strip(" .,!?-") not in trivial_set and len(m) > 6]
         highlight_msgs = substantive[:2] if substantive else all_u_msgs[:2]
 
-        s_summary = s["summary"]
+        s_dict = dict(s)
+        s_summary = s_dict.get("summary") or "Conversation underway."
         if s_summary == "Initial conversation started.":
             s_summary = "Conversation underway."
 
-        c_date_str = str(s.get("created_at") or "")[:10]
+        c_date_str = str(s_dict.get("created_at") or "")[:10]
         lines.append(
-            f"• Session '{s['title']}' ({c_date_str}): "
-            f"Wellness Score: {s['overall_wellness']}/100, Tone: {s['dominant_emotion']}. "
+            f"• Session '{s_dict.get('title', 'Reflection')}' ({c_date_str}): "
+            f"Wellness Score: {s_dict.get('overall_wellness', 75)}/100, Tone: {s_dict.get('dominant_emotion', 'Calm')}. "
             f"Summary: {s_summary} "
             f"Key user remarks: {' | '.join(highlight_msgs) if highlight_msgs else 'None recorded'}"
         )

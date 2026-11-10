@@ -93,6 +93,8 @@ let currentAiReplyText = "";
 let currentSpeakingFace = "happy";
 let initialSilenceTimer = null;
 let isProactiveOpenerPlaying = false;
+let currentBufferSource = null;
+let isAiAudioPlaying = false;
 
 // Web companion activity state stubs
 function notifyEsp32SpeechState(state, face = null) {}
@@ -1058,9 +1060,8 @@ function initVoiceModeControls() {
     if (modalMicToggleBtn) {
         modalMicToggleBtn.addEventListener("click", () => {
             // Instant interruption: if AI is speaking, tap stops AI speech and starts user turn
-            if (audioPlayer && !audioPlayer.paused) {
-                audioPlayer.pause();
-                audioPlayer.currentTime = 0;
+            if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
+                stopAllAudioPlayback();
                 setLiveStatus("Listening...", "listening");
                 startRecording();
                 return;
@@ -1077,10 +1078,9 @@ function initVoiceModeControls() {
     if (voiceOrbWrapper) {
         voiceOrbWrapper.addEventListener("click", () => {
             // Instant interruption when tapping on the central orb
-            if (audioPlayer && !audioPlayer.paused) {
+            if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
                 console.log("[*] Tap on voice orb: interrupting AI playback.");
-                audioPlayer.pause();
-                audioPlayer.currentTime = 0;
+                stopAllAudioPlayback();
                 setLiveStatus("Listening...", "listening");
                 startRecording();
             }
@@ -1108,10 +1108,9 @@ function initVoiceModeControls() {
     if (chatgptVoiceModal) {
         chatgptVoiceModal.addEventListener("click", (e) => {
             if (e.target.closest("#endConversationBtn") || e.target.closest("#modalMinimizeBtn") || e.target.closest("#modalMicToggleBtn")) return;
-            if (audioPlayer && !audioPlayer.paused) {
+            if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
                 console.log("[*] Tap on voice modal: interrupting AI speech playback.");
-                audioPlayer.pause();
-                audioPlayer.currentTime = 0;
+                stopAllAudioPlayback();
                 setLiveStatus("Listening...", "listening");
                 startRecording();
             }
@@ -1122,10 +1121,9 @@ function initVoiceModeControls() {
     window.addEventListener("keydown", (e) => {
         if (isVoiceModalActive && e.code === "Space" && e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA") {
             e.preventDefault();
-            if (audioPlayer && !audioPlayer.paused) {
+            if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
                 console.log("[*] Spacebar pressed: interrupting AI speech playback.");
-                audioPlayer.pause();
-                audioPlayer.currentTime = 0;
+                stopAllAudioPlayback();
                 setLiveStatus("Listening...", "listening");
                 startRecording();
             } else if (isRecording) {
@@ -1138,11 +1136,14 @@ function initVoiceModeControls() {
 }
 
 function enterVoiceMode() {
+    stopAllAudioPlayback();
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioContext.state === "suspended") {
+        audioContext.resume().catch(() => {});
+    }
     if (audioPlayer) {
-        if (!audioPlayer.paused) {
-            audioPlayer.pause();
-            audioPlayer.currentTime = 0;
-        }
         // Unlock HTML5 Audio on mobile / Safari on direct user tap
         audioPlayer.play().then(() => {
             audioPlayer.pause();
@@ -1277,10 +1278,7 @@ async function endVoiceConversation() {
     if (isRecording) {
         stopRecording();
     }
-    if (audioPlayer) {
-        audioPlayer.pause();
-        audioPlayer.currentTime = 0;
-    }
+    stopAllAudioPlayback();
 
     // Call finalize endpoint to synthesize entire conversation into a friendly Heart-to-Heart summary
     if (currentSessionId) {
@@ -1445,21 +1443,29 @@ async function initMicDeviceSelector() {
             const label = dev.label || `Microphone ${idx + 1}`;
             const lowerLabel = label.toLowerCase();
 
+            const isHeadset = lowerLabel.includes("headset") || lowerLabel.includes("headphone") || 
+                              lowerLabel.includes("bluetooth") || lowerLabel.includes("airpod") || 
+                              lowerLabel.includes("earbud") || lowerLabel.includes("hands-free") ||
+                              lowerLabel.includes("wireless") || lowerLabel.includes("boat") || lowerLabel.includes("sony");
             const isVirtual = lowerLabel.includes("nahimic") || lowerLabel.includes("virtual") || lowerLabel.includes("stereo mix") || lowerLabel.includes("loopback");
-            const isPhysical = lowerLabel.includes("realtek") || lowerLabel.includes("array") || lowerLabel.includes("headset") || lowerLabel.includes("usb") || lowerLabel.includes("microphone");
+            const isPhysical = isHeadset || lowerLabel.includes("realtek") || lowerLabel.includes("array") || lowerLabel.includes("usb") || lowerLabel.includes("microphone");
 
             const opt = document.createElement("option");
             opt.value = dev.deviceId;
-            opt.textContent = label + (isVirtual ? " (Virtual)" : "");
+            opt.textContent = label + (isHeadset ? " 🎧 (Headphones)" : (isVirtual ? " (Virtual)" : ""));
 
-            if (!autoSelectedId && isPhysical && !isVirtual) {
+            // Auto-prioritize connected headphones/headsets over laptop mic
+            if (isHeadset && !isVirtual) {
+                autoSelectedId = dev.deviceId;
+            } else if (!autoSelectedId && isPhysical && !isVirtual) {
                 autoSelectedId = dev.deviceId;
             }
 
             micDeviceSelect.appendChild(opt);
         });
 
-        const targetId = preferredId || autoSelectedId;
+        // If headphones were just plugged in, prioritize them automatically
+        const targetId = autoSelectedId || preferredId;
         if (targetId && Array.from(micDeviceSelect.options).some(o => o.value === targetId)) {
             micDeviceSelect.value = targetId;
         }
@@ -1475,8 +1481,17 @@ async function initMicDeviceSelector() {
         if (navigator.mediaDevices && !navigator.mediaDevices._hasDeviceChangeListener) {
             navigator.mediaDevices._hasDeviceChangeListener = true;
             navigator.mediaDevices.addEventListener("devicechange", async () => {
-                console.log("[*] Audio hardware change detected (headphone/mic connected or removed). Re-enumerating devices...");
+                console.log("[*] Audio hardware change detected (headphone/mic connected or removed). Auto-adapting...");
                 await initMicDeviceSelector();
+                // If currently in voice mode and recording, seamlessly refresh stream to the new device
+                if (isVoiceModalActive && isRecording) {
+                    try {
+                        stopRecording();
+                        setTimeout(() => {
+                            if (isVoiceModalActive && !isRecording) startRecording();
+                        }, 300);
+                    } catch(e){}
+                }
             });
         }
     } catch (err) {
@@ -1561,7 +1576,7 @@ function startVisualizer(stream) {
     let animTimeoutId = null;
 
     function scheduleNextVisualizerFrame() {
-        if (!isRecording && (!audioPlayer || audioPlayer.paused)) {
+        if (!isRecording && !isAiAudioPlaying && (!audioPlayer || audioPlayer.paused)) {
             if (animFrameId) {
                 cancelAnimationFrame(animFrameId);
                 animFrameId = null;
@@ -1581,7 +1596,7 @@ function startVisualizer(stream) {
     }
 
     function render() {
-        if (!isRecording && (!audioPlayer || audioPlayer.paused)) {
+        if (!isRecording && !isAiAudioPlaying && (!audioPlayer || audioPlayer.paused)) {
             if (animFrameId) {
                 cancelAnimationFrame(animFrameId);
                 animFrameId = null;
@@ -1597,12 +1612,13 @@ function startVisualizer(stream) {
         analyser.getByteFrequencyData(freqData);
         analyser.getByteTimeDomainData(timeData);
 
-        // 1. Calculate RMS Volume (Energy) & Focused Vocal Band Energy
+        // 1. Calculate Time-Domain RMS Volume + Vocal Band Spectral Energy
         let sum = 0;
         let vocalSum = 0;
         let weightedFreqSum = 0;
         let totalFreqWeight = 0;
-        const vocalBinsCount = Math.min(22, bufferLength); // Primary human vocal frequency band (< 3.2 kHz)
+        let timeDomainRmsSum = 0;
+        const vocalBinsCount = Math.min(24, bufferLength);
 
         for (let i = 0; i < bufferLength; i++) {
             const val = freqData[i];
@@ -1614,12 +1630,16 @@ function startVisualizer(stream) {
                 weightedFreqSum += i * val;
                 totalFreqWeight += val;
             }
+            const diff = (timeData[i] - 128) / 128.0;
+            timeDomainRmsSum += diff * diff;
         }
+        const rms = Math.sqrt(timeDomainRmsSum / bufferLength);
+        const rmsPercent = Math.min(100, Math.round(rms * 450));
         const avg = sum / bufferLength;
         const vocalAvg = vocalSum / vocalBinsCount;
-        // Vocal percent accurately tracks speech on boAt headsets and laptop mic arrays
-        const vocalPercent = Math.min(100, Math.round((vocalAvg / 40) * 100));
-        const percent = Math.min(100, Math.max(vocalPercent, Math.round((avg / 60) * 100)));
+        const vocalPercent = Math.min(100, Math.round((vocalAvg / 32) * 100));
+        // True speech energy accounts for both time-domain acoustic displacement and vocal frequency bands
+        const percent = Math.min(100, Math.max(vocalPercent, rmsPercent));
 
         // 2. Estimate Spectral Centroid & Vocal Tone / Pitch
         if (totalFreqWeight > 0) {
@@ -1695,17 +1715,17 @@ function startVisualizer(stream) {
 
         // 4. Conversational Voice Activity Detection (VAD) & Fluid Auto-Turn Pacing
         // Strictly active only when Arogya is NOT speaking, eliminating any echo feedback loop
-        if (isRecording && (!audioPlayer || audioPlayer.paused)) {
+        if (isRecording && !isAiAudioPlaying && (!audioPlayer || audioPlayer.paused)) {
             // Adaptive noise floor tracking (adapts to room ambient noise, laptop fans, headphones)
-            if (vadFrameCount < 10) {
+            if (vadFrameCount < 12) {
                 vadFrameCount++;
-                vadNoiseFloor = 0.8 * vadNoiseFloor + 0.2 * vocalPercent;
-            } else if (vocalPercent < vadNoiseFloor + 3) {
-                vadNoiseFloor = 0.95 * vadNoiseFloor + 0.05 * vocalPercent;
+                vadNoiseFloor = 0.8 * vadNoiseFloor + 0.2 * percent;
+            } else if (percent < vadNoiseFloor + 3) {
+                vadNoiseFloor = 0.95 * vadNoiseFloor + 0.05 * percent;
             }
-            // Sensitive speech threshold adapted for headsets, mobile mics, and quiet voices
-            const speechThreshold = Math.max(7, Math.round(vadNoiseFloor + 4));
-            const isVocalEnergyActive = (vocalPercent >= speechThreshold || percent >= speechThreshold);
+            // Sensitive speech threshold adapted for headsets, mobile mics, and quiet voices (5% floor)
+            const speechThreshold = Math.max(5, Math.round(vadNoiseFloor + 2.5));
+            const isVocalEnergyActive = (percent >= speechThreshold);
             const hasRecognizedWords = Boolean((recognizedTranscript && recognizedTranscript.trim().length > 0) || (textInput && textInput.value && textInput.value.trim().length > 0));
 
             if (isVocalEnergyActive || hasRecognizedWords) {
@@ -1728,13 +1748,12 @@ function startVisualizer(stream) {
             if (!autoSubmitTriggered && (vadHasSpoken || hasRecognizedWords || speechDetectedInCurrentTurn) && lastSpeechActivityTimestamp > 0) {
                 const now = performance.now();
                 const quietMs = now - lastSpeechActivityTimestamp;
-                const isFinalized = (lastFinalSpeechTimestamp > 0 && (now - lastFinalSpeechTimestamp >= 650));
-                const isNaturalPause = (quietMs >= 1150);
+                const isFinalized = (lastFinalSpeechTimestamp > 0 && (now - lastFinalSpeechTimestamp >= 400));
+                const isNaturalPause = (quietMs >= 650);
 
                 if ((isFinalized || isNaturalPause) && (isVoiceModalActive || isHandsFree)) {
                     console.log(`[*] Conversational turn complete (${Math.round(quietMs)}ms quiet, finalized=${isFinalized}). Auto-submitting speech!`);
                     autoSubmitTriggered = true;
-                    // Keep vadHasSpoken and speechDetectedInCurrentTurn true so mediaRecorder.onstop knows speech was present!
                     lastSpeechActivityTimestamp = 0;
                     lastFinalSpeechTimestamp = 0;
                     stopRecording();
@@ -1885,95 +1904,111 @@ function startVisualizer(stream) {
     scheduleNextVisualizerFrame();
 }
 
+function handleAudioPlaybackStarted() {
+    isAiAudioPlaying = true;
+    setLiveStatus("Speaking...", "listening");
+    orbCaption.textContent = "Arogya is speaking...";
+
+    // Notify physical ESP32 to show speaking face and start mouth movement
+    notifyEsp32SpeechState(1, currentSpeakingFace);
+
+    if (isVoiceModalActive) {
+        const aiText = document.getElementById("modalAiLiveText");
+        if (aiText && currentAiReplyText) aiText.textContent = currentAiReplyText;
+
+        const modalState = document.getElementById("modalVoiceStateText");
+        if (modalState) modalState.textContent = "Arogya is speaking... (tap anywhere to interrupt)";
+
+        const orbWrap = document.getElementById("voiceOrbWrapper");
+        if (orbWrap) {
+            orbWrap.classList.add("speaking");
+            orbWrap.classList.remove("listening");
+        }
+    }
+
+    // Pause speech recognizer while Arogya is speaking so it never transcribes speaker output
+    if (speechRecognizer) {
+        try { speechRecognizer.stop(); } catch(e){}
+    }
+}
+
+function handleAudioPlaybackEnded() {
+    isAiAudioPlaying = false;
+    currentBufferSource = null;
+    if (!isRecording) {
+        if (animFrameId) {
+            cancelAnimationFrame(animFrameId);
+            animFrameId = null;
+        }
+        if (typeof animTimeoutId !== "undefined" && animTimeoutId) {
+            clearTimeout(animTimeoutId);
+            animTimeoutId = null;
+        }
+    }
+    setLiveStatus("Ready", "");
+    orbCaption.textContent = (isHandsFree || isVoiceModalActive) ? "Listening to your thoughts..." : "Click microphone or type to reflect";
+    drawIdleWaveform();
+
+    // Notify physical ESP32 that speech has stopped
+    notifyEsp32SpeechState(0);
+
+    if (isVoiceModalActive) {
+        const modalState = document.getElementById("modalVoiceStateText");
+        if (modalState) modalState.textContent = "Arogya is listening... speak freely";
+
+        const orbWrap = document.getElementById("voiceOrbWrapper");
+        if (orbWrap) {
+            orbWrap.classList.remove("speaking");
+            orbWrap.classList.add("listening");
+        }
+
+        // In Voice Mode: automatically resume listening for user's next turn
+        setTimeout(() => {
+            if (isVoiceModalActive && !isRecording && !isTurnProcessing) {
+                startRecording();
+            }
+        }, 350);
+    } else if (isHandsFree && !isRecording) {
+        setTimeout(() => {
+            if (isHandsFree && !isRecording && !isTurnProcessing) {
+                startRecording();
+            }
+        }, 500);
+    }
+}
+
+function stopAllAudioPlayback() {
+    if (currentBufferSource) {
+        try { currentBufferSource.stop(); } catch(e){}
+        currentBufferSource = null;
+    }
+    isAiAudioPlaying = false;
+    if (audioPlayer && !audioPlayer.paused) {
+        try {
+            audioPlayer.pause();
+            audioPlayer.currentTime = 0;
+        } catch(e){}
+    }
+}
+
 function setupAudioPlayerEvents() {
     if (!audioPlayer) return;
 
     audioPlayer.addEventListener("play", () => {
-        setLiveStatus("Speaking...", "listening");
-        orbCaption.textContent = "Arogya is speaking...";
-
-        // Notify physical ESP32 to show speaking face and start mouth movement
-        notifyEsp32SpeechState(1, currentSpeakingFace);
-
-        if (isVoiceModalActive) {
-            const aiText = document.getElementById("modalAiLiveText");
-            if (aiText && currentAiReplyText) aiText.textContent = currentAiReplyText;
-
-            const modalState = document.getElementById("modalVoiceStateText");
-            if (modalState) modalState.textContent = "Arogya is speaking... (tap anywhere to interrupt)";
-
-            const orbWrap = document.getElementById("voiceOrbWrapper");
-            if (orbWrap) {
-                orbWrap.classList.add("speaking");
-                orbWrap.classList.remove("listening");
-            }
-        }
-
-        // Pause speech recognizer while Arogya is speaking so it never transcribes speaker output
-        if (speechRecognizer) {
-            try { speechRecognizer.stop(); } catch(e){}
-        }
+        handleAudioPlaybackStarted();
     });
 
     audioPlayer.addEventListener("ended", () => {
-        if (!isRecording) {
-            if (animFrameId) {
-                cancelAnimationFrame(animFrameId);
-                animFrameId = null;
-            }
-            if (typeof animTimeoutId !== "undefined" && animTimeoutId) {
-                clearTimeout(animTimeoutId);
-                animTimeoutId = null;
-            }
-        }
-        setLiveStatus("Ready", "");
-        orbCaption.textContent = (isHandsFree || isVoiceModalActive) ? "Listening to your thoughts..." : "Click microphone or type to reflect";
-        drawIdleWaveform();
-
-        // Notify physical ESP32 that speech has stopped
-        notifyEsp32SpeechState(0);
-
-        if (isVoiceModalActive) {
-            const modalState = document.getElementById("modalVoiceStateText");
-            if (modalState) modalState.textContent = "Arogya is listening... speak freely";
-
-            const orbWrap = document.getElementById("voiceOrbWrapper");
-            if (orbWrap) {
-                orbWrap.classList.remove("speaking");
-                orbWrap.classList.add("listening");
-            }
-
-            // In Voice Mode: automatically resume listening for user's next turn
-            setTimeout(() => {
-                if (isVoiceModalActive && !isRecording && !isTurnProcessing) {
-                    startRecording();
-                }
-            }, 400);
-        } else if (isHandsFree && !isRecording) {
-            setTimeout(() => {
-                if (isHandsFree && !isRecording && !isTurnProcessing) {
-                    startRecording();
-                }
-            }, 500);
-        }
+        handleAudioPlaybackEnded();
     });
 
     audioPlayer.addEventListener("pause", () => {
-        if (!isRecording) {
-            if (animFrameId) {
-                cancelAnimationFrame(animFrameId);
-                animFrameId = null;
+        if (!isAiAudioPlaying) {
+            notifyEsp32SpeechState(0);
+            if (isVoiceModalActive) {
+                const orbWrap = document.getElementById("voiceOrbWrapper");
+                if (orbWrap) orbWrap.classList.remove("speaking");
             }
-            if (typeof animTimeoutId !== "undefined" && animTimeoutId) {
-                clearTimeout(animTimeoutId);
-                animTimeoutId = null;
-            }
-        }
-        setLiveStatus("Ready", "");
-        notifyEsp32SpeechState(0);
-        if (isVoiceModalActive) {
-            const orbWrap = document.getElementById("voiceOrbWrapper");
-            if (orbWrap) orbWrap.classList.remove("speaking");
         }
     });
 }
@@ -2339,8 +2374,8 @@ function appendPendingUserToUI(text) {
     chatStream.scrollTop = chatStream.scrollHeight;
 }
 
-function playAudio(url) {
-    if (!audioPlayer) return;
+async function playAudio(url) {
+    if (!url) return;
     // Mute mic capturing immediately during AI audio output to prevent recording device speaker sound
     if (isRecording) {
         isRecording = false;
@@ -2355,16 +2390,55 @@ function playAudio(url) {
             try { speechRecognizer.stop(); } catch(e){}
         }
     }
-    audioPlayer.src = url;
-    audioPlayer.play().catch(err => {
-        console.warn("Autoplay notice or play error:", err);
-        // If audio playback couldn't start, ensure hands-free turn transitions aren't blocked
-        if (isVoiceModalActive && !isRecording && !isTurnProcessing) {
-            setTimeout(() => {
-                if (isVoiceModalActive && !isRecording) startRecording();
-            }, 500);
+
+    stopAllAudioPlayback();
+
+    // Primary: Web Audio API buffer playback (zero autoplay restrictions, 0ms start latency)
+    try {
+        if (!audioContext) {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
         }
-    });
+        if (audioContext.state === "suspended") {
+            await audioContext.resume();
+        }
+
+        const resp = await fetch(url);
+        const arrayBuf = await resp.arrayBuffer();
+        const decodedBuffer = await audioContext.decodeAudioData(arrayBuf);
+
+        const source = audioContext.createBufferSource();
+        source.buffer = decodedBuffer;
+        source.connect(audioContext.destination);
+
+        currentBufferSource = source;
+        handleAudioPlaybackStarted();
+
+        source.onended = () => {
+            if (currentBufferSource === source) {
+                currentBufferSource = null;
+                handleAudioPlaybackEnded();
+            }
+        };
+
+        source.start(0);
+        return;
+    } catch (e) {
+        console.warn("[!] Web Audio buffer decode notice, falling back to HTML5 Audio element:", e);
+    }
+
+    // Secondary fallback: HTML5 Audio element
+    if (audioPlayer) {
+        audioPlayer.src = url;
+        audioPlayer.play().catch(err => {
+            console.warn("Autoplay notice or play error:", err);
+            // If audio playback couldn't start, ensure hands-free turn transitions aren't blocked
+            if (isVoiceModalActive && !isRecording && !isTurnProcessing) {
+                setTimeout(() => {
+                    if (isVoiceModalActive && !isRecording) startRecording();
+                }, 400);
+            }
+        });
+    }
 }
 
 async function synthesizeAndPlay(text, btnEl) {
@@ -2410,7 +2484,13 @@ function setLiveStatus(text, modeClass) {
 // --- RECORDING & SPEECH-TO-SPEECH ---
 function initSpeechRecognition() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
+    if (!SpeechRecognition) return;
+
+    try {
+        if (speechRecognizer) {
+            try { speechRecognizer.abort(); } catch(e){}
+            speechRecognizer = null;
+        }
         speechRecognizer = new SpeechRecognition();
         speechRecognizer.continuous = true;
         speechRecognizer.interimResults = true;
@@ -2418,9 +2498,7 @@ function initSpeechRecognition() {
 
         speechRecognizer.onresult = (event) => {
             // Guard: If Arogya is actively speaking, ignore mic acoustic bleed from device speakers
-            // so Arogya never interrupts itself or transcribes its own voice.
-            // Tap on orb / mic or spacebar provides instant 100% reliable interruption.
-            if (audioPlayer && !audioPlayer.paused) {
+            if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
                 return;
             }
 
@@ -2450,6 +2528,7 @@ function initSpeechRecognition() {
                     initialSilenceTimer = null;
                 }
                 vadHasSpoken = true;
+                speechDetectedInCurrentTurn = true;
                 lastSpeechActivityTimestamp = performance.now();
             }
         };
@@ -2460,16 +2539,22 @@ function initSpeechRecognition() {
         };
 
         speechRecognizer.onerror = (e) => {
-            console.warn("Speech recognition notice:", e.error);
+            console.log("[*] Speech recognition notice:", e.error);
         };
+
+        speechRecognizer.onend = () => {
+            // If still recording and Arogya is not speaking, keep recognition alive
+            if (isRecording && !isAiAudioPlaying && (!audioPlayer || audioPlayer.paused)) {
+                try { speechRecognizer.start(); } catch(e){}
+            }
+        };
+    } catch (e) {
+        console.warn("Speech recognition setup notice:", e);
     }
 }
 
 async function toggleRecording() {
-    if (audioPlayer && !audioPlayer.paused) {
-        audioPlayer.pause();
-        audioPlayer.currentTime = 0;
-    }
+    stopAllAudioPlayback();
     if (isRecording) {
         stopRecording();
     } else {
@@ -2478,10 +2563,7 @@ async function toggleRecording() {
 }
 
 async function startRecording() {
-    if (audioPlayer && !audioPlayer.paused) {
-        audioPlayer.pause();
-        audioPlayer.currentTime = 0;
-    }
+    stopAllAudioPlayback();
     notifyEsp32Emotion("thinking");
     try {
         const selectedMicId = micDeviceSelect ? micDeviceSelect.value : "";
@@ -2492,8 +2574,9 @@ async function startRecording() {
             noiseSuppression: true,
             autoGainControl: true
         };
+        // Use ideal constraint so browser and OS seamlessly route to headphones/Bluetooth without hard-locking
         if (selectedMicId) {
-            audioConstraints.deviceId = { exact: selectedMicId };
+            audioConstraints.deviceId = { ideal: selectedMicId };
         }
 
         let stream;
@@ -2540,8 +2623,8 @@ async function startRecording() {
             const isBrowserHallucination = currentText.toLowerCase().split(/\s+/).every(w => w === "you" || w === "thank");
             const finalClientText = (!isBrowserHallucination && currentText.length >= 2) ? currentText : "";
 
-            const hasValidAudioBlob = Boolean(lastRecordedBlob && lastRecordedBlob.size > 500);
-            const userActuallySpoke = vadHasSpoken || speechDetectedInCurrentTurn || hasValidAudioBlob || (finalClientText.length >= 2);
+            const hasValidAudioBlob = Boolean(lastRecordedBlob && lastRecordedBlob.size > 300);
+            const userActuallySpoke = vadHasSpoken || speechDetectedInCurrentTurn || hasValidAudioBlob;
 
             // Reset turn speech detection flags
             vadHasSpoken = false;
@@ -2565,19 +2648,26 @@ async function startRecording() {
                     const modalState = document.getElementById("modalVoiceStateText");
                     if (modalState) modalState.textContent = "Arogya is listening... speak freely";
                     setTimeout(() => {
-                        if (isVoiceModalActive && !isRecording && (audioPlayer.paused || audioPlayer.ended) && !isTurnProcessing) {
+                        if (isVoiceModalActive && !isRecording && !isAiAudioPlaying && (audioPlayer.paused || audioPlayer.ended) && !isTurnProcessing) {
                             startRecording();
                         }
-                    }, 500);
+                    }, 400);
                 }
                 setLiveStatus("Ready", "");
                 if (textInput) textInput.focus();
             }
         };
 
-        if (!speechRecognizer) initSpeechRecognition();
+        if (!speechRecognizer) {
+            initSpeechRecognition();
+        }
         if (speechRecognizer) {
-            try { speechRecognizer.start(); } catch(e){}
+            try {
+                speechRecognizer.start();
+            } catch(e) {
+                initSpeechRecognition();
+                try { speechRecognizer.start(); } catch(e2){}
+            }
         }
 
         mediaRecorder.start(250);
@@ -2652,7 +2742,7 @@ function stopRecording() {
             if (mediaRecorder && mediaRecorder.state !== "inactive") {
                 mediaRecorder.stop();
             }
-        }, 200);
+        }, 60);
     }
 }
 

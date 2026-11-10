@@ -833,7 +833,8 @@ async def process_voice_chat(
             None,
             trend_z,
             n_sessions,
-            user["id"]
+            user["id"],
+            True # fast_voice_mode for sub-second live spoken dialogue
         )
         acoustic_features, eval_result = await asyncio.gather(dsp_task, llm_task)
     else:
@@ -880,7 +881,8 @@ async def process_voice_chat(
             voice_z=None,
             trend_z=trend_z,
             n_sessions=n_sessions,
-            user_id=user["id"]
+            user_id=user["id"],
+            fast_voice_mode=True
         )
 
     # Attach acoustic telemetry

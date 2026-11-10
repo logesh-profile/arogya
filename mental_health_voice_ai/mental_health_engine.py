@@ -46,6 +46,7 @@ from services.clinical_scoring import (
 )
 from prompts.companion_persona import (
     SYSTEM_INSTRUCTION,
+    FAST_VOICE_SYSTEM_INSTRUCTION,
     EMOTION_12_TAGS,
     EMOTION_FACE_MAP,
     normalize_text_for_speech,
@@ -95,7 +96,8 @@ def analyze_and_respond(
     voice_z: Optional[float] = None,
     trend_z: Optional[float] = None,
     n_sessions: int = 1,
-    user_id: str = "guest_user"
+    user_id: str = "guest_user",
+    fast_voice_mode: bool = False
 ) -> Dict[str, Any]:
     """
     Unified analysis pipeline:
@@ -252,19 +254,21 @@ Produce the requested JSON:
 """
 
     data = None
+    target_instruction = FAST_VOICE_SYSTEM_INSTRUCTION if fast_voice_mode else SYSTEM_INSTRUCTION
+    target_tokens = 160 if fast_voice_mode else 650
 
     # 1. Primary: Ultra-fast Groq LPU Reasoning (~300-500ms via Qwen/Llama)
-    data = query_groq_llm(prompt, SYSTEM_INSTRUCTION, max_tokens=650)
+    data = query_groq_llm(prompt, target_instruction, max_tokens=target_tokens)
 
     # 2. Local GPU Ollama if explicitly enabled (ENABLE_LOCAL_OLLAMA=1)
     if not data:
-        data = query_local_ollama(prompt, SYSTEM_INSTRUCTION)
+        data = query_local_ollama(prompt, target_instruction)
         if data:
             print("[+] Processed via Local Ollama on GPU")
 
     # 3. Cloud Secondary LLM Backup (Gemini Flash Lite via google-genai)
     if not data:
-        data = query_gemini_backup(prompt, SYSTEM_INSTRUCTION, max_tokens=550)
+        data = query_gemini_backup(prompt, target_instruction, max_tokens=target_tokens)
 
     if not data:
         # Context-aware fallback: Conversational without name repetition
@@ -319,13 +323,27 @@ Produce the requested JSON:
         }
 
     # 3. Deterministic Python scoring from the evidence
-    evidence = data.get("evidence", {})
-    calc = compute_deterministic_wellness(
-        evidence_dict=evidence,
-        voice_z=voice_z,
-        trend_z=trend_z,
-        n_sessions=n_sessions
-    )
+    if fast_voice_mode:
+        user_w = data.get("overall_wellness", 75)
+        user_state = data.get("dominant_state", "Calm")
+        calc = {
+            "overall_wellness": user_w,
+            "confidence": 1.0,
+            "dominant_state": user_state,
+            "dominant_emotion": user_state.lower(),
+            "total_points": 0,
+            "max_points": 21,
+            "reasons": []
+        }
+        evidence = data.get("evidence", {})
+    else:
+        evidence = data.get("evidence", {})
+        calc = compute_deterministic_wellness(
+            evidence_dict=evidence,
+            voice_z=voice_z,
+            trend_z=trend_z,
+            n_sessions=n_sessions
+        )
 
     # 4. Somatic Grounding Detection
     stress_pt = evidence.get("stress_tension", {}).get("score", 0)
@@ -455,9 +473,9 @@ Produce the requested JSON:
         "user_emotion": emotion_info["user_emotion"],
         "listening_face": emotion_info["listening_face"],
         "speaking_face": emotion_info["speaking_face"],
-        "reasons": calc["reasons"],
-        "total_points": calc["total_points"],
-        "max_points": calc["max_points"],
+        "reasons": calc.get("reasons", []),
+        "total_points": calc.get("total_points", 0),
+        "max_points": calc.get("max_points", 21),
         "observed_resilience": data.get("observed_resilience", "Sharing feelings openly"),
         "summary_snippet": data.get("summary_snippet", ""),
         "acoustic_features": acoustic_features,

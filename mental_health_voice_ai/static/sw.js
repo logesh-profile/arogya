@@ -1,5 +1,5 @@
-// Arogya Companion • High-Performance PWA Service Worker (v2.4)
-const CACHE_NAME = 'arogya-pwa-v2.4';
+// Arogya Companion • High-Performance PWA Service Worker (v2.6)
+const CACHE_NAME = 'arogya-pwa-v2.6';
 const CORE_ASSETS = [
   '/',
   '/login',
