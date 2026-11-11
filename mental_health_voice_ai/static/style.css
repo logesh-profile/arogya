@@ -2440,52 +2440,73 @@ html, body {
     flex-shrink: 0;
 }
 
-.voice-orb-wrapper {
+/* Exact ChatGPT Voice Orb Visualizer */
+.chatgpt-orb-container {
     position: relative;
-    width: 140px;
-    height: 140px;
+    width: 120px;
+    height: 120px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
     cursor: pointer;
-    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: transform;
+    user-select: none;
+    -webkit-user-select: none;
 }
 
-.voice-orb-wrapper:hover {
-    transform: scale(1.04);
-}
-
-#voiceOrbCanvas {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
+.chatgpt-orb-sphere {
+    width: 100px;
+    height: 100px;
     border-radius: 50%;
-    pointer-events: none;
-    object-fit: contain;
+    /* ChatGPT's signature celestial cosmic blue gradient */
+    background: radial-gradient(circle at 40% 36%, #ffffff 0%, #93c5fd 22%, #3b82f6 52%, #1d4ed8 78%, #1e3a8a 100%);
+    box-shadow: 
+        0 0 35px rgba(59, 130, 246, 0.65),
+        0 0 75px rgba(37, 99, 235, 0.4),
+        inset 0 0 20px rgba(255, 255, 255, 0.6);
+    animation: chatgptOrbBreathing 3.6s ease-in-out infinite alternate;
+    will-change: transform, box-shadow;
+    transform-origin: center center;
+    transition: transform 0.08s ease-out;
 }
 
-.voice-orb-center-badge {
-    position: relative;
-    z-index: 3;
-    width: 58px;
-    height: 58px;
-    border-radius: 50%;
-    background: radial-gradient(circle, #3b82f6 0%, #1d4ed8 70%);
-    box-shadow: 0 0 28px rgba(37, 99, 235, 0.6);
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+@keyframes chatgptOrbBreathing {
+    0% {
+        transform: scale(0.96);
+        box-shadow: 
+            0 0 30px rgba(59, 130, 246, 0.5),
+            0 0 65px rgba(37, 99, 235, 0.3),
+            inset 0 0 16px rgba(255, 255, 255, 0.5);
+    }
+    100% {
+        transform: scale(1.04);
+        box-shadow: 
+            0 0 45px rgba(96, 165, 250, 0.8),
+            0 0 90px rgba(37, 99, 235, 0.5),
+            inset 0 0 25px rgba(255, 255, 255, 0.7);
+    }
 }
 
-.voice-orb-wrapper.speaking .voice-orb-center-badge {
-    background: radial-gradient(circle, #60a5fa 0%, #2563eb 70%);
-    box-shadow: 0 0 44px rgba(96, 165, 250, 0.85);
-    transform: scale(1.1);
+/* Speaking State (Arogya Voice Speaking) */
+.chatgpt-orb-container.speaking .chatgpt-orb-sphere {
+    animation: chatgptOrbSpeaking 1.2s ease-in-out infinite alternate;
 }
 
-.voice-orb-wrapper.listening .voice-orb-center-badge {
-    box-shadow: 0 0 32px rgba(59, 130, 246, 0.5);
+@keyframes chatgptOrbSpeaking {
+    0% {
+        transform: scale(0.97);
+        box-shadow: 
+            0 0 45px rgba(96, 165, 250, 0.85),
+            0 0 85px rgba(37, 99, 235, 0.55),
+            inset 0 0 22px rgba(255, 255, 255, 0.7);
+    }
+    100% {
+        transform: scale(1.10);
+        box-shadow: 
+            0 0 70px rgba(147, 197, 253, 0.95),
+            0 0 120px rgba(59, 130, 246, 0.7),
+            inset 0 0 32px rgba(255, 255, 255, 0.85);
+    }
 }
 
 .voice-state-pill {

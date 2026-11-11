@@ -1011,7 +1011,8 @@ async def process_text_chat(
         voice_z=None,
         trend_z=trend_z,
         n_sessions=n_sessions,
-        user_id=user["id"]
+        user_id=user["id"],
+        fast_voice_mode=True
     )
 
     speaking_face = eval_result.get("speaking_face", "caring")

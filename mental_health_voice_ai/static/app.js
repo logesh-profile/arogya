@@ -16,10 +16,31 @@ let audioChunks = [];
 let audioContext = null;
 let analyser = null;
 let animFrameId = null;
+let animTimeoutId = null;
+let visualizerRunning = false;
 let activeVisualizerSource = null;
+let lastFrameTimestamp = 0;
+const TARGET_FRAME_MS = 1000 / 30; // 33.33ms strictly hardware-capped 30 FPS
+
 let lastRecordedBlob = null;
 let speechRecognizer = null;
 let recognizedTranscript = "";
+
+function stopVisualizerLoop() {
+    visualizerRunning = false;
+    if (animFrameId) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+    }
+    if (animTimeoutId) {
+        clearTimeout(animTimeoutId);
+        animTimeoutId = null;
+    }
+    if (activeVisualizerSource) {
+        try { activeVisualizerSource.disconnect(); } catch(e){}
+        activeVisualizerSource = null;
+    }
+}
 
 // DOM Elements
 const sessionsList = document.getElementById("sessionsList");
@@ -98,26 +119,76 @@ let isAiAudioPlaying = false;
 let currentTurnAbortController = null;
 let isMicMuted = false;
 let bargeInConsecutiveFrames = 0;
+let activeMicStream = null;
+let activeVoiceUserBubble = null;
+
+// Persistent hardware mic stream management (Full-Duplex ChatGPT Architecture)
+async function getOrCreateMicStream(forceRefresh = false) {
+    if (!forceRefresh && activeMicStream && activeMicStream.active && activeMicStream.getAudioTracks().some(t => t.readyState === "live")) {
+        return activeMicStream;
+    }
+    if (activeMicStream) {
+        try {
+            activeMicStream.getTracks().forEach(t => t.stop());
+        } catch(e){}
+        activeMicStream = null;
+    }
+
+    const selectedMicId = micDeviceSelect ? micDeviceSelect.value : "";
+    const audioConstraints = {
+        channelCount: 1,
+        sampleRate: { ideal: 16000 },
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+    };
+    if (selectedMicId) {
+        audioConstraints.deviceId = { ideal: selectedMicId };
+    }
+
+    try {
+        activeMicStream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+    } catch (err) {
+        console.warn("[*] Headset ideal constraint fallback to default audio:", err);
+        activeMicStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    }
+
+    // Attach to visualizer to keep audio analysis warm
+    startVisualizer(activeMicStream);
+    return activeMicStream;
+}
+
+function releaseMicStream() {
+    if (activeMicStream) {
+        try {
+            activeMicStream.getTracks().forEach(t => t.stop());
+        } catch(e){}
+        activeMicStream = null;
+    }
+    stopVisualizerLoop();
+}
 
 // ChatGPT Voice Mode Stream Helpers (Screenshots 2 & 3)
 function appendVoiceBubbleUser(text) {
     const stream = document.getElementById("voiceChatStream");
-    if (!stream || !text) return;
+    if (!stream || !text) return null;
     const bubble = document.createElement("div");
     bubble.className = "voice-bubble-user";
     bubble.textContent = text;
     stream.appendChild(bubble);
     stream.scrollTop = stream.scrollHeight;
+    return bubble;
 }
 
 function appendVoiceBubbleAi(text) {
     const stream = document.getElementById("voiceChatStream");
-    if (!stream || !text) return;
+    if (!stream || !text) return null;
     const bubble = document.createElement("div");
     bubble.className = "voice-bubble-ai";
     bubble.textContent = text;
     stream.appendChild(bubble);
     stream.scrollTop = stream.scrollHeight;
+    return bubble;
 }
 
 function populateVoiceStreamFromHistory() {
@@ -1291,7 +1362,7 @@ function initVoiceModeControls() {
     });
 }
 
-function enterVoiceMode() {
+async function enterVoiceMode() {
     stopAllAudioPlayback();
     if (currentTurnAbortController) {
         try { currentTurnAbortController.abort(); } catch(e){}
@@ -1313,6 +1384,8 @@ function enterVoiceMode() {
     isVoiceModalActive = true;
     isProactiveOpenerPlaying = false;
     isMicMuted = false;
+    activeVoiceUserBubble = null;
+
     const modal = document.getElementById("chatgptVoiceModal");
     if (modal) modal.classList.remove("hidden");
 
@@ -1320,7 +1393,7 @@ function enterVoiceMode() {
     if (inlineStage) inlineStage.classList.add("hidden");
 
     const modalState = document.getElementById("modalVoiceStateText");
-    if (modalState) modalState.textContent = "Listening...";
+    if (modalState) modalState.textContent = "Listening to you...";
 
     const orbWrap = document.getElementById("voiceOrbWrapper");
     if (orbWrap) {
@@ -1337,22 +1410,21 @@ function enterVoiceMode() {
     // Populate ChatGPT-style conversation stream from history (Screenshots 2 & 3)
     populateVoiceStreamFromHistory();
 
+    // Warm up persistent mic stream immediately
+    try {
+        await getOrCreateMicStream();
+    } catch(err) {
+        console.warn("[*] Mic stream init notice:", err);
+    }
+
     if (!isRecording) {
         startRecording();
     }
-
-    // Proactive initial silence opener: If user enters voice mode and stays silent for 3.5s,
-    // Arogya warmly starts the conversation first!
-    if (initialSilenceTimer) {
-        clearTimeout(initialSilenceTimer);
-        initialSilenceTimer = null;
-    }
-    initialSilenceTimer = setTimeout(triggerSilenceOpener, 3500);
 }
 
 async function triggerSilenceOpener() {
     if (!isVoiceModalActive || vadHasSpoken) return;
-    console.log("[*] Proactive silence opener triggering (3.5s elapsed without speech)...");
+    console.log("[*] Proactive silence opener triggering...");
 
     const modalState = document.getElementById("modalVoiceStateText");
     if (modalState) modalState.textContent = "Arogya is saying hello...";
@@ -1401,23 +1473,20 @@ function exitVoiceMode() {
         initialSilenceTimer = null;
     }
     isProactiveOpenerPlaying = false;
-
-    if (animFrameId) {
-        cancelAnimationFrame(animFrameId);
-        animFrameId = null;
+    stopAllAudioPlayback();
+    if (isRecording) {
+        stopRecording();
     }
-    if (activeVisualizerSource) {
-        try { activeVisualizerSource.disconnect(); } catch(e){}
-        activeVisualizerSource = null;
-    }
+    releaseMicStream();
     isVoiceModalActive = false;
+    activeVoiceUserBubble = null;
+
     const modal = document.getElementById("chatgptVoiceModal");
     if (modal) modal.classList.add("hidden");
     drawIdleWaveform();
     const inlineStage = document.getElementById("inlineVoiceStage");
     if (inlineStage) {
-        if (isRecording) inlineStage.classList.remove("hidden");
-        else inlineStage.classList.add("hidden");
+        inlineStage.classList.add("hidden");
     }
     // Always sync complete conversation history into main chat stream
     if (currentSessionId) {
@@ -1643,13 +1712,17 @@ async function initMicDeviceSelector() {
             navigator.mediaDevices.addEventListener("devicechange", async () => {
                 console.log("[*] Audio hardware change detected (headphone/mic connected or removed). Auto-adapting...");
                 await initMicDeviceSelector();
-                // If currently in voice mode and recording, seamlessly refresh stream to the new device
-                if (isVoiceModalActive && isRecording) {
+                // If currently in voice mode, seamlessly refresh persistent stream to the new device
+                if (isVoiceModalActive) {
                     try {
-                        stopRecording();
-                        setTimeout(() => {
-                            if (isVoiceModalActive && !isRecording) startRecording();
-                        }, 300);
+                        console.log("[*] Refreshing persistent mic stream to newly connected audio device...");
+                        await getOrCreateMicStream(true);
+                        if (isRecording) {
+                            stopRecording();
+                            setTimeout(() => {
+                                if (isVoiceModalActive && !isRecording) startRecording();
+                            }, 250);
+                        }
                     } catch(e){}
                 }
             });
@@ -1688,35 +1761,26 @@ function resetMicMeter() {
     }
 }
 
-// --- SPECTACULAR SOUND & TONE AUDIO VISUALIZER (OPTIMIZED 60 FPS CAP) ---
+// --- EXACT CHATGPT VOICE ORB VISUALIZER & FLUID CONVERSATIONAL PACING (HARDWARE 30 FPS CAP) ---
 function startVisualizer(stream) {
-    if (animFrameId) {
-        cancelAnimationFrame(animFrameId);
-        animFrameId = null;
-    }
-    if (activeVisualizerSource) {
-        try { activeVisualizerSource.disconnect(); } catch(e){}
-        activeVisualizerSource = null;
-    }
+    stopVisualizerLoop();
+
     if (!audioContext) {
         audioContext = new (window.AudioContext || window.webkitAudioContext)();
     }
     if (audioContext.state === "suspended") {
-        audioContext.resume();
+        audioContext.resume().catch(() => {});
     }
     const source = audioContext.createMediaStreamSource(stream);
     activeVisualizerSource = source;
     analyser = audioContext.createAnalyser();
     analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.8;
+    analyser.smoothingTimeConstant = 0.75;
     source.connect(analyser);
 
     const bufferLength = analyser.frequencyBinCount;
     const freqData = new Uint8Array(bufferLength);
     const timeData = new Uint8Array(bufferLength);
-
-    const orbCanvas = document.getElementById("voiceOrbCanvas");
-    const orbCtx = orbCanvas ? orbCanvas.getContext("2d") : null;
 
     const inlineCanvas = document.getElementById("inlineWaveCanvas");
     const inlineCtx = inlineCanvas ? inlineCanvas.getContext("2d") : null;
@@ -1726,45 +1790,18 @@ function startVisualizer(stream) {
     const modalToneBadge = document.getElementById("modalToneBadge");
     const inlineToneBadge = document.getElementById("inlineVoiceToneText");
     const inlineGlow = document.getElementById("inlineOrbGlow");
-    const centerBadge = document.getElementById("voiceOrbCenterBadge");
+    const chatgptOrbSphere = document.getElementById("chatgptOrbSphere");
     const inlineVoiceStage = document.getElementById("inlineVoiceStage");
     const modalStateText = document.getElementById("modalVoiceStateText");
     const orbWrap = document.getElementById("voiceOrbWrapper");
 
-    let rotationAngle = 0;
     let lastDomUpdateTime = 0;
-    let animTimeoutId = null;
+    visualizerRunning = true;
+    lastFrameTimestamp = performance.now();
 
-    function scheduleNextVisualizerFrame() {
-        if (!isRecording && !isAiAudioPlaying && (!audioPlayer || audioPlayer.paused)) {
-            if (animFrameId) {
-                cancelAnimationFrame(animFrameId);
-                animFrameId = null;
-            }
-            if (animTimeoutId) {
-                clearTimeout(animTimeoutId);
-                animTimeoutId = null;
-            }
-            drawIdleWaveform();
-            return;
-        }
-        // Strict 30 FPS Hardware Limiter (33ms) - eliminates high-FPS CPU/GPU drain
-        if (animTimeoutId) clearTimeout(animTimeoutId);
-        animTimeoutId = setTimeout(() => {
-            animFrameId = requestAnimationFrame(render);
-        }, 33);
-    }
-
-    function render() {
-        if (!isRecording && !isAiAudioPlaying && (!audioPlayer || audioPlayer.paused)) {
-            if (animFrameId) {
-                cancelAnimationFrame(animFrameId);
-                animFrameId = null;
-            }
-            if (animTimeoutId) {
-                clearTimeout(animTimeoutId);
-                animTimeoutId = null;
-            }
+    function render(now) {
+        if (!visualizerRunning || (!isVoiceModalActive && !isRecording && !isAiAudioPlaying && (!audioPlayer || audioPlayer.paused))) {
+            stopVisualizerLoop();
             drawIdleWaveform();
             return;
         }
@@ -1808,7 +1845,7 @@ function startVisualizer(stream) {
             voiceToneCentroid = Math.round((centroidBin / bufferLength) * nyquist);
         }
 
-        // Determine Tone & Chromatic Color Palette (Descriptive labels without confusing Hz numbers)
+        // Determine Tone & Chromatic Color Palette
         let toneLabel = "Calm & Steady";
         let toneClass = "tone-calm";
         let toneColor = "#38bdf8"; // Cyan
@@ -1827,16 +1864,21 @@ function startVisualizer(stream) {
             toneColor = "#fb923c"; // Amber
             glowColor = "rgba(251, 146, 60, 0.55)";
             secondaryColor = "#f43f5e"; // Rose
-        } else {
-            toneLabel = "Calm & Steady";
-            toneClass = "tone-calm";
-            toneColor = "#38bdf8"; // Cyan
-            glowColor = "rgba(56, 189, 248, 0.45)";
-            secondaryColor = "#2dd4bf"; // Teal
         }
 
-        // Throttled DOM Telemetry Updates (10 FPS / 100ms throttle to prevent layout recalculations)
-        const now = performance.now();
+        // 3. Exact ChatGPT Orb Visualizer: GPU volume-scale during user speech, CSS breathing when idle/speaking
+        if (chatgptOrbSphere && isVoiceModalActive) {
+            if (isRecording && percent > 5 && !isAiAudioPlaying) {
+                const speechScale = 1.0 + Math.min(0.35, (percent / 100) * 0.35);
+                chatgptOrbSphere.style.transform = `scale3d(${speechScale.toFixed(3)}, ${speechScale.toFixed(3)}, 1)`;
+            } else {
+                if (chatgptOrbSphere.style.transform) {
+                    chatgptOrbSphere.style.transform = "";
+                }
+            }
+        }
+
+        // 4. Throttled DOM Telemetry (10 FPS / 100ms throttle to prevent layout recalculations)
         if (now - lastDomUpdateTime > 100) {
             lastDomUpdateTime = now;
 
@@ -1860,21 +1902,14 @@ function startVisualizer(stream) {
 
             if (micMeterFill) micMeterFill.style.width = `${percent}%`;
             if (micMeterStatus) micMeterStatus.textContent = percent > 5 ? `${percent}%` : "Quiet";
-
-            if (centerBadge && isVoiceModalActive) {
-                const scaleVal = 1 + (percent / 200);
-                centerBadge.style.transform = `scale(${scaleVal})`;
-                centerBadge.style.boxShadow = `0 0 ${16 + percent * 0.7}px ${toneColor}88`;
-            }
         }
 
-        // 3. Full-Duplex Voice Barge-In (Interruption while AI is Speaking - Screenshot 5)
-        // With browser echoCancellation active, user speech produces an energy spike above ambient floor
+        // 5. Full-Duplex Voice Barge-In (Interruption while AI is Speaking - Instant Halt)
         if (isVoiceModalActive && (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused))) {
-            const bargeInThreshold = Math.max(12, Math.round(vadNoiseFloor + 7));
+            const bargeInThreshold = Math.max(12, Math.round(vadNoiseFloor + 6.5));
             if (percent >= bargeInThreshold) {
                 bargeInConsecutiveFrames = (bargeInConsecutiveFrames || 0) + 1;
-                if (bargeInConsecutiveFrames >= 3) {
+                if (bargeInConsecutiveFrames >= 2) {
                     console.log("[*] Full-duplex voice barge-in detected! Instantly halting AI playback.");
                     bargeInConsecutiveFrames = 0;
                     stopAllAudioPlayback();
@@ -1890,6 +1925,7 @@ function startVisualizer(stream) {
                         orbWrap.classList.remove("speaking");
                         orbWrap.classList.add("listening");
                     }
+                    activeVoiceUserBubble = null;
                     if (!isRecording) {
                         startRecording();
                     }
@@ -1902,8 +1938,8 @@ function startVisualizer(stream) {
             }
         }
 
-        // 4. Conversational Voice Activity Detection (VAD) & Fluid Auto-Turn Pacing (ChatGPT Pacing)
-        // Natural 1,300ms pause buffer ensures user is NEVER cut off mid-thought while speaking
+        // 6. Conversational VAD & Fluid Auto-Turn Pacing (ChatGPT-Style Natural Auto-Reply)
+        // Automatically submits audio on natural silence pause (~1,400ms) without user needing to click anything!
         if (isRecording && !isAiAudioPlaying && (!audioPlayer || audioPlayer.paused) && !isMicMuted) {
             // Adaptive noise floor tracking (adapts to room ambient noise, laptop fans, headphones)
             if (vadFrameCount < 12) {
@@ -1912,19 +1948,19 @@ function startVisualizer(stream) {
             } else if (percent < vadNoiseFloor + 3) {
                 vadNoiseFloor = 0.95 * vadNoiseFloor + 0.05 * percent;
             }
+
             // Sensitive speech threshold adapted for headsets, mobile mics, and quiet voices (5% floor)
             const speechThreshold = Math.max(5, Math.round(vadNoiseFloor + 2.5));
             const isVocalEnergyActive = (percent >= speechThreshold);
-            const hasRecognizedWords = Boolean((recognizedTranscript && recognizedTranscript.trim().length > 0) || (textInput && textInput.value && textInput.value.trim().length > 0));
 
-            if (isVocalEnergyActive || hasRecognizedWords) {
+            if (isVocalEnergyActive) {
                 // User is actively vocalizing right now
                 if (initialSilenceTimer) {
                     clearTimeout(initialSilenceTimer);
                     initialSilenceTimer = null;
                 }
                 vadConsecutiveSpeechFrames = (vadConsecutiveSpeechFrames || 0) + 1;
-                if (vadConsecutiveSpeechFrames >= 2 || hasRecognizedWords) {
+                if (vadConsecutiveSpeechFrames >= 2) {
                     vadHasSpoken = true;
                     speechDetectedInCurrentTurn = true;
                 }
@@ -1933,14 +1969,18 @@ function startVisualizer(stream) {
                 vadConsecutiveSpeechFrames = Math.max(0, (vadConsecutiveSpeechFrames || 0) - 1);
             }
 
-            // Continuous Turn-Taking: Auto-submit only on a true natural pause (1,300ms buffer)
-            if (!autoSubmitTriggered && (vadHasSpoken || hasRecognizedWords || speechDetectedInCurrentTurn) && lastSpeechActivityTimestamp > 0) {
-                const now = performance.now();
-                const quietMs = now - lastSpeechActivityTimestamp;
-                const isFinalized = (lastFinalSpeechTimestamp > 0 && (now - lastFinalSpeechTimestamp >= 1100));
-                const isNaturalPause = (quietMs >= 1300);
+            // Continuous Turn-Taking: Auto-submit only on a true natural conversational pause
+            const userSpokeInThisTurn = (vadHasSpoken || speechDetectedInCurrentTurn || (recognizedTranscript && recognizedTranscript.trim().length > 0));
+            if (!autoSubmitTriggered && userSpokeInThisTurn && lastSpeechActivityTimestamp > 0) {
+                const quietMs = performance.now() - lastSpeechActivityTimestamp;
 
-                if ((isFinalized || isNaturalPause) && (isVoiceModalActive || isHandsFree)) {
+                // Inspect transcript to see if user is trailing off on an incomplete connector
+                const transcriptWords = (recognizedTranscript || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+                const lastWord = transcriptWords[transcriptWords.length - 1] || "";
+                const isIncompleteConnector = ["uh", "um", "and", "or", "but", "so", "like", "to", "because", "about", "that", "which"].includes(lastWord);
+                const requiredSilenceMs = (isIncompleteConnector || transcriptWords.length < 2) ? 1800 : 1400;
+
+                if (quietMs >= requiredSilenceMs && (isVoiceModalActive || isHandsFree)) {
                     console.log(`[*] Conversational turn complete (${Math.round(quietMs)}ms natural pause). Auto-submitting speech!`);
                     autoSubmitTriggered = true;
                     lastSpeechActivityTimestamp = 0;
@@ -1950,8 +1990,7 @@ function startVisualizer(stream) {
             }
         }
 
-        // 5. Render Ribbon Canvas Waveform (Sound & Tone Responsive)
-        // Guarded: only render if waveformCanvas is attached and visible
+        // 7. Render Ribbon Canvas Waveform (Sound & Tone Responsive)
         if (canvasCtx && waveformCanvas && waveformCanvas.offsetParent !== null) {
             canvasCtx.clearRect(0, 0, waveformCanvas.width, waveformCanvas.height);
             const cy = waveformCanvas.height / 2;
@@ -1976,83 +2015,13 @@ function startVisualizer(stream) {
             canvasCtx.stroke();
         }
 
-        // 6. Render Full-Screen ChatGPT Voice Orb (Spectacular Liquid Aura + Breathing Harmonic Rings)
-        // Guarded: only render when Voice Modal is ACTIVE to save 90% GPU rasterization
-        if (isVoiceModalActive && orbCtx && orbCanvas) {
-            orbCtx.clearRect(0, 0, orbCanvas.width, orbCanvas.height);
-            const cx = orbCanvas.width / 2;
-            const cy = orbCanvas.height / 2;
-
-            // Ambient organic breathing oscillation so it feels alive even during silence
-            const breath = Math.sin(Date.now() / 360) * 5;
-            const baseRadius = 60 + breath + (avg * 0.75);
-
-            rotationAngle += 0.02 + (avg * 0.001);
-
-            // Radiant Bloom Glow
-            const radialGrad = orbCtx.createRadialGradient(cx, cy, baseRadius * 0.25, cx, cy, baseRadius * 1.85);
-            radialGrad.addColorStop(0, glowColor);
-            radialGrad.addColorStop(0.5, glowColor.replace("0.5", "0.2").replace("0.55", "0.2"));
-            radialGrad.addColorStop(1, "transparent");
-
-            orbCtx.fillStyle = radialGrad;
-            orbCtx.beginPath();
-            orbCtx.arc(cx, cy, baseRadius * 1.85, 0, Math.PI * 2);
-            orbCtx.fill();
-
-            // Concentric Sine-Warped Harmonic Rings (Driven by Volume & Frequency)
-            for (let ring = 1; ring <= 4; ring++) {
-                const ringRadius = baseRadius + (ring * 16 * (avg / 35 + 0.35));
-                orbCtx.beginPath();
-                orbCtx.lineWidth = ring === 1 ? 2.5 : 1.8;
-                orbCtx.strokeStyle = ring % 2 === 0 ? secondaryColor : toneColor;
-                orbCtx.globalAlpha = Math.max(0.2, 0.9 / ring);
-
-                const points = 48;
-                for (let p = 0; p <= points; p++) {
-                    const theta = (p / points) * Math.PI * 2 + (ring * 0.4 * (ring % 2 === 0 ? 1 : -1) * rotationAngle);
-                    const harmonicIndex = Math.floor((p / points) * (bufferLength / 2));
-                    const freqWarp = (freqData[harmonicIndex] / 255.0) * 22 * (1 / ring);
-                    const r = ringRadius + Math.sin(theta * (ring + 2) + rotationAngle * 3.2) * (5 + freqWarp);
-                    const px = cx + Math.cos(theta) * r;
-                    const py = cy + Math.sin(theta) * r;
-
-                    if (p === 0) orbCtx.moveTo(px, py);
-                    else orbCtx.lineTo(px, py);
-                }
-                orbCtx.closePath();
-                orbCtx.stroke();
-            }
-
-            // Orbiting Acoustic Spark Particles
-            const particleCount = 8;
-            for (let pt = 0; pt < particleCount; pt++) {
-                const ptAngle = rotationAngle * (1.2 + pt * 0.1) + (pt * (Math.PI * 2 / particleCount));
-                const ptDist = baseRadius * 1.35 + Math.sin(ptAngle * 3) * (8 + avg * 0.25);
-                const ptx = cx + Math.cos(ptAngle) * ptDist;
-                const pty = cy + Math.sin(ptAngle) * ptDist;
-                const ptRadius = 2.2 + (avg / 25);
-
-                orbCtx.beginPath();
-                orbCtx.fillStyle = toneColor;
-                orbCtx.globalAlpha = 0.75;
-                orbCtx.arc(ptx, pty, ptRadius, 0, Math.PI * 2);
-                orbCtx.fill();
-            }
-
-            orbCtx.globalAlpha = 1.0;
-        }
-
-        // 7. Render Inline Audio Canvas (Active in Chat Stream)
-        // Guarded: only render when modal is NOT active AND inline voice stage is visible
+        // 8. Render Inline Audio Canvas (Guarded: only render when modal is NOT active AND visible)
         if (!isVoiceModalActive && inlineCtx && inlineCanvas && inlineVoiceStage && !inlineVoiceStage.classList.contains("hidden")) {
             inlineCtx.clearRect(0, 0, inlineCanvas.width, inlineCanvas.height);
             const w = inlineCanvas.width;
             const h = inlineCanvas.height;
-            const cy = h / 2;
 
-            // Background Spectrum Histogram Bars
-            const numBars = 32;
+            const numBars = 24;
             const barWidth = w / numBars;
             for (let b = 0; b < numBars; b++) {
                 const binIdx = Math.floor(b * (bufferLength / numBars));
@@ -2062,35 +2031,26 @@ function startVisualizer(stream) {
                 const by = h - barHeight;
 
                 inlineCtx.fillStyle = toneColor;
-                inlineCtx.globalAlpha = 0.15 + (val * 0.35);
+                inlineCtx.globalAlpha = 0.2 + (val * 0.4);
                 inlineCtx.fillRect(bx + 1, by, barWidth - 2, barHeight);
-            }
-
-            // Layered Flowing Fluid Sine Ribbons
-            for (let layer = 1; layer <= 2; layer++) {
-                inlineCtx.beginPath();
-                inlineCtx.lineWidth = layer === 1 ? 2.5 : 1.5;
-                inlineCtx.strokeStyle = layer === 1 ? toneColor : secondaryColor;
-                inlineCtx.globalAlpha = layer === 1 ? 0.9 : 0.6;
-
-                const step = w / 40;
-                for (let x = 0; x <= w; x += step) {
-                    const normX = x / w;
-                    const freqIdx = Math.floor(normX * (bufferLength / 2));
-                    const waveEnergy = (freqData[freqIdx] / 255.0) * (h * 0.35);
-                    const breath = Math.sin((x * 0.03) + (rotationAngle * (layer * 2))) * (4 + waveEnergy);
-                    const y = cy + breath;
-
-                    if (x === 0) inlineCtx.moveTo(x, y);
-                    else inlineCtx.lineTo(x, y);
-                }
-                inlineCtx.stroke();
             }
             inlineCtx.globalAlpha = 1.0;
         }
-        scheduleNextVisualizerFrame();
+
+        // 9. Hardware-Capped 30 FPS Limiter: Schedule next frame via setTimeout (33ms) + RAF
+        if (animTimeoutId) {
+            clearTimeout(animTimeoutId);
+            animTimeoutId = null;
+        }
+        animTimeoutId = setTimeout(() => {
+            if (visualizerRunning) {
+                animFrameId = requestAnimationFrame(render);
+            }
+        }, 33);
     }
-    scheduleNextVisualizerFrame();
+
+    // Launch first frame of loop
+    animFrameId = requestAnimationFrame(render);
 }
 
 function handleAudioPlaybackStarted() {
@@ -2106,7 +2066,7 @@ function handleAudioPlaybackStarted() {
         if (aiText && currentAiReplyText) aiText.textContent = currentAiReplyText;
 
         const modalState = document.getElementById("modalVoiceStateText");
-        if (modalState) modalState.textContent = "Arogya is speaking... (tap anywhere to interrupt)";
+        if (modalState) modalState.textContent = "Arogya speaking... (speak to interrupt)";
 
         const orbWrap = document.getElementById("voiceOrbWrapper");
         if (orbWrap) {
@@ -2124,15 +2084,8 @@ function handleAudioPlaybackStarted() {
 function handleAudioPlaybackEnded() {
     isAiAudioPlaying = false;
     currentBufferSource = null;
-    if (!isRecording) {
-        if (animFrameId) {
-            cancelAnimationFrame(animFrameId);
-            animFrameId = null;
-        }
-        if (typeof animTimeoutId !== "undefined" && animTimeoutId) {
-            clearTimeout(animTimeoutId);
-            animTimeoutId = null;
-        }
+    if (!isVoiceModalActive && !isRecording) {
+        stopVisualizerLoop();
     }
     setLiveStatus("Ready", "");
     orbCaption.textContent = (isHandsFree || isVoiceModalActive) ? "Listening to your thoughts..." : "Click microphone or type to reflect";
@@ -2737,6 +2690,13 @@ function initSpeechRecognition() {
                 if (modalUserLive && liveText) {
                     modalUserLive.textContent = `"${liveText}"`;
                 }
+                if (liveText.length >= 2) {
+                    if (!activeVoiceUserBubble) {
+                        activeVoiceUserBubble = appendVoiceBubbleUser(liveText);
+                    } else {
+                        activeVoiceUserBubble.textContent = liveText;
+                    }
+                }
             }
 
             if (liveText.length >= 2) {
@@ -2751,8 +2711,8 @@ function initSpeechRecognition() {
         };
 
         speechRecognizer.onspeechend = () => {
-            console.log("[*] Speech end detected by browser engine.");
-            lastFinalSpeechTimestamp = performance.now();
+            console.log("[*] Speech pause detected by browser engine.");
+            // Natural pause pacing handled by robust acoustic VAD (no premature cutoff)
         };
 
         speechRecognizer.onerror = (e) => {
@@ -2783,25 +2743,7 @@ async function startRecording() {
     stopAllAudioPlayback();
     notifyEsp32Emotion("thinking");
     try {
-        const selectedMicId = micDeviceSelect ? micDeviceSelect.value : "";
-        const audioConstraints = {
-            channelCount: 1,
-            sampleRate: { ideal: 16000 },
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-        };
-        // Use ideal constraint so browser and OS seamlessly route to headphones/Bluetooth without hard-locking
-        if (selectedMicId) {
-            audioConstraints.deviceId = { ideal: selectedMicId };
-        }
-
-        let stream;
-        try {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
-        } catch (devErr) {
-            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        }
+        let stream = await getOrCreateMicStream();
 
         audioChunks = [];
         lastRecordedBlob = null;
@@ -2834,21 +2776,27 @@ async function startRecording() {
         mediaRecorder.onstop = async () => {
             resetMicMeter();
             lastRecordedBlob = new Blob(audioChunks, { type: mediaRecorder.mimeType || "audio/webm" });
-            stream.getTracks().forEach(track => track.stop());
+            
+            // Only stop hardware tracks if NOT in Voice Mode and NOT in hands-free
+            if (!isVoiceModalActive && !isHandsFree) {
+                releaseMicStream();
+            }
 
             const currentText = textInput ? textInput.value.trim() : "";
             const isBrowserHallucination = currentText.toLowerCase().split(/\s+/).every(w => w === "you" || w === "thank");
             const finalClientText = (!isBrowserHallucination && currentText.length >= 2) ? currentText : "";
 
-            const hasValidAudioBlob = Boolean(lastRecordedBlob && lastRecordedBlob.size > 300);
-            const userActuallySpoke = vadHasSpoken || speechDetectedInCurrentTurn || hasValidAudioBlob;
+            const hasRecognizedSpeech = Boolean(finalClientText && finalClientText.length >= 2);
+            // Real speech in WebM Opus is >= 2000 bytes; pure silence/noise is tiny
+            const hasAudibleAudioBlob = Boolean(lastRecordedBlob && lastRecordedBlob.size > 2000);
+            const userActuallySpoke = vadHasSpoken || speechDetectedInCurrentTurn || hasRecognizedSpeech;
 
             // Reset turn speech detection flags
             vadHasSpoken = false;
             speechDetectedInCurrentTurn = false;
             vadConsecutiveSpeechFrames = 0;
 
-            if (userActuallySpoke && (hasValidAudioBlob || finalClientText.length >= 2)) {
+            if (userActuallySpoke && (hasRecognizedSpeech || hasAudibleAudioBlob)) {
                 orbCaption.textContent = "Voice captured. Arogya is reflecting...";
                 setLiveStatus("Reflecting...", "listening");
                 if (isVoiceModalActive) {
@@ -2863,12 +2811,12 @@ async function startRecording() {
                 orbCaption.textContent = "Listening... speak whenever you're ready.";
                 if (isVoiceModalActive) {
                     const modalState = document.getElementById("modalVoiceStateText");
-                    if (modalState) modalState.textContent = "Arogya is listening... speak freely";
+                    if (modalState) modalState.textContent = "Listening to you...";
                     setTimeout(() => {
-                        if (isVoiceModalActive && !isRecording && !isAiAudioPlaying && (audioPlayer.paused || audioPlayer.ended) && !isTurnProcessing) {
+                        if (isVoiceModalActive && !isRecording && !isAiAudioPlaying && !isTurnProcessing) {
                             startRecording();
                         }
-                    }, 400);
+                    }, 200);
                 }
                 setLiveStatus("Ready", "");
                 if (textInput) textInput.focus();
@@ -2903,7 +2851,7 @@ async function startRecording() {
 
         if (isVoiceModalActive) {
             const modalState = document.getElementById("modalVoiceStateText");
-            if (modalState) modalState.textContent = "Arogya is listening... speak freely";
+            if (modalState) modalState.textContent = "Listening to you...";
             const orbWrap = document.getElementById("voiceOrbWrapper");
             if (orbWrap) {
                 orbWrap.classList.remove("speaking");
@@ -2939,12 +2887,13 @@ function stopRecording() {
 
         setLiveStatus("Processing...", "listening");
         orbCaption.textContent = "Processing speech...";
-        if (animFrameId) {
-            cancelAnimationFrame(animFrameId);
-            animFrameId = null;
+        
+        // In Voice Mode, keep visualizer loop active for continuous full-duplex listening and heartbeat!
+        if (!isVoiceModalActive) {
+            stopVisualizerLoop();
+            drawIdleWaveform();
+            resetMicMeter();
         }
-        drawIdleWaveform();
-        resetMicMeter();
 
         if (isVoiceModalActive) {
             const modalState = document.getElementById("modalVoiceStateText");
@@ -2997,7 +2946,11 @@ async function handleTextSubmit(overrideText = null) {
             if (modalState) modalState.textContent = "Arogya is reflecting...";
             const userLive = document.getElementById("modalUserLiveText");
             if (userLive) userLive.textContent = `"${text || 'Listening to your voice...'}"`;
-            appendVoiceBubbleUser(text || "Voice reflection...");
+            if (!activeVoiceUserBubble) {
+                activeVoiceUserBubble = appendVoiceBubbleUser(text || "Thinking with you...");
+            } else if (text) {
+                activeVoiceUserBubble.textContent = text;
+            }
         }
 
         currentTurnAbortController = new AbortController();
@@ -3040,8 +2993,12 @@ async function handleTextSubmit(overrideText = null) {
             if (aiLive) aiLive.textContent = data.reply_text;
             const userLive = document.getElementById("modalUserLiveText");
             if (userLive) userLive.textContent = `"${finalUserSpokenText}"`;
+            if (activeVoiceUserBubble && finalUserSpokenText) {
+                activeVoiceUserBubble.textContent = finalUserSpokenText;
+            }
+            activeVoiceUserBubble = null; // Fresh bubble for next turn
             const modalState = document.getElementById("modalVoiceStateText");
-            if (modalState) modalState.textContent = "Arogya is speaking... (tap or speak to interrupt)";
+            if (modalState) modalState.textContent = "Arogya speaking... (speak to interrupt)";
             if (data.reply_text) {
                 appendVoiceBubbleAi(data.reply_text);
             }

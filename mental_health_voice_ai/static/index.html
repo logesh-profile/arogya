@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;1,6..72,300;1,6..72,400&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=2.9.2">
     <!-- PWA Manifest & Mobile Configuration -->
     <link rel="manifest" href="/manifest.json">
     <meta name="theme-color" content="#0a0a0c">
@@ -270,7 +270,7 @@
         <div class="grounding-container">
             <div class="grounding-header">
                 <div class="grounding-title-group">
-                    <span class="grounding-mode-badge" id="groundingModeBadge">BOX 4-4-4-4 • CLINICAL RELAXATION</span>
+                    <span class="grounding-mode-badge" id="groundingModeBadge">BOX 4-4-4-4 • DEEP RELAXATION</span>
                     <h3 class="grounding-title">Guided Grounding Breath</h3>
                 </div>
                 <div class="grounding-controls-top">
@@ -287,7 +287,7 @@
             <!-- Automatic Grounding Alert Banner (Triggers automatically when wellness < 60%) -->
             <div id="automaticGroundingBanner" class="auto-grounding-banner hidden">
                 <span class="auto-badge">AUTOMATIC RECOVERY • WELLNESS &lt; 60%</span>
-                <span class="auto-desc">Arogya noticed elevated stress or fatigue. Restoring autonomic equilibrium with clinical breathwork.</span>
+                <span class="auto-desc">Arogya noticed you could use a relaxing moment. Taking a slow, calming breath together.</span>
             </div>
 
             <!-- Concentric Pulsing Breathing Animation Engine -->
@@ -340,15 +340,14 @@
                 <!-- User blue bubbles & Arogya soft white responses stream here dynamically -->
             </div>
 
-            <!-- Floating Sound & Tone Reactive Voice Orb (Center-Bottom) -->
+            <!-- Floating ChatGPT Voice Orb (Exact ChatGPT Style) -->
             <div class="chatgpt-voice-floating-orb-area">
-                <div class="voice-orb-wrapper" id="voiceOrbWrapper" title="Arogya voice orb">
-                    <canvas id="voiceOrbCanvas" width="180" height="180"></canvas>
-                    <div class="voice-orb-center-badge" id="voiceOrbCenterBadge"></div>
+                <div class="chatgpt-orb-container" id="voiceOrbWrapper" title="Arogya Voice • Tap to interrupt">
+                    <div class="chatgpt-orb-sphere" id="chatgptOrbSphere"></div>
                 </div>
                 <div class="voice-state-pill" id="modalVoiceStatePill">
                     <span class="voice-pulsing-dot"></span>
-                    <span id="modalVoiceStateText">Listening...</span>
+                    <span id="modalVoiceStateText">Listening to you...</span>
                 </div>
             </div>
 
@@ -398,7 +397,7 @@
                     </div>
                     <div class="brand-info">
                         <h1 class="brand-title">Arogya</h1>
-                        <span class="brand-tagline">Clinical Companion</span>
+                        <span class="brand-tagline">Caring Companion</span>
                     </div>
                 </div>
                 <div class="sidebar-header-actions">
@@ -567,7 +566,7 @@
                         <button id="menuClinicalBtn" class="header-menu-item" type="button">
                             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                             <div class="header-menu-item-text">
-                                <span class="header-menu-item-title">Clinical Screener</span>
+                                <span class="header-menu-item-title">Wellness Reflection</span>
                                 <span class="header-menu-item-desc">PHQ-9 & GAD-7 validated screening</span>
                             </div>
                         </button>
@@ -846,12 +845,12 @@
                     </svg>
                     <span>Download Session Report</span>
                 </button>
-                <a href="/api/clinical/report/doctor-summary" target="_blank" class="btn-download-report" style="text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25); color: #38bdf8;" title="View Doctor & Therapist Clinical Summary">
+                <a href="/api/clinical/report/doctor-summary" target="_blank" class="btn-download-report" style="text-align: center; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 8px; background: rgba(37,99,235,0.08); border: 1px solid rgba(37,99,235,0.25); color: #38bdf8;" title="View Personal Wellness Summary">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    <span>Doctor / Therapist Summary</span>
+                    <span>Personal Wellness Summary</span>
                 </a>
                 <span class="ethical-disclaimer">
-                    Estimated signals derived from self-reported dialogue and voice prosody. For personal reflection only, not a clinical diagnosis.
+                    Friendly reflection of your mood and feelings. Arogya is your supportive companion.
                 </span>
             </div>
         </aside>
@@ -935,8 +934,8 @@
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
                     </div>
                     <div>
-                        <h3 class="voice-selector-title">Standardized Clinical Screening</h3>
-                        <p class="voice-selector-desc">Scientifically validated depression (PHQ-9) and anxiety (GAD-7) screening tools.</p>
+                        <h3 class="voice-selector-title">Friendly Wellness Check-in</h3>
+                        <p class="voice-selector-desc">Quick reflection check-in to understand how you are feeling.</p>
                     </div>
                 </div>
                 <button id="closeClinicalModalBtn" class="voice-selector-close-btn" title="Close">
@@ -981,6 +980,6 @@
         <span id="themeLabel">Dark</span>
     </div>
 
-    <script src="/static/app.js?v=2.7.5"></script>
+    <script src="/static/app.js?v=2.9.2"></script>
 </body>
 </html>

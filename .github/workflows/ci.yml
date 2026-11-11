@@ -1,0 +1,39 @@
+name: CI / Safety & Quality Verification
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install flake8 pytest httpx
+
+    - name: Lint with flake8 (syntax errors and undefined names)
+      run: |
+        # Stop build if there are Python syntax errors or undefined names
+        flake8 mental_health_voice_ai --count --select=E9,F63,F7,F82 --show-source --statistics
+
+    - name: Run Safety & Security Tests
+      env:
+        SESSION_SECRET: test_secure_session_secret_2026_ci_key_long_and_random_string_32_bytes
+        ENVIRONMENT: test
+      run: |
+        pytest tests/ -v
