@@ -1308,10 +1308,13 @@ let currentStreamingAiTurnId = null;
 
 function sendVoiceConfigToWs() {
     if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
+        const uid = (currentUser && (currentUser.id || currentUser.user_id)) || localStorage.getItem("arogya_active_user_id") || "guest_user";
+        const token = localStorage.getItem("arogya_session_token") || "";
         voiceWebSocket.send(JSON.stringify({
             type: "config",
             session_id: currentSessionId || "",
-            user_id: currentUserId || "guest_user",
+            user_id: uid,
+            token: token,
             voice: selectedVoice || "en-IN-NeerjaExpressiveNeural"
         }));
     }
@@ -1437,6 +1440,14 @@ function handleVoiceWebSocketMessage(msg) {
     }
     else if (msg.type === "turn_complete") {
         console.log(`[✓] Turn ${msg.turn_id} completed.`);
+    }
+    else if (msg.type === "error") {
+        console.warn("[!] Voice WebSocket error message:", msg.message);
+        if (modalState) modalState.textContent = "Listening to you...";
+        if (orbWrap) {
+            orbWrap.classList.remove("speaking");
+            orbWrap.classList.add("listening");
+        }
     }
 }
 
@@ -2236,7 +2247,7 @@ function startVisualizer(stream) {
                         orbWrap.classList.add("listening");
                     }
                     activeVoiceUserBubble = null;
-                    if (!isRecording) {
+                    if (!isVoiceModalActive && !isRecording) {
                         startRecording();
                     }
                     vadHasSpoken = true;
@@ -2414,12 +2425,14 @@ function handleAudioPlaybackEnded() {
             orbWrap.classList.add("listening");
         }
 
-        // In Voice Mode: automatically resume listening for user's next turn
-        setTimeout(() => {
-            if (isVoiceModalActive && !isRecording && !isTurnProcessing) {
-                startRecording();
-            }
-        }, 350);
+        // In Voice Mode: continuous WebSocket handles listening automatically
+        if (!isVoiceModalActive && isHandsFree && !isRecording) {
+            setTimeout(() => {
+                if (!isVoiceModalActive && isHandsFree && !isRecording && !isTurnProcessing) {
+                    startRecording();
+                }
+            }, 350);
+        }
     } else if (isHandsFree && !isRecording) {
         setTimeout(() => {
             if (isHandsFree && !isRecording && !isTurnProcessing) {
@@ -2884,9 +2897,9 @@ async function playAudio(url) {
         audioPlayer.play().catch(err => {
             console.warn("Autoplay notice or play error:", err);
             // If audio playback couldn't start, ensure hands-free turn transitions aren't blocked
-            if (isVoiceModalActive && !isRecording && !isTurnProcessing) {
+            if (!isVoiceModalActive && isHandsFree && !isRecording && !isTurnProcessing) {
                 setTimeout(() => {
-                    if (isVoiceModalActive && !isRecording) startRecording();
+                    if (!isVoiceModalActive && isHandsFree && !isRecording) startRecording();
                 }, 400);
             }
         });
@@ -2972,7 +2985,7 @@ function initSpeechRecognition() {
                             orbWrap.classList.add("listening");
                         }
                     }
-                    if (!isRecording) {
+                    if (!isVoiceModalActive && !isRecording) {
                         startRecording();
                     }
                     vadHasSpoken = true;
@@ -3604,12 +3617,12 @@ function closeGroundingModal() {
     if (autoBanner) autoBanner.classList.add("hidden");
     stopBreathing();
 
-    // If user was in Live Voice Mode, resume listening comfortably
-    if (isVoiceModalActive && !isRecording && (!audioPlayer || audioPlayer.paused)) {
+    // If user was in hands-free text mode, resume listening comfortably
+    if (!isVoiceModalActive && isHandsFree && !isRecording && (!audioPlayer || audioPlayer.paused)) {
         const modalState = document.getElementById("modalVoiceStateText");
         if (modalState) modalState.textContent = "Arogya is listening... speak freely";
         setTimeout(() => {
-            if (isVoiceModalActive && !isRecording) {
+            if (!isVoiceModalActive && isHandsFree && !isRecording) {
                 startRecording();
             }
         }, 600);

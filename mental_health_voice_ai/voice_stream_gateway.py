@@ -15,6 +15,10 @@ import asyncio
 import numpy as np
 from typing import Optional, Dict, Any, List
 from fastapi import WebSocket, WebSocketDisconnect
+from dotenv import load_dotenv
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, ".env"))
 
 import onnxruntime as ort
 from voice_engine import (
@@ -24,7 +28,7 @@ from voice_engine import (
     DEFAULT_VOICE,
     VALID_VOICE_IDS
 )
-from services.llm_router import get_groq_client
+from services.llm_router import get_groq_client, query_gemini_backup
 from prompts.companion_persona import REALTIME_VOICE_STREAM_INSTRUCTION
 from database import (
     save_message,
@@ -32,7 +36,10 @@ from database import (
     get_session_messages,
     get_historical_context,
     get_user_baseline_stats,
-    get_latest_mental_health_record
+    get_latest_mental_health_record,
+    get_user_by_session_token,
+    get_user_by_id,
+    get_user_clinical_profile
 )
 from mental_health_engine import (
     extract_acoustic_features,
@@ -256,40 +263,103 @@ class StreamingVoiceSession:
                 await self.send_json({"type": "turn_complete", "turn_id": turn_id})
                 return
 
-            # 3. Retrieve conversation context from DB
+            # 3. Retrieve conversation context and active user profile from DB
+            user_info = get_user_by_id(self.user_id) if self.user_id and self.user_id != "guest_user" else None
+            user_profile = get_user_clinical_profile(self.user_id) if self.user_id and self.user_id != "guest_user" else {}
+
+            user_name = None
+            if user_info:
+                user_name = user_info.get("preferred_name") or user_info.get("given_name") or user_info.get("name") or user_info.get("display_name")
+            if not user_name or user_name.strip().lower() in ["user", "friend", "primary_user", "guest_user"]:
+                user_name = user_profile.get("user_name")
+            has_real_name = bool(user_name and user_name.strip().lower() not in ["friend", "user", "guest", "guest_user", "primary_user"])
+            first_name = user_name.split()[0] if has_real_name else None
+            companion_name = user_profile.get("companion_name") or "Arogya"
+
             session_messages = get_session_messages(self.session_id)
             historical_context = get_historical_context(self.session_id, user_id=self.user_id)
 
             history_lines = []
             for m in (session_messages or [])[-6:]:
-                role_label = "User" if m.get("role") == "user" else "Arogya"
+                role_label = "User" if m.get("role") == "user" else companion_name
                 history_lines.append(f"{role_label}: {m.get('text', '')}")
-            history_str = "\n".join(history_lines)
+            history_str = "\n".join(history_lines) if history_lines else "Session just began."
+
+            user_directive = (
+                f"Active User: {first_name} (Full Name: {user_name}, ID: {self.user_id}). Address them warmly when appropriate. Ground your answer strictly in their history above. NEVER invent or hallucinate facts about them."
+                if has_real_name else
+                "Active User: Unspecified. Speak warmly without generic filler names."
+            )
 
             full_prompt = (
-                f"Context from past reflections:\n{historical_context}\n\n"
-                f"Recent conversation:\n{history_str}\n\n"
+                f"{historical_context}\n\n"
+                f"--- IDENTITY & GROUNDING RULES ---\n"
+                f"Companion Persona: {companion_name}\n"
+                f"{user_directive}\n"
+                f"STRICT FACTUAL GROUNDING: Rely only on what the user shared or what is written in the past reflections above. Never invent life details or assume exams, jobs, or partners unless explicitly stated.\n\n"
+                f"--- RECENT CONVERSATION (THIS SESSION) ---\n"
+                f"{history_str}\n\n"
                 f"User: {transcript}\n"
-                f"Arogya (speak directly in 1-2 warm, natural spoken sentences):"
+                f"{companion_name} (speak directly in 1-2 warm, natural spoken sentences):"
             )
 
-            # 4. Stream LLM tokens from Groq LPU
+            # 4. Stream LLM tokens from Groq LPU with multi-model resilience
             client = get_groq_client()
-            if not client:
-                fallback = "I'm right here with you, tell me more."
-                await self.send_json({"type": "transcript", "role": "assistant", "turn_id": turn_id, "text": fallback})
-                return
+            stream = None
+            models = ["qwen/qwen3.8-27b", "openai/gpt-oss-20b", "openai/gpt-oss-120b"]
+            if client:
+                for model_name in models:
+                    if self.is_interrupted or turn_id != self.turn_id:
+                        break
+                    try:
+                        stream = client.chat.completions.create(
+                            model=model_name,
+                            messages=[
+                                {"role": "system", "content": REALTIME_VOICE_STREAM_INSTRUCTION},
+                                {"role": "user", "content": full_prompt}
+                            ],
+                            temperature=0.25,
+                            max_tokens=90,
+                            stream=True
+                        )
+                        break
+                    except Exception as m_err:
+                        print(f"[!] Groq model {model_name} streaming notice: {m_err}")
 
-            stream = client.chat.completions.create(
-                model="qwen/qwen3.8-27b",
-                messages=[
-                    {"role": "system", "content": REALTIME_VOICE_STREAM_INSTRUCTION},
-                    {"role": "user", "content": full_prompt}
-                ],
-                temperature=0.25,
-                max_tokens=90,
-                stream=True
-            )
+            if not stream:
+                fallback_reply = "I'm right here with you, tell me more about what's on your mind."
+                try:
+                    gem_res = query_gemini_backup(full_prompt, REALTIME_VOICE_STREAM_INSTRUCTION, max_tokens=90)
+                    if gem_res and gem_res.get("reply_text"):
+                        fallback_reply = gem_res["reply_text"].strip()
+                except Exception:
+                    pass
+
+                await self.send_json({
+                    "type": "transcript_chunk",
+                    "turn_id": turn_id,
+                    "chunk_index": 0,
+                    "text": fallback_reply
+                })
+                try:
+                    audio_chunks = []
+                    async for raw_chunk in stream_edge_tts_chunks(
+                        fallback_reply,
+                        voice=self.voice_id,
+                        dominant_state=dominant_user_state
+                    ):
+                        if self.is_interrupted or turn_id != self.turn_id:
+                            break
+                        audio_chunks.append(raw_chunk)
+                    if audio_chunks and not self.is_interrupted:
+                        await self.send_audio_chunk(turn_id, 0, fallback_reply, b"".join(audio_chunks))
+                except Exception:
+                    pass
+
+                await self.send_json({"type": "turn_complete", "turn_id": turn_id, "full_text": fallback_reply})
+                await loop.run_in_executor(None, save_message, self.session_id, "user", transcript, None, None, self.user_id)
+                await loop.run_in_executor(None, save_message, self.session_id, "assistant", fallback_reply, None, None, self.user_id)
+                return
 
             sentence_buffer = ""
             full_reply_text = ""
@@ -424,13 +494,21 @@ async def handle_voice_websocket(websocket: WebSocket):
                     msg_type = payload.get("type")
 
                     if msg_type == "config":
+                        token = payload.get("token")
+                        if token:
+                            verified_user = get_user_by_session_token(token)
+                            if verified_user and verified_user.get("id"):
+                                session.user_id = verified_user["id"]
+                                print(f"[*] Voice WebSocket verified user: {session.user_id} ({verified_user.get('name', 'User')})")
+                        if not session.user_id or session.user_id == "guest_user":
+                            raw_uid = payload.get("user_id")
+                            if raw_uid and raw_uid not in ["guest_user", "null", "undefined"]:
+                                session.user_id = raw_uid
                         if payload.get("session_id"):
                             session.session_id = payload["session_id"]
-                        if payload.get("user_id"):
-                            session.user_id = payload["user_id"]
                         if payload.get("voice") in VALID_VOICE_IDS:
                             session.voice_id = payload["voice"]
-                        print(f"[*] Config updated for session: {session.session_id}, voice: {session.voice_id}")
+                        print(f"[*] Config updated for session: {session.session_id}, user: {session.user_id}, voice: {session.voice_id}")
 
                     elif msg_type == "interrupt":
                         session.interrupt(payload.get("turn_id"))
