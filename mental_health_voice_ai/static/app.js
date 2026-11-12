@@ -924,6 +924,9 @@ async function initVoiceSelector() {
         localStorage.setItem("arogya_selected_voice", voiceId);
         updateVoiceLabels();
         renderVoiceList();
+        if (typeof sendVoiceConfigToWs === "function") {
+            sendVoiceConfigToWs();
+        }
     }
 
     async function playVoicePreview(voiceId, buttonEl) {
@@ -1168,9 +1171,366 @@ function initPhase2Controls() {
     }
 }
 
+// ==========================================================================
+// CHATGPT-STYLE FULL-DUPLEX REAL-TIME VOICE STREAMING ENGINE
+// ==========================================================================
+
+class StreamingAudioQueue {
+    constructor(audioCtx) {
+        this.ctx = audioCtx;
+        this.queue = [];
+        this.isPlaying = false;
+        this.currentSource = null;
+        this.nextStartTime = 0;
+        this.currentTurnId = null;
+        this.onStart = null;
+        this.onEnded = null;
+    }
+
+    async enqueue(audioArrayBuffer, turnId) {
+        if (this.currentTurnId !== null && turnId !== this.currentTurnId) {
+            this.stopAndFlush();
+        }
+        this.currentTurnId = turnId;
+
+        try {
+            // decodeAudioData detaches the input buffer, so slice it
+            const decodedBuffer = await this.ctx.decodeAudioData(audioArrayBuffer.slice(0));
+            this.queue.push({ buffer: decodedBuffer, turnId });
+            if (!this.isPlaying) {
+                this.playNext();
+            }
+        } catch (e) {
+            console.warn("[*] Audio chunk decode notice:", e);
+        }
+    }
+
+    playNext() {
+        if (this.queue.length === 0) {
+            this.isPlaying = false;
+            this.currentSource = null;
+            if (this.onEnded) this.onEnded();
+            return;
+        }
+
+        this.isPlaying = true;
+        if (this.onStart) this.onStart();
+
+        const item = this.queue.shift();
+        const source = this.ctx.createBufferSource();
+        source.buffer = item.buffer;
+        source.connect(this.ctx.destination);
+
+        const now = this.ctx.currentTime;
+        const startTime = Math.max(now, this.nextStartTime);
+        source.start(startTime);
+        this.nextStartTime = startTime + item.buffer.duration;
+        this.currentSource = source;
+
+        source.onended = () => {
+            if (this.currentSource === source) {
+                this.currentSource = null;
+                if (this.queue.length > 0) {
+                    this.playNext();
+                } else {
+                    // Slight buffer grace for next progressive sentence chunk
+                    setTimeout(() => {
+                        if (this.queue.length > 0) {
+                            this.playNext();
+                        } else {
+                            this.isPlaying = false;
+                            this.nextStartTime = 0;
+                            if (this.onEnded) this.onEnded();
+                        }
+                    }, 60);
+                }
+            }
+        };
+    }
+
+    stopAndFlush() {
+        if (this.currentSource) {
+            try {
+                this.currentSource.stop(0);
+                this.currentSource.disconnect();
+            } catch (e) {}
+            this.currentSource = null;
+        }
+        this.queue = [];
+        this.isPlaying = false;
+        this.nextStartTime = 0;
+        if (this.onEnded) this.onEnded();
+    }
+}
+
+// 16kHz 16-Bit Mono PCM Resampler
+function downsampleTo16kPCM(buffer, sampleRate) {
+    if (sampleRate === 16000) {
+        const pcm = new Int16Array(buffer.length);
+        for (let i = 0; i < buffer.length; i++) {
+            const s = Math.max(-1, Math.min(1, buffer[i]));
+            pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        return pcm.buffer;
+    }
+
+    const ratio = sampleRate / 16000;
+    const newLength = Math.round(buffer.length / ratio);
+    const result = new Int16Array(newLength);
+    let offsetResult = 0;
+    let offsetBuffer = 0;
+
+    while (offsetResult < newLength) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+        let accum = 0;
+        let count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+            accum += buffer[i];
+            count++;
+        }
+        const sample = count > 0 ? (accum / count) : 0;
+        const s = Math.max(-1, Math.min(1, sample));
+        result[offsetResult] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        offsetResult++;
+        offsetBuffer = nextOffsetBuffer;
+    }
+    return result.buffer;
+}
+
+let voiceWebSocket = null;
+let isVoiceWebSocketActive = false;
+let audioQueue = null;
+let pcmProcessorNode = null;
+let pcmDummyGain = null;
+let pcmSourceNode = null;
+let currentStreamingAiBubble = null;
+let currentStreamingAiTurnId = null;
+
+function sendVoiceConfigToWs() {
+    if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
+        voiceWebSocket.send(JSON.stringify({
+            type: "config",
+            session_id: currentSessionId || "",
+            user_id: currentUserId || "guest_user",
+            voice: selectedVoice || "en-IN-NeerjaExpressiveNeural"
+        }));
+    }
+}
+
+function initVoiceWebSocket() {
+    if (voiceWebSocket && (voiceWebSocket.readyState === WebSocket.OPEN || voiceWebSocket.readyState === WebSocket.CONNECTING)) {
+        return;
+    }
+
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${protocol}//${window.location.host}/api/ws/voice`;
+    console.log("[*] Opening Real-Time Voice WebSocket:", wsUrl);
+
+    try {
+        voiceWebSocket = new WebSocket(wsUrl);
+        voiceWebSocket.binaryType = "arraybuffer";
+
+        voiceWebSocket.onopen = () => {
+            console.log("[✓] Voice WebSocket connected!");
+            isVoiceWebSocketActive = true;
+            sendVoiceConfigToWs();
+        };
+
+        voiceWebSocket.onmessage = async (event) => {
+            if (typeof event.data === "string") {
+                try {
+                    const msg = JSON.parse(event.data);
+                    handleVoiceWebSocketMessage(msg);
+                } catch (e) {
+                    console.warn("[!] WS JSON parse notice:", e);
+                }
+            }
+        };
+
+        voiceWebSocket.onerror = (err) => {
+            console.warn("[!] Voice WebSocket error:", err);
+        };
+
+        voiceWebSocket.onclose = () => {
+            console.log("[*] Voice WebSocket closed.");
+            isVoiceWebSocketActive = false;
+            voiceWebSocket = null;
+        };
+    } catch (e) {
+        console.warn("[!] Failed to instantiate Voice WebSocket:", e);
+    }
+}
+
+function handleVoiceWebSocketMessage(msg) {
+    const modalState = document.getElementById("modalVoiceStateText");
+    const orbWrap = document.getElementById("voiceOrbWrapper");
+    const telemetryBadge = document.getElementById("modalVocalTelemetry");
+    const modalToneBadge = document.getElementById("modalToneBadge");
+
+    if (msg.type === "ready") {
+        if (modalState) modalState.textContent = "Listening to you...";
+        if (orbWrap) {
+            orbWrap.classList.remove("speaking");
+            orbWrap.classList.add("listening");
+        }
+    }
+    else if (msg.type === "status") {
+        if (msg.state === "processing") {
+            if (modalState) modalState.textContent = "Arogya is reflecting...";
+        } else if (msg.state === "listening") {
+            if (!audioQueue || !audioQueue.isPlaying) {
+                if (modalState) modalState.textContent = "Listening to you...";
+                if (orbWrap) {
+                    orbWrap.classList.remove("speaking");
+                    orbWrap.classList.add("listening");
+                }
+            }
+        }
+    }
+    else if (msg.type === "transcript") {
+        if (msg.role === "user") {
+            console.log("[+] User transcript:", msg.text);
+            appendVoiceBubbleUser(msg.text);
+            currentStreamingAiBubble = null;
+            currentStreamingAiTurnId = null;
+        }
+    }
+    else if (msg.type === "transcript_chunk") {
+        appendVoiceBubbleAiChunk(msg.text, msg.turn_id);
+    }
+    else if (msg.type === "audio_chunk") {
+        if (modalState) modalState.textContent = "Arogya speaking... (speak to interrupt)";
+        if (orbWrap) {
+            orbWrap.classList.remove("listening");
+            orbWrap.classList.add("speaking");
+        }
+
+        const binStr = atob(msg.audio_b64);
+        const bytes = new Uint8Array(binStr.length);
+        for (let i = 0; i < binStr.length; i++) {
+            bytes[i] = binStr.charCodeAt(i);
+        }
+        if (audioQueue) {
+            audioQueue.enqueue(bytes.buffer, msg.turn_id);
+        }
+    }
+    else if (msg.type === "telemetry") {
+        if (telemetryBadge) {
+            const bpm = msg.bpm || 64;
+            const label = msg.tone_label || "Calm";
+            telemetryBadge.textContent = `${bpm} BPM • ${label}`;
+        }
+        if (msg.tone_label && modalToneBadge) {
+            modalToneBadge.textContent = `Tone: ${msg.tone_label}`;
+        }
+    }
+    else if (msg.type === "interrupted") {
+        console.log("[*] Server confirmed barge-in interruption.");
+        if (audioQueue) {
+            audioQueue.stopAndFlush();
+        }
+        if (modalState) modalState.textContent = "Listening to you...";
+        if (orbWrap) {
+            orbWrap.classList.remove("speaking");
+            orbWrap.classList.add("listening");
+        }
+    }
+    else if (msg.type === "turn_complete") {
+        console.log(`[✓] Turn ${msg.turn_id} completed.`);
+    }
+}
+
+function appendVoiceBubbleAiChunk(text, turnId) {
+    const stream = document.getElementById("voiceChatStream");
+    if (!stream || !text) return;
+
+    if (!currentStreamingAiBubble || currentStreamingAiTurnId !== turnId) {
+        currentStreamingAiTurnId = turnId;
+        currentStreamingAiBubble = document.createElement("div");
+        currentStreamingAiBubble.className = "voice-bubble-ai";
+        currentStreamingAiBubble.textContent = text;
+        stream.appendChild(currentStreamingAiBubble);
+    } else {
+        currentStreamingAiBubble.textContent += " " + text;
+    }
+
+    stream.scrollTop = stream.scrollHeight;
+}
+
+function startPcmStreaming(stream) {
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioContext.state === "suspended") {
+        audioContext.resume().catch(() => {});
+    }
+
+    stopPcmStreaming();
+
+    try {
+        pcmSourceNode = audioContext.createMediaStreamSource(stream);
+        pcmProcessorNode = audioContext.createScriptProcessor(4096, 1, 1);
+
+        pcmProcessorNode.onaudioprocess = (e) => {
+            if (!isVoiceModalActive || isMicMuted) return;
+
+            const inputData = e.inputBuffer.getChannelData(0);
+
+            // Client-Side Immediate Barge-In Check
+            if (audioQueue && audioQueue.isPlaying) {
+                let sum = 0;
+                for (let i = 0; i < inputData.length; i++) {
+                    sum += inputData[i] * inputData[i];
+                }
+                const rms = Math.sqrt(sum / inputData.length);
+                if (rms > 0.05) {
+                    console.log("[*] Client-side voice barge-in detected! Stopping audio queue.");
+                    audioQueue.stopAndFlush();
+                    if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
+                        voiceWebSocket.send(JSON.stringify({ type: "interrupt" }));
+                    }
+                    const modalState = document.getElementById("modalVoiceStateText");
+                    if (modalState) modalState.textContent = "Listening to you...";
+                    const orbWrap = document.getElementById("voiceOrbWrapper");
+                    if (orbWrap) {
+                        orbWrap.classList.remove("speaking");
+                        orbWrap.classList.add("listening");
+                    }
+                }
+            }
+
+            // Downsample and stream 16kHz PCM chunks over WebSocket
+            if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
+                const pcmBytes = downsampleTo16kPCM(inputData, audioContext.sampleRate);
+                voiceWebSocket.send(pcmBytes);
+            }
+        };
+
+        pcmDummyGain = audioContext.createGain();
+        pcmDummyGain.gain.value = 0;
+        pcmSourceNode.connect(pcmProcessorNode);
+        pcmProcessorNode.connect(pcmDummyGain);
+        pcmDummyGain.connect(audioContext.destination);
+    } catch (err) {
+        console.warn("[!] PCM streaming setup notice:", err);
+    }
+}
+
+function stopPcmStreaming() {
+    if (pcmProcessorNode) {
+        try {
+            pcmProcessorNode.disconnect();
+            if (pcmSourceNode) pcmSourceNode.disconnect();
+            if (pcmDummyGain) pcmDummyGain.disconnect();
+        } catch(e) {}
+        pcmProcessorNode = null;
+        pcmSourceNode = null;
+        pcmDummyGain = null;
+    }
+}
+
 // --- CHATGPT-STYLE LIVE VOICE MODE CONTROLS ---
 function initVoiceModeControls() {
-    // 1. Circular Waveform "Start Voice" Button on Main Input Bar (Screenshot 1)
     const startVoiceModeBtn = document.getElementById("startVoiceModeBtn");
     if (startVoiceModeBtn) {
         startVoiceModeBtn.addEventListener("click", enterVoiceMode);
@@ -1186,17 +1546,15 @@ function initVoiceModeControls() {
         modalMinimizeBtn.addEventListener("click", exitVoiceMode);
     }
 
-    // 2. Microphone Mute / Unmute & Voice Interruption Button in Floating Dock
+    // Microphone Mute / Unmute & Voice Interruption Button in Floating Dock
     const modalMicToggleBtn = document.getElementById("modalMicToggleBtn");
     if (modalMicToggleBtn) {
         modalMicToggleBtn.addEventListener("click", () => {
-            // Instant interruption: if AI is speaking, tap immediately stops AI speech and starts user turn
-            if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
+            if (isAiAudioPlaying || (audioQueue && audioQueue.isPlaying)) {
                 console.log("[*] Tap on mic button: interrupting AI speech playback.");
-                stopAllAudioPlayback();
-                if (currentTurnAbortController) {
-                    try { currentTurnAbortController.abort(); } catch(e){}
-                    currentTurnAbortController = null;
+                if (audioQueue) audioQueue.stopAndFlush();
+                if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
+                    voiceWebSocket.send(JSON.stringify({ type: "interrupt" }));
                 }
                 isAiAudioPlaying = false;
                 const modalState = document.getElementById("modalVoiceStateText");
@@ -1206,7 +1564,6 @@ function initVoiceModeControls() {
                     orbWrap.classList.remove("speaking");
                     orbWrap.classList.add("listening");
                 }
-                startRecording();
                 return;
             }
 
@@ -1216,25 +1573,22 @@ function initVoiceModeControls() {
             if (isMicMuted) {
                 modalMicToggleBtn.classList.add("muted");
                 if (modalState) modalState.textContent = "Microphone muted";
-                if (isRecording) stopRecording();
             } else {
                 modalMicToggleBtn.classList.remove("muted");
-                if (modalState) modalState.textContent = "Listening...";
-                if (!isRecording) startRecording();
+                if (modalState) modalState.textContent = "Listening to you...";
             }
         });
     }
 
-    // 3. Tapping the voice orb interrupts playback instantly
+    // Tapping the voice orb interrupts playback instantly
     const voiceOrbWrapper = document.getElementById("voiceOrbWrapper");
     if (voiceOrbWrapper) {
         voiceOrbWrapper.addEventListener("click", () => {
-            if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
+            if (isAiAudioPlaying || (audioQueue && audioQueue.isPlaying)) {
                 console.log("[*] Tap on voice orb: interrupting AI playback.");
-                stopAllAudioPlayback();
-                if (currentTurnAbortController) {
-                    try { currentTurnAbortController.abort(); } catch(e){}
-                    currentTurnAbortController = null;
+                if (audioQueue) audioQueue.stopAndFlush();
+                if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
+                    voiceWebSocket.send(JSON.stringify({ type: "interrupt" }));
                 }
                 isAiAudioPlaying = false;
                 const modalState = document.getElementById("modalVoiceStateText");
@@ -1244,12 +1598,11 @@ function initVoiceModeControls() {
                     orbWrap.classList.remove("speaking");
                     orbWrap.classList.add("listening");
                 }
-                startRecording();
             }
         });
     }
 
-    // 4. Quick Inline Text Typing in Voice Mode ('+ Type' button in Floating Dock)
+    // Quick Inline Text Typing in Voice Mode ('+ Type' button in Floating Dock)
     const voiceDockTypeBtn = document.getElementById("voiceDockTypeBtn");
     const voiceInlineTypeBar = document.getElementById("voiceInlineTypeBar");
     const voiceInlineTextInput = document.getElementById("voiceInlineTextInput");
@@ -1271,11 +1624,8 @@ function initVoiceModeControls() {
         voiceInlineTextInput.value = "";
         if (voiceInlineTypeBar) voiceInlineTypeBar.classList.add("hidden");
         // Interrupt AI if currently playing and send typed prompt
+        if (audioQueue) audioQueue.stopAndFlush();
         stopAllAudioPlayback();
-        if (currentTurnAbortController) {
-            try { currentTurnAbortController.abort(); } catch(e){}
-            currentTurnAbortController = null;
-        }
         handleTextSubmit(text);
     };
 
@@ -1291,7 +1641,7 @@ function initVoiceModeControls() {
         });
     }
 
-    // 5. Circular Blue 'X' Button to End Conversation & View Summary (Screenshots 2 & 3)
+    // Circular Blue 'X' Button to End Conversation & View Summary
     const endConversationBtn = document.getElementById("endConversationBtn");
     if (endConversationBtn) {
         endConversationBtn.addEventListener("click", endVoiceConversation);
@@ -1313,12 +1663,11 @@ function initVoiceModeControls() {
     if (chatgptVoiceModal) {
         chatgptVoiceModal.addEventListener("click", (e) => {
             if (e.target.closest("#endConversationBtn") || e.target.closest("#modalMinimizeBtn") || e.target.closest("#modalMicToggleBtn") || e.target.closest("#voiceDockTypeBtn") || e.target.closest("#voiceInlineTypeBar")) return;
-            if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
+            if (isAiAudioPlaying || (audioQueue && audioQueue.isPlaying)) {
                 console.log("[*] Tap on voice modal: interrupting AI speech playback.");
-                stopAllAudioPlayback();
-                if (currentTurnAbortController) {
-                    try { currentTurnAbortController.abort(); } catch(e){}
-                    currentTurnAbortController = null;
+                if (audioQueue) audioQueue.stopAndFlush();
+                if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
+                    voiceWebSocket.send(JSON.stringify({ type: "interrupt" }));
                 }
                 isAiAudioPlaying = false;
                 const modalState = document.getElementById("modalVoiceStateText");
@@ -1328,21 +1677,19 @@ function initVoiceModeControls() {
                     orbWrap.classList.remove("speaking");
                     orbWrap.classList.add("listening");
                 }
-                startRecording();
             }
         });
     }
 
-    // Spacebar tap-to-interrupt / push-to-talk in voice mode
+    // Spacebar tap-to-interrupt in voice mode
     window.addEventListener("keydown", (e) => {
         if (isVoiceModalActive && e.code === "Space" && e.target.tagName !== "INPUT" && e.target.tagName !== "TEXTAREA") {
             e.preventDefault();
-            if (isAiAudioPlaying || (audioPlayer && !audioPlayer.paused)) {
+            if (isAiAudioPlaying || (audioQueue && audioQueue.isPlaying)) {
                 console.log("[*] Spacebar pressed: interrupting AI speech playback.");
-                stopAllAudioPlayback();
-                if (currentTurnAbortController) {
-                    try { currentTurnAbortController.abort(); } catch(e){}
-                    currentTurnAbortController = null;
+                if (audioQueue) audioQueue.stopAndFlush();
+                if (voiceWebSocket && voiceWebSocket.readyState === WebSocket.OPEN) {
+                    voiceWebSocket.send(JSON.stringify({ type: "interrupt" }));
                 }
                 isAiAudioPlaying = false;
                 const modalState = document.getElementById("modalVoiceStateText");
@@ -1352,11 +1699,6 @@ function initVoiceModeControls() {
                     orbWrap.classList.remove("speaking");
                     orbWrap.classList.add("listening");
                 }
-                startRecording();
-            } else if (isRecording) {
-                stopRecording();
-            } else {
-                startRecording();
             }
         }
     });
@@ -1375,16 +1717,13 @@ async function enterVoiceMode() {
         audioContext.resume().catch(() => {});
     }
     if (audioPlayer) {
-        // Unlock HTML5 Audio on mobile / Safari on direct user tap
         audioPlayer.play().then(() => {
             audioPlayer.pause();
             audioPlayer.currentTime = 0;
         }).catch(() => {});
     }
     isVoiceModalActive = true;
-    isProactiveOpenerPlaying = false;
     isMicMuted = false;
-    activeVoiceUserBubble = null;
 
     const modal = document.getElementById("chatgptVoiceModal");
     if (modal) modal.classList.remove("hidden");
@@ -1407,88 +1746,69 @@ async function enterVoiceMode() {
         modalMic.classList.add("recording");
     }
 
-    // Populate ChatGPT-style conversation stream from history (Screenshots 2 & 3)
+    // Populate ChatGPT-style conversation stream from history
     populateVoiceStreamFromHistory();
 
-    // Warm up persistent mic stream immediately
+    // 1. Initialize Streaming Audio Queue
+    if (!audioQueue) {
+        audioQueue = new StreamingAudioQueue(audioContext);
+        audioQueue.onStart = () => {
+            isAiAudioPlaying = true;
+            const ow = document.getElementById("voiceOrbWrapper");
+            if (ow) {
+                ow.classList.remove("listening");
+                ow.classList.add("speaking");
+            }
+            const ms = document.getElementById("modalVoiceStateText");
+            if (ms) ms.textContent = "Arogya speaking... (speak to interrupt)";
+        };
+        audioQueue.onEnded = () => {
+            isAiAudioPlaying = false;
+            const ow = document.getElementById("voiceOrbWrapper");
+            if (ow) {
+                ow.classList.remove("speaking");
+                ow.classList.add("listening");
+            }
+            const ms = document.getElementById("modalVoiceStateText");
+            if (ms) ms.textContent = "Listening to you...";
+        };
+    }
+
+    // 2. Initialize WebSocket to /api/ws/voice
+    initVoiceWebSocket();
+
+    // 3. Start microphone capture and 16kHz PCM streaming
     try {
-        await getOrCreateMicStream();
+        const stream = await getOrCreateMicStream();
+        startPcmStreaming(stream);
+        startVisualizerLoop();
     } catch(err) {
         console.warn("[*] Mic stream init notice:", err);
-    }
-
-    if (!isRecording) {
-        startRecording();
-    }
-}
-
-async function triggerSilenceOpener() {
-    if (!isVoiceModalActive || vadHasSpoken) return;
-    console.log("[*] Proactive silence opener triggering...");
-
-    const modalState = document.getElementById("modalVoiceStateText");
-    if (modalState) modalState.textContent = "Arogya is saying hello...";
-
-    try {
-        const formData = new FormData();
-        formData.append("session_id", currentSessionId || "");
-        formData.append("voice_mode", voiceMode || "fast");
-        formData.append("voice", selectedVoice || "");
-        formData.append("language_mode", (typeof selectedLanguageMode !== "undefined" ? selectedLanguageMode : "indian_english"));
-
-        const res = await apiFetch("/api/voice/proactive_opener", {
-            method: "POST",
-            body: formData
-        });
-
-        if (res.ok) {
-            const data = await res.json();
-            if (!isVoiceModalActive) return; // User closed modal during fetch
-
-            if (data.reply_text) {
-                appendVoiceBubbleAi(data.reply_text);
-            }
-
-            const orbWrap = document.getElementById("voiceOrbWrapper");
-            if (orbWrap) {
-                orbWrap.classList.remove("listening");
-                orbWrap.classList.add("speaking");
-            }
-            if (modalState) modalState.textContent = "Arogya speaking...";
-
-            if (data.audio_url) {
-                isProactiveOpenerPlaying = true;
-                playAudio(data.audio_url);
-            }
-        }
-    } catch (err) {
-        console.warn("Proactive silence opener notice:", err);
-        if (modalState) modalState.textContent = "Arogya is listening... speak freely";
+        if (modalState) modalState.textContent = "Please allow microphone access";
     }
 }
 
 function exitVoiceMode() {
-    if (initialSilenceTimer) {
-        clearTimeout(initialSilenceTimer);
-        initialSilenceTimer = null;
+    if (audioQueue) {
+        audioQueue.stopAndFlush();
     }
-    isProactiveOpenerPlaying = false;
+    stopPcmStreaming();
+    if (voiceWebSocket) {
+        try { voiceWebSocket.close(); } catch(e){}
+        voiceWebSocket = null;
+    }
+
     stopAllAudioPlayback();
-    if (isRecording) {
-        stopRecording();
-    }
     releaseMicStream();
     isVoiceModalActive = false;
-    activeVoiceUserBubble = null;
+    isAiAudioPlaying = false;
 
     const modal = document.getElementById("chatgptVoiceModal");
     if (modal) modal.classList.add("hidden");
     drawIdleWaveform();
     const inlineStage = document.getElementById("inlineVoiceStage");
-    if (inlineStage) {
-        inlineStage.classList.add("hidden");
-    }
-    // Always sync complete conversation history into main chat stream
+    if (inlineStage) inlineStage.classList.add("hidden");
+
     if (currentSessionId) {
         loadSessionData(currentSessionId);
     }
@@ -1496,20 +1816,10 @@ function exitVoiceMode() {
 
 async function endVoiceConversation() {
     console.log("[*] Ending Voice Conversation Session...");
-    if (initialSilenceTimer) {
-        clearTimeout(initialSilenceTimer);
-        initialSilenceTimer = null;
-    }
-    isProactiveOpenerPlaying = false;
-
     exitVoiceMode();
-
-    if (isRecording) {
-        stopRecording();
-    }
     stopAllAudioPlayback();
 
-    // Call finalize endpoint to synthesize entire conversation into a friendly Heart-to-Heart summary
+    // Call finalize endpoint to synthesize entire conversation into a friendly summary
     if (currentSessionId) {
         try {
             setLiveStatus("Summarizing...", "listening");
@@ -1535,7 +1845,7 @@ async function endVoiceConversation() {
         }
     }
 
-    if (orbCaption) orbCaption.textContent = "Conversation completed. Heart-to-Heart summary below.";
+    if (orbCaption) orbCaption.textContent = "Conversation completed. Summary below.";
     setLiveStatus("Completed", "");
 }
 
@@ -1579,7 +1889,7 @@ function renderSessionSummaryCard(summary) {
             <div class="summary-header">
                 <div class="summary-header-badge">
                     <span class="summary-pulse-dot"></span>
-                    <span>Heart-to-Heart Summary &amp; Wellness Vibe</span>
+                    <span>Conversation Summary &amp; Wellness Insights</span>
                 </div>
                 <button class="btn-summary-dismiss" onclick="document.getElementById('sessionSummaryCard')?.remove()" title="Close summary">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

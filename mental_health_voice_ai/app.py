@@ -15,7 +15,7 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response, Query, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Response, Query, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -83,6 +83,7 @@ from voice_engine import (
     DEFAULT_VOICE,
     generate_voice_preview
 )
+from voice_stream_gateway import handle_voice_websocket
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -118,6 +119,23 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.mount("/audio", StaticFiles(directory=CACHE_DIR), name="audio")
+
+# ---------------------------------------------------------------------------
+# CHATGPT-STYLE REAL-TIME FULL-DUPLEX VOICE STREAMING WEBSOCKET
+# ---------------------------------------------------------------------------
+@app.websocket("/api/ws/voice")
+async def websocket_voice_endpoint(websocket: WebSocket):
+    """
+    Full-duplex real-time voice streaming gateway:
+    1. Continuous 16kHz PCM audio streaming
+    2. Silero VAD on CPU (< 1% CPU, 0 GPU)
+    3. Sub-second Groq Whisper LPU STT (~200ms)
+    4. Streaming Groq LLM tokens (~250ms)
+    5. Progressive sentence-level Edge-TTS chunking
+    6. Instant barge-in interruption (< 40ms)
+    """
+    await handle_voice_websocket(websocket)
+
 
 # ---------------------------------------------------------------------------
 # AUTHENTICATION DEPENDENCIES & HELPERS
