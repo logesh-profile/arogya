@@ -142,9 +142,9 @@ def analyze_and_respond(
 
     # 2. Resolve Active User Identity
     try:
-        from database import get_user_by_id, get_user_clinical_profile
+        from database import get_user_by_id, get_user_clinical_profile, get_circadian_context_directive, update_user_relational_lore
     except ImportError:
-        from mental_health_voice_ai.database import get_user_by_id, get_user_clinical_profile
+        from mental_health_voice_ai.database import get_user_by_id, get_user_clinical_profile, get_circadian_context_directive, update_user_relational_lore
 
     user_info = get_user_by_id(user_id) if user_id else None
     user_profile = get_user_clinical_profile(user_id) if user_id else {}
@@ -203,14 +203,18 @@ def analyze_and_respond(
         if txt:
             history_snippet.append(f"{role}: {txt}")
     history_str = "\n".join(history_snippet) if history_snippet else "Conversation just began."
+    is_first_turn = (not session_history or len(session_history) == 0)
+    circadian_directive = get_circadian_context_directive(user_id, is_first_turn=is_first_turn)
 
     user_id_line = f"User Name: {first_name} (Full Name: {user_name}, User ID: {user_id})" if has_real_name else "User Name: Unspecified (Talk directly using 'you'. NEVER call them 'Friend' or use fake names)"
 
     prompt = f"""
 {historical_context}
 
+{circadian_directive}
+
 --- ACTIVE COMPANION PERSONA ---
-Companion Name: {companion_name} (The user knows you as {companion_name}. Converse warmly under this identity.)
+Companion Name: {companion_name} (The user knows you as {companion_name}. If asked about your name or identity, confirm you are {companion_name}. Converse warmly under this identity.)
 
 --- ACTIVE USER PROFILE ---
 {user_id_line}
@@ -388,6 +392,22 @@ Produce the requested JSON:
             )
         except Exception as pe:
             print(f"[!] Clinical profile auto-update notice: {pe}")
+
+        try:
+            m_pet = re.search(r'\bmy\s+(?:dog|cat|puppy|pet)\s+([A-Za-z]+)\b', current_transcript, re.IGNORECASE)
+            new_pet = f"{m_pet.group(1).capitalize()} ({m_pet.group(0).split()[1].lower()})" if m_pet else None
+            m_person = re.search(r'\bmy\s+(?:sister|brother|mom|dad|mother|father|wife|husband|friend|roommate)\s+([A-Za-z]+)\b', current_transcript, re.IGNORECASE)
+            new_person = f"{m_person.group(1).capitalize()} ({m_person.group(0).split()[1].lower()})" if m_person else None
+            m_event = re.search(r'\b(?:interview|exam|test|presentation|meeting|deadline)\s+(?:on|at|this|tomorrow|next)\s+[^.,!?]+', current_transcript, re.IGNORECASE)
+            new_ev = m_event.group(0).strip() if m_event else None
+            if new_pet or new_person or new_ev:
+                update_user_relational_lore(
+                    user_id=user_id,
+                    new_person_pet=new_pet or new_person,
+                    new_event=new_ev
+                )
+        except Exception as le:
+            print(f"[!] Relational lore auto-update notice: {le}")
 
     # 6. Conversational Voice Pipeline
     raw_reply = data.get("reply_text", "I'm listening, and I'm right here with you. Take your time.")

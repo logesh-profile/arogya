@@ -308,6 +308,9 @@ def init_db():
     try:
         cursor.execute("ALTER TABLE users ADD COLUMN companion_name TEXT DEFAULT 'Arogya'")
     except Exception: pass
+    try:
+        cursor.execute("ALTER TABLE user_clinical_profile ADD COLUMN relational_lore TEXT DEFAULT '{}'")
+    except Exception: pass
 
     # User clinical profile table (Persistent Cross-Session Memory)
     cursor.execute("""
@@ -318,6 +321,7 @@ def init_db():
             key_context TEXT DEFAULT '',
             recurring_stressors TEXT DEFAULT '[]',
             effective_coping TEXT DEFAULT '[]',
+            relational_lore TEXT DEFAULT '{}',
             baseline_wellness REAL DEFAULT 75.0,
             last_updated TIMESTAMP
         )
@@ -1045,7 +1049,7 @@ def get_user_clinical_profile(user_id: str = "guest_user") -> Dict[str, Any]:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT user_id, user_name, key_context, recurring_stressors, effective_coping, baseline_wellness, last_updated
+        SELECT *
         FROM user_clinical_profile
         WHERE user_id = ?
     """, (user_id,))
@@ -1083,6 +1087,7 @@ def get_user_clinical_profile(user_id: str = "guest_user") -> Dict[str, Any]:
             "key_context": "Member seeking conversational companionship and emotional support",
             "recurring_stressors": [],
             "effective_coping": ["Guided box breathing (4-4-4-4)", "Gentle mindful reflection", "Empathetic companion dialogue"],
+            "relational_lore": {},
             "baseline_wellness": 75.0,
             "last_updated": datetime.now().isoformat()
         }
@@ -1100,6 +1105,16 @@ def get_user_clinical_profile(user_id: str = "guest_user") -> Dict[str, Any]:
         d["effective_coping"] = json.loads(d["effective_coping"]) if d.get("effective_coping") else []
     except Exception:
         d["effective_coping"] = []
+    try:
+        raw_lore = d.get("relational_lore")
+        if isinstance(raw_lore, dict):
+            d["relational_lore"] = raw_lore
+        elif raw_lore:
+            d["relational_lore"] = json.loads(raw_lore)
+        else:
+            d["relational_lore"] = {}
+    except Exception:
+        d["relational_lore"] = {}
     return d
 
 def update_user_clinical_profile(
@@ -1189,6 +1204,173 @@ def update_user_companion_name(user_id: str, companion_name: str) -> bool:
     finally:
         conn.close()
     return True
+
+def update_user_relational_lore(
+    user_id: str = "guest_user",
+    new_person_pet: Optional[str] = None,
+    new_event: Optional[str] = None,
+    new_memory: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Appends or updates relational lore (people, pets, upcoming events, shared memories)
+    for a specific user. Strictly per-user isolated.
+    """
+    if not user_id or user_id in ["guest_user", "null", "undefined"]:
+        return {}
+    
+    curr = get_user_clinical_profile(user_id)
+    lore = curr.get("relational_lore") or {}
+    if not isinstance(lore, dict):
+        lore = {}
+
+    people_pets = list(lore.get("people_and_pets", []))
+    events = list(lore.get("upcoming_events", []))
+    memories = list(lore.get("shared_memories", []))
+
+    changed = False
+
+    if new_person_pet and isinstance(new_person_pet, str) and len(new_person_pet.strip()) > 1:
+        clean = new_person_pet.strip()
+        if not any(clean.lower() in p.lower() or p.lower() in clean.lower() for p in people_pets):
+            people_pets.append(clean)
+            if len(people_pets) > 6:
+                people_pets = people_pets[-6:]
+            changed = True
+
+    if new_event and isinstance(new_event, str) and len(new_event.strip()) > 3:
+        clean_ev = new_event.strip()
+        if not any(clean_ev.lower() in e.lower() or e.lower() in clean_ev.lower() for e in events):
+            events.append(clean_ev)
+            if len(events) > 5:
+                events = events[-5:]
+            changed = True
+
+    if new_memory and isinstance(new_memory, str) and len(new_memory.strip()) > 3:
+        clean_mem = new_memory.strip()
+        if not any(clean_mem.lower() in m.lower() or m.lower() in clean_mem.lower() for m in memories):
+            memories.append(clean_mem)
+            if len(memories) > 6:
+                memories = memories[-6:]
+            changed = True
+
+    if changed:
+        lore["people_and_pets"] = people_pets
+        lore["upcoming_events"] = events
+        lore["shared_memories"] = memories
+        now = datetime.now().isoformat()
+        conn = get_connection()
+        cursor = conn.cursor()
+        lore_json = json.dumps(lore)
+        try:
+            cursor.execute("""
+                INSERT INTO user_clinical_profile (user_id, relational_lore, last_updated)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    relational_lore = excluded.relational_lore,
+                    last_updated = excluded.last_updated
+            """, (user_id, lore_json, now))
+            conn.commit()
+        except Exception as e:
+            print(f"[!] update_user_relational_lore notice: {e}")
+        finally:
+            conn.close()
+
+    return lore
+
+def get_user_last_active_time(user_id: str, exclude_session_id: Optional[str] = None) -> Optional[datetime]:
+    """Returns the datetime of the user's most recent prior session or interaction."""
+    if not user_id or user_id in ["guest_user", "null", "undefined"]:
+        return None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT MAX(s.last_active) as last_act, MAX(s.created_at) as created_act
+            FROM sessions s
+            WHERE s.user_id = ? AND (? IS NULL OR s.session_id != ?)
+        """, (user_id, exclude_session_id, exclude_session_id))
+        row = cursor.fetchone()
+        conn.close()
+        if row:
+            raw_t = row.get("last_act") or row.get("created_act")
+            if raw_t:
+                if isinstance(raw_t, datetime):
+                    return raw_t
+                try:
+                    return datetime.fromisoformat(str(raw_t))
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return None
+
+def get_circadian_context_directive(user_id: str, is_first_turn: bool = True, exclude_session_id: Optional[str] = None) -> str:
+    """
+    Computes time-of-day attunement (late night, early morning, weekend)
+    and inactivity gap (e.g. missed you for 4 days).
+    """
+    now = datetime.now()
+    hour = now.hour
+    day_name = now.strftime("%A")
+    time_str = now.strftime("%I:%M %p").lstrip("0")
+    
+    last_act = get_user_last_active_time(user_id, exclude_session_id)
+    days_since = None
+    if last_act:
+        try:
+            delta = now - last_act
+            days_since = delta.total_seconds() / 86400.0
+        except Exception:
+            pass
+
+    guidance = []
+    
+    # 1. Inactivity gap (if 3+ days and it's the first turn of the session)
+    if is_first_turn and days_since is not None and days_since >= 3.0:
+        d_count = int(round(days_since))
+        guidance.append(
+            f"• INACTIVITY RECONNECT: The user has not checked in for {d_count} days. "
+            f"In your opening turn, acknowledge the gap warmly like a close friend: e.g. 'Hey, missed you the last few days! How's everything been?'"
+        )
+    
+    # 2. Circadian time-of-day attunement
+    if 0 <= hour < 5:
+        # 12:00 AM to 4:59 AM (Late night / Insomnia)
+        if is_first_turn:
+            guidance.append(
+                f"• LATE NIGHT CONTEXT ({time_str}): It is very late at night. "
+                f"React naturally like a friend gently noting the late hour: e.g. 'Whoa, why are you still up at {time_str}? Trouble winding down?'"
+            )
+        else:
+            guidance.append(f"• TIME CONTEXT: It is late night ({time_str}). Maintain gentle, calm, cozy pacing.")
+    elif 5 <= hour < 11:
+        # Early Morning (5 AM to 11 AM)
+        if is_first_turn:
+            if day_name == "Monday":
+                guidance.append(
+                    f"• MONDAY MORNING ({time_str}): Start of the work/study week. "
+                    f"Greet warmly with casual morning energy: e.g. 'Morning! Ready for the week, or need another coffee first?'"
+                )
+            else:
+                guidance.append(
+                    f"• MORNING ({time_str}, {day_name}): Fresh morning energy. Greet naturally."
+                )
+    elif 17 <= hour < 21:
+        # Evening (5 PM to 9 PM)
+        if is_first_turn and day_name == "Friday":
+            guidance.append(
+                f"• FRIDAY EVENING ({time_str}): End of work week! Acknowledge making it to the weekend: e.g. 'Happy Friday! Finally made it to the weekend.'"
+            )
+        elif is_first_turn:
+            guidance.append(f"• EVENING CONTEXT ({time_str}, {day_name}): Winding down after the day.")
+    
+    directives_str = "\n".join(guidance) if guidance else "• Normal conversational hours."
+    
+    return (
+        f"--- CIRCADIAN & ROUTINE CONTEXT ---\n"
+        f"Current Time: {day_name}, {time_str}\n"
+        f"{directives_str}"
+    )
 
 def get_recent_session_memory_anchor(user_id: str = "guest_user", exclude_session_id: Optional[str] = None) -> Dict[str, Any]:
     """
@@ -1292,34 +1474,55 @@ def get_historical_context(current_session_id: Optional[str] = None, user_id: st
     past_sessions = cursor.fetchall()
 
     if not past_sessions:
-        conn.close()
         lines.append("No previous sessions recorded. This is the first interaction with this user.")
-        return "\n".join(lines)
+    else:
+        trivial_set = {"hi", "hello", "hey", "yes", "no", "ok", "okay", "thanks", "thank you", "bye", "goodbye", "good night"}
+        for s in past_sessions:
+            s_id = s["session_id"]
+            cursor.execute("""
+                SELECT text FROM messages
+                WHERE session_id = ? AND role = 'user'
+                ORDER BY id ASC
+            """, (s_id,))
+            all_u_msgs = [r["text"].strip() for r in cursor.fetchall() if r["text"]]
+            substantive = [m for m in all_u_msgs if m.lower().strip(" .,!?-") not in trivial_set and len(m) > 6]
+            highlight_msgs = substantive[:2] if substantive else all_u_msgs[:2]
 
-    trivial_set = {"hi", "hello", "hey", "yes", "no", "ok", "okay", "thanks", "thank you", "bye", "goodbye", "good night"}
-    for s in past_sessions:
-        s_id = s["session_id"]
-        cursor.execute("""
-            SELECT text FROM messages
-            WHERE session_id = ? AND role = 'user'
-            ORDER BY id ASC
-        """, (s_id,))
-        all_u_msgs = [r["text"].strip() for r in cursor.fetchall() if r["text"]]
-        substantive = [m for m in all_u_msgs if m.lower().strip(" .,!?-") not in trivial_set and len(m) > 6]
-        highlight_msgs = substantive[:2] if substantive else all_u_msgs[:2]
+            s_dict = dict(s)
+            s_summary = s_dict.get("summary") or "Conversation underway."
+            if s_summary == "Initial conversation started.":
+                s_summary = "Conversation underway."
 
-        s_dict = dict(s)
-        s_summary = s_dict.get("summary") or "Conversation underway."
-        if s_summary == "Initial conversation started.":
-            s_summary = "Conversation underway."
+            c_date_str = str(s_dict.get("created_at") or "")[:10]
+            lines.append(
+                f"• Session '{s_dict.get('title', 'Reflection')}' ({c_date_str}): "
+                f"Wellness Score: {s_dict.get('overall_wellness', 75)}/100, Tone: {s_dict.get('dominant_emotion', 'Calm')}. "
+                f"Summary: {s_summary} "
+                f"Key user remarks: {' | '.join(highlight_msgs) if highlight_msgs else 'None recorded'}"
+            )
 
-        c_date_str = str(s_dict.get("created_at") or "")[:10]
-        lines.append(
-            f"• Session '{s_dict.get('title', 'Reflection')}' ({c_date_str}): "
-            f"Wellness Score: {s_dict.get('overall_wellness', 75)}/100, Tone: {s_dict.get('dominant_emotion', 'Calm')}. "
-            f"Summary: {s_summary} "
-            f"Key user remarks: {' | '.join(highlight_msgs) if highlight_msgs else 'None recorded'}"
-        )
+    # Append Relational Lore & Shared Friendship Anchors
+    lore = profile.get("relational_lore") or {}
+    people_pets = lore.get("people_and_pets", [])
+    upcoming = lore.get("upcoming_events", [])
+    memories = lore.get("shared_memories", [])
+
+    lore_items = []
+    if people_pets:
+        lore_items.append(f"• People & Pets in User's Life: {', '.join(people_pets)}")
+    if upcoming:
+        lore_items.append(f"• Upcoming Events / Deadlines: {', '.join(upcoming)}")
+    if memories:
+        lore_items.append(f"• Shared Memories & Inside Lore: {', '.join(memories)}")
+
+    if lore_items:
+        lines.append("")
+        lines.append("--- RELATIONAL EPISODIC LORE (SHARED FRIENDSHIP ANCHORS) ---")
+        lines.extend(lore_items)
+        lines.append("FRIENDSHIP CALLBACK RULES:")
+        lines.append("1. Speak like an authentic long-time friend or close relative who remembers these details.")
+        lines.append("2. When relevant or at a natural opening, casually follow up on their life (e.g., 'Wait, didn't you have that big interview this morning? How did it go?!' or 'How's Bruno doing?').")
+        lines.append("3. NEVER sound like a doctor reading a patient chart. Weave references into casual conversation with natural warmth.")
 
     conn.close()
     return "\n".join(lines)

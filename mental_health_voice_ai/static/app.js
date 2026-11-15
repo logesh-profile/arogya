@@ -214,7 +214,8 @@ function populateVoiceStreamFromHistory() {
         const welcome = document.createElement("div");
         welcome.className = "voice-bubble-ai";
         welcome.style.opacity = "0.75";
-        welcome.textContent = "Hey, I'm Arogya. Feel free to talk to me about anything on your mind, I'm here and listening.";
+        const cName = window.currentCompanionName || "Arogya";
+        welcome.textContent = `Hey, I'm ${cName}. Feel free to talk to me about anything on your mind, I'm here and listening.`;
         stream.appendChild(welcome);
     }
     stream.scrollTop = stream.scrollHeight;
@@ -313,6 +314,7 @@ async function initAuth() {
                     currentUser = meData.user;
                     localStorage.setItem("arogya_active_user", JSON.stringify(meData.user));
                     updateAuthUI(true, meData.user);
+                    if (window.loadCompanionName) window.loadCompanionName();
                     if (meData.needs_onboarding) {
                         openOnboardingModal(meData.user);
                     }
@@ -1378,8 +1380,9 @@ function handleVoiceWebSocketMessage(msg) {
         }
     }
     else if (msg.type === "status") {
+        const cName = window.currentCompanionName || "Arogya";
         if (msg.state === "processing") {
-            if (modalState) modalState.textContent = "Arogya is reflecting...";
+            if (modalState) modalState.textContent = `${cName} is reflecting...`;
         } else if (msg.state === "listening") {
             if (!audioQueue || !audioQueue.isPlaying) {
                 if (modalState) modalState.textContent = "Listening to you...";
@@ -1402,7 +1405,8 @@ function handleVoiceWebSocketMessage(msg) {
         appendVoiceBubbleAiChunk(msg.text, msg.turn_id);
     }
     else if (msg.type === "audio_chunk") {
-        if (modalState) modalState.textContent = "Arogya speaking... (speak to interrupt)";
+        const cName = window.currentCompanionName || "Arogya";
+        if (modalState) modalState.textContent = `${cName} speaking... (speak to interrupt)`;
         if (orbWrap) {
             orbWrap.classList.remove("listening");
             orbWrap.classList.add("speaking");
@@ -1771,7 +1775,8 @@ async function enterVoiceMode() {
                 ow.classList.add("speaking");
             }
             const ms = document.getElementById("modalVoiceStateText");
-            if (ms) ms.textContent = "Arogya speaking... (speak to interrupt)";
+            const cName = window.currentCompanionName || "Arogya";
+            if (ms) ms.textContent = `${cName} speaking... (speak to interrupt)`;
         };
         audioQueue.onEnded = () => {
             isAiAudioPlaying = false;
@@ -2376,8 +2381,9 @@ function startVisualizer(stream) {
 
 function handleAudioPlaybackStarted() {
     isAiAudioPlaying = true;
+    const cName = window.currentCompanionName || "Arogya";
     setLiveStatus("Speaking...", "listening");
-    orbCaption.textContent = "Arogya is speaking...";
+    orbCaption.textContent = `${cName} is speaking...`;
 
     // Notify physical ESP32 to show speaking face and start mouth movement
     notifyEsp32SpeechState(1, currentSpeakingFace);
@@ -2387,7 +2393,7 @@ function handleAudioPlaybackStarted() {
         if (aiText && currentAiReplyText) aiText.textContent = currentAiReplyText;
 
         const modalState = document.getElementById("modalVoiceStateText");
-        if (modalState) modalState.textContent = "Arogya speaking... (speak to interrupt)";
+        if (modalState) modalState.textContent = `${cName} speaking... (speak to interrupt)`;
 
         const orbWrap = document.getElementById("voiceOrbWrapper");
         if (orbWrap) {
@@ -2396,7 +2402,7 @@ function handleAudioPlaybackStarted() {
         }
     }
 
-    // Pause speech recognizer while Arogya is speaking so it never transcribes speaker output
+    // Pause speech recognizer while AI is speaking so it never transcribes speaker output
     if (speechRecognizer) {
         try { speechRecognizer.stop(); } catch(e){}
     }
@@ -2405,6 +2411,7 @@ function handleAudioPlaybackStarted() {
 function handleAudioPlaybackEnded() {
     isAiAudioPlaying = false;
     currentBufferSource = null;
+    const cName = window.currentCompanionName || "Arogya";
     if (!isVoiceModalActive && !isRecording) {
         stopVisualizerLoop();
     }
@@ -2417,7 +2424,7 @@ function handleAudioPlaybackEnded() {
 
     if (isVoiceModalActive) {
         const modalState = document.getElementById("modalVoiceStateText");
-        if (modalState) modalState.textContent = "Arogya is listening... speak freely";
+        if (modalState) modalState.textContent = `${cName} is listening... speak freely`;
 
         const orbWrap = document.getElementById("voiceOrbWrapper");
         if (orbWrap) {
@@ -3321,7 +3328,8 @@ async function handleTextSubmit(overrideText = null) {
             }
             activeVoiceUserBubble = null; // Fresh bubble for next turn
             const modalState = document.getElementById("modalVoiceStateText");
-            if (modalState) modalState.textContent = "Arogya speaking... (speak to interrupt)";
+            const cName = window.currentCompanionName || "Arogya";
+            if (modalState) modalState.textContent = `${cName} speaking... (speak to interrupt)`;
             if (data.reply_text) {
                 appendVoiceBubbleAi(data.reply_text);
             }
@@ -4070,20 +4078,53 @@ function initHeaderDropdownMenu() {
     const companionNameInput = document.getElementById("companionNameInput");
     const menuCompanionNameLabel = document.getElementById("menuCompanionNameLabel");
 
+    function applyCompanionNameToUI(name) {
+        const compName = (name && name.trim()) ? name.trim() : "Arogya";
+        window.currentCompanionName = compName;
+        if (companionNameInput) companionNameInput.value = compName;
+        if (menuCompanionNameLabel) menuCompanionNameLabel.textContent = `Companion: ${compName}`;
+
+        // 1. Live Voice Modal Title & Placeholder
+        const vmTitle = document.querySelector(".voice-mode-title");
+        if (vmTitle) vmTitle.textContent = `${compName} Live Voice`;
+
+        const inlineInput = document.getElementById("voiceInlineTextInput");
+        if (inlineInput) inlineInput.placeholder = `Type a message to ${compName}...`;
+
+        const inlineStatus = document.getElementById("inlineVoiceStatusText");
+        if (inlineStatus && (inlineStatus.textContent.includes("listening") || inlineStatus.textContent.includes("Arogya"))) {
+            inlineStatus.textContent = `${compName} is listening... speak naturally`;
+        }
+
+        const orbWrap = document.getElementById("voiceOrbWrapper");
+        if (orbWrap) orbWrap.title = `${compName} Voice • Tap to interrupt`;
+
+        // 2. Welcome Title on main chat view
+        const welcomeTitle = document.getElementById("welcomeUserGreeting");
+        if (welcomeTitle) {
+            welcomeTitle.textContent = `Welcome to ${compName}`;
+        }
+    }
+    window.applyCompanionNameToUI = applyCompanionNameToUI;
+
     async function loadCompanionName() {
         try {
-            const res = await fetch("/api/user/companion-name");
+            const token = localStorage.getItem("arogya_session_token");
+            const headers = token ? { "Authorization": `Bearer ${token}` } : {};
+            const res = await fetch("/api/user/companion-name", { headers });
             if (res.ok) {
                 const data = await res.json();
                 const name = data.companion_name || "Arogya";
-                if (companionNameInput) companionNameInput.value = name;
-                if (menuCompanionNameLabel) menuCompanionNameLabel.textContent = `Companion: ${name}`;
-                window.currentCompanionName = name;
+                applyCompanionNameToUI(name);
+            } else {
+                applyCompanionNameToUI("Arogya");
             }
         } catch (e) {
             console.warn("Could not load companion name:", e);
+            applyCompanionNameToUI("Arogya");
         }
     }
+    window.loadCompanionName = loadCompanionName;
 
     if (menuCompanionNameBtn && companionNameModal) {
         menuCompanionNameBtn.addEventListener("click", () => {
@@ -4108,16 +4149,18 @@ function initHeaderDropdownMenu() {
             if (!newName) return;
             saveCompanionModalBtn.textContent = "Saving...";
             try {
+                const token = localStorage.getItem("arogya_session_token");
+                const headers = { "Content-Type": "application/json" };
+                if (token) headers["Authorization"] = `Bearer ${token}`;
                 const res = await fetch("/api/user/companion-name", {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: headers,
                     body: JSON.stringify({ companion_name: newName })
                 });
                 if (res.ok) {
                     const data = await res.json();
                     const saved = data.companion_name || newName;
-                    if (menuCompanionNameLabel) menuCompanionNameLabel.textContent = `Companion: ${saved}`;
-                    window.currentCompanionName = saved;
+                    applyCompanionNameToUI(saved);
                     closeCompModal();
                 }
             } catch (e) {

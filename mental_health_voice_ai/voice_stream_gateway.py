@@ -30,7 +30,7 @@ from voice_engine import (
     VALID_VOICE_IDS
 )
 from services.llm_router import get_groq_client, query_gemini_backup
-from prompts.companion_persona import REALTIME_VOICE_STREAM_INSTRUCTION
+from prompts.companion_persona import REALTIME_VOICE_STREAM_INSTRUCTION, get_realtime_voice_instruction
 from database import (
     save_message,
     save_mental_health_record,
@@ -40,7 +40,9 @@ from database import (
     get_latest_mental_health_record,
     get_user_by_session_token,
     get_user_by_id,
-    get_user_clinical_profile
+    get_user_clinical_profile,
+    update_user_relational_lore,
+    get_circadian_context_directive
 )
 from mental_health_engine import (
     extract_acoustic_features,
@@ -279,6 +281,9 @@ class StreamingVoiceSession:
 
             session_messages = get_session_messages(self.session_id)
             historical_context = get_historical_context(self.session_id, user_id=self.user_id)
+            is_first_turn = (not session_messages or len(session_messages) == 0)
+            circadian_directive = get_circadian_context_directive(self.user_id, is_first_turn=is_first_turn, exclude_session_id=self.session_id)
+            voice_system_instruction = get_realtime_voice_instruction(companion_name)
 
             history_lines = []
             for m in (session_messages or [])[-6:]:
@@ -320,6 +325,7 @@ class StreamingVoiceSession:
 
             full_prompt = (
                 f"{historical_context}\n\n"
+                f"{circadian_directive}\n\n"
                 f"--- IDENTITY & GROUNDING RULES ---\n"
                 f"Companion Persona: {companion_name}\n"
                 f"{user_directive}\n"
@@ -343,7 +349,7 @@ class StreamingVoiceSession:
                         stream = client.chat.completions.create(
                             model=model_name,
                             messages=[
-                                {"role": "system", "content": REALTIME_VOICE_STREAM_INSTRUCTION},
+                                {"role": "system", "content": voice_system_instruction},
                                 {"role": "user", "content": full_prompt}
                             ],
                             temperature=0.25,
@@ -357,7 +363,7 @@ class StreamingVoiceSession:
             if not stream:
                 fallback_reply = "Tell me more about what's on your mind, I'm listening."
                 try:
-                    gem_res = query_gemini_backup(full_prompt, REALTIME_VOICE_STREAM_INSTRUCTION, max_tokens=90)
+                    gem_res = query_gemini_backup(full_prompt, voice_system_instruction, max_tokens=90)
                     if gem_res and gem_res.get("reply_text"):
                         fallback_reply = gem_res["reply_text"].strip()
                 except Exception:
@@ -498,6 +504,28 @@ class StreamingVoiceSession:
                     )
                 except Exception as save_err:
                     print(f"[!] Background mental health record save notice: {save_err}")
+
+                def _background_lore_check(u_id, u_text):
+                    try:
+                        m_pet = re.search(r'\bmy\s+(?:dog|cat|puppy|pet)\s+([A-Za-z]+)\b', u_text, re.IGNORECASE)
+                        new_pet = f"{m_pet.group(1).capitalize()} ({m_pet.group(0).split()[1].lower()})" if m_pet else None
+
+                        m_person = re.search(r'\bmy\s+(?:sister|brother|mom|dad|mother|father|wife|husband|friend|roommate)\s+([A-Za-z]+)\b', u_text, re.IGNORECASE)
+                        new_person = f"{m_person.group(1).capitalize()} ({m_person.group(0).split()[1].lower()})" if m_person else None
+
+                        m_event = re.search(r'\b(?:interview|exam|test|presentation|meeting|deadline)\s+(?:on|at|this|tomorrow|next)\s+[^.,!?]+', u_text, re.IGNORECASE)
+                        new_ev = m_event.group(0).strip() if m_event else None
+
+                        if new_pet or new_person or new_ev:
+                            update_user_relational_lore(
+                                user_id=u_id,
+                                new_person_pet=new_pet or new_person,
+                                new_event=new_ev
+                            )
+                    except Exception as err:
+                        print(f"[!] Background lore check notice: {err}")
+
+                await loop.run_in_executor(None, _background_lore_check, self.user_id, clean_user)
 
         except asyncio.CancelledError:
             print(f"[*] Turn {turn_id} task was cancelled.")
