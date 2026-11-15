@@ -12,6 +12,7 @@ import wave
 import json
 import base64
 import asyncio
+import re
 import numpy as np
 from typing import Optional, Dict, Any, List
 from fastapi import WebSocket, WebSocketDisconnect
@@ -285,10 +286,36 @@ class StreamingVoiceSession:
                 history_lines.append(f"{role_label}: {m.get('text', '')}")
             history_str = "\n".join(history_lines) if history_lines else "Session just began."
 
+            # Detect user language and casual slang markers
+            t_lower = transcript.lower()
+            user_words = set(re.findall(r'\b\w+\b', t_lower))
+            user_used_bro = bool({"bro", "dude", "man", "buddy"} & user_words)
+            user_used_machan = bool({"machan", "macha", "da", "dei", "thala", "mame"} & user_words)
+            is_tanglish = False
+            has_tamil_script = bool(re.search(r'[\u0B80-\u0BFF]', transcript))
+            try:
+                from tanglish_engine import detect_language_and_register
+                lang_info = detect_language_and_register(transcript)
+                if lang_info.get("language_mode") in ["tanglish", "tamil", "code_switched"] or user_used_machan:
+                    is_tanglish = True
+            except Exception:
+                if user_used_machan:
+                    is_tanglish = True
+
+            if has_tamil_script:
+                lang_rule = "LANGUAGE DIRECTIVE: User spoke in Tamil script. Reply directly in spoken colloquial Tamil script."
+            elif is_tanglish or user_used_machan:
+                lang_rule = "LANGUAGE DIRECTIVE: User spoke in Tanglish / Tamil slang ('machan', 'macha', 'da', etc.). RECIPROCATE NATURALLY in authentic spoken Romanized Tanglish using Latin English alphabet only (e.g. 'Aiyo machan, chill pannu da', 'Dei, apdi laam pesadhe da', 'Konjam rest eduda')."
+            elif user_used_bro:
+                lang_rule = "SLANG DIRECTIVE: User spoke with casual slang ('bro', 'dude', 'man'). Reciprocate naturally ('Totally bro', 'Yeah man')."
+            else:
+                lang_rule = "CONVERSATIONAL DIRECTIVE: Talk naturally like a real friend. Anti-repetition: DO NOT repeat 'I am right here with you' or 'that is a heavy weight'. Give a fresh, direct, genuine human reaction."
+
             user_directive = (
-                f"Active User: {first_name} (Full Name: {user_name}, ID: {self.user_id}). Address them warmly when appropriate. Ground your answer strictly in their history above. NEVER invent or hallucinate facts about them."
+                f"Active User: {first_name} (Full Name: {user_name}, ID: {self.user_id}).\n"
+                f"ANTI-NAME-SPAM: DO NOT start your response with their name ('Oh {first_name}', '{first_name},'). Talk directly using 'you'. Ground your answer strictly in their history above. NEVER invent or hallucinate facts about them."
                 if has_real_name else
-                "Active User: Unspecified. Speak warmly without generic filler names."
+                "Active User: Unspecified. Speak directly using 'you' without generic filler names."
             )
 
             full_prompt = (
@@ -296,6 +323,7 @@ class StreamingVoiceSession:
                 f"--- IDENTITY & GROUNDING RULES ---\n"
                 f"Companion Persona: {companion_name}\n"
                 f"{user_directive}\n"
+                f"{lang_rule}\n"
                 f"STRICT FACTUAL GROUNDING: Rely only on what the user shared or what is written in the past reflections above. Never invent life details or assume exams, jobs, or partners unless explicitly stated.\n\n"
                 f"--- RECENT CONVERSATION (THIS SESSION) ---\n"
                 f"{history_str}\n\n"
@@ -327,7 +355,7 @@ class StreamingVoiceSession:
                         print(f"[!] Groq model {model_name} streaming notice: {m_err}")
 
             if not stream:
-                fallback_reply = "I'm right here with you, tell me more about what's on your mind."
+                fallback_reply = "Tell me more about what's on your mind, I'm listening."
                 try:
                     gem_res = query_gemini_backup(full_prompt, REALTIME_VOICE_STREAM_INSTRUCTION, max_tokens=90)
                     if gem_res and gem_res.get("reply_text"):

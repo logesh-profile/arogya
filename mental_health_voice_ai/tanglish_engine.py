@@ -39,7 +39,8 @@ TAMIL_MARKERS = {
     "namma", "nammaloda", "namakku", "avan", "ava", "avanga", "edhuvum", "onnum", "ellarum",
     "bayama", "kashtama", "valikidhu", "kavala", "aachu", "aayiduchi", "pochu", "podhum",
     "venum", "venam", "thoonudhu", "moolai", "udambu", "manasu", "nenachu", "pesa", "pesalaam",
-    "vaanga", "ponga", "kooda", "mattum", "thaan", "koodave", "madhiri", "pola", "aiyo"
+    "vaanga", "ponga", "kooda", "mattum", "thaan", "koodave", "madhiri", "pola", "aiyo",
+    "semma", "macha", "machan", "da", "dei", "thala", "mame", "dhan", "paa", "pa"
 }
 
 # Bookish / Literary written patterns -> Spoken Colloquial Tamil/Tanglish transformations
@@ -143,13 +144,13 @@ def detect_language_and_register(text: str, history: Optional[List[dict]] = None
         return {
             "language_mode": "code_switched" if has_english_words else "tamil",
             "register": "warm_tanglish" if has_english_words else "respectful_tamil",
-            "has_casual_markers": any(w in ["bro", "da", "pa", "machan"] for w in words),
+            "has_casual_markers": any(w in ["bro", "da", "dei", "macha", "machan", "pa", "thala", "mame"] for w in words),
             "confidence": 0.95
         }
 
     # 2. Count Tanglish markers vs English words
     tamil_marker_hits = sum(1 for w in words if w in TAMIL_MARKERS)
-    casual_hits = sum(1 for w in words if w in ["bro", "da", "machan", "pa", "thala", "mame"])
+    casual_hits = sum(1 for w in words if w in ["bro", "da", "dei", "macha", "machan", "pa", "thala", "mame"])
     english_hits = sum(1 for w in words if w in ENGLISH_LOANWORDS or w in {"the", "i", "my", "to", "and", "is", "for", "with", "you", "me", "very", "today", "feel", "feeling"})
 
     total_words = max(1, len(words))

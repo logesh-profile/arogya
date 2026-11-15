@@ -174,18 +174,24 @@ def analyze_and_respond(
     # Detect language of current input
     has_tamil_script = bool(re.search(r'[\u0B80-\u0BFF]', current_transcript))
     is_tanglish_marker = False
+    clean_words = set(re.findall(r'\b\w+\b', current_transcript.lower()))
+    user_used_bro = bool({"bro", "dude", "man", "buddy"} & clean_words)
+    user_used_machan = bool({"machan", "macha", "da", "dei", "thala", "mame"} & clean_words)
     try:
         from tanglish_engine import detect_language_and_register
         lang_det = detect_language_and_register(current_transcript)
-        if lang_det.get("detected_language") in ["tanglish", "tamil", "code_switched"]:
+        if lang_det.get("language_mode") in ["tanglish", "tamil", "code_switched"] or lang_det.get("detected_language") in ["tanglish", "tamil", "code_switched"] or user_used_machan:
             is_tanglish_marker = True
     except Exception:
-        pass
+        if user_used_machan:
+            is_tanglish_marker = True
 
     if has_tamil_script:
         lang_directive = "LANGUAGE DIRECTIVE: The user communicated in Tamil script. Respond directly in natural, spoken colloquial Tamil script (e.g. அப்படி எல்லாம் பேசாதீங்க, நீங்க ஒண்ணும் worthless இல்ல. என்ன ஆச்சுன்னு சொல்லுங்க). Use spoken Tamil, never bookish or archaic Tamil."
     elif is_tanglish_marker:
-        lang_directive = "LANGUAGE DIRECTIVE: The user communicated in Romanized Tanglish. Respond in natural Romanized Tanglish (e.g. Apdi laam pesadheenga, worthless laam illa. Enna aachu nu sollunga) using English Latin alphabet only, with ZERO Tamil Unicode characters so the neural voice reads it smoothly."
+        lang_directive = "LANGUAGE DIRECTIVE: The user communicated in Romanized Tanglish / Tamil slang. Respond in natural Romanized Tanglish (e.g. Aiyo machan, chill pannu da / Apdi laam pesadhe da, worthless laam illa. Enna aachu nu sollunga) using English Latin alphabet only, with ZERO Tamil Unicode characters so the neural voice reads it smoothly."
+    elif user_used_bro:
+        lang_directive = "LANGUAGE DIRECTIVE: The user communicated casually using slang ('bro', 'dude'). Respond warmly and casually, mirroring their friendly vibe naturally ('Totally bro', 'Yeah man')."
     else:
         lang_directive = "LANGUAGE DIRECTIVE: The user communicated in English. Respond in warm, natural conversational Indian English."
 
