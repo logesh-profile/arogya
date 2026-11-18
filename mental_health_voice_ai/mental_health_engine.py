@@ -186,10 +186,8 @@ def analyze_and_respond(
         if user_used_machan:
             is_tanglish_marker = True
 
-    if has_tamil_script:
-        lang_directive = "LANGUAGE DIRECTIVE: The user communicated in Tamil script. Respond directly in natural, spoken colloquial Tamil script (e.g. அப்படி எல்லாம் பேசாதீங்க, நீங்க ஒண்ணும் worthless இல்ல. என்ன ஆச்சுன்னு சொல்லுங்க). Use spoken Tamil, never bookish or archaic Tamil."
-    elif is_tanglish_marker:
-        lang_directive = "LANGUAGE DIRECTIVE: The user communicated in Romanized Tanglish / Tamil slang. Respond in natural Romanized Tanglish (e.g. Aiyo machan, chill pannu da / Apdi laam pesadhe da, worthless laam illa. Enna aachu nu sollunga) using English Latin alphabet only, with ZERO Tamil Unicode characters so the neural voice reads it smoothly."
+    if has_tamil_script or is_tanglish_marker or user_used_machan:
+        lang_directive = "LANGUAGE DIRECTIVE: The user communicated in Tamil / Tanglish / casual Tamil slang ('macha', 'machan', 'da', etc.). Respond strictly in authentic spoken Romanized Tanglish using Latin English alphabet ONLY. STRICT BAN: NEVER output Tamil Unicode characters (no தமிழ் characters). Example: 'Aiyo machan, romba tension aagadha da. Namma one by one ah paathukalaam.', 'Bro, inniku college la enna aachu nu sollu.' Do not force slang into every sentence."
     elif user_used_bro:
         lang_directive = "LANGUAGE DIRECTIVE: The user communicated casually using slang ('bro', 'dude'). Respond warmly and casually, mirroring their friendly vibe naturally ('Totally bro', 'Yeah man')."
     else:
@@ -289,11 +287,11 @@ Produce the requested JSON:
 
         if has_tam:
             if any(w in t_lower for w in ["worthless", "kashtam", "valikidhu", "kavala"]):
-                fallback_reply = "அப்படி எல்லாம் பேசாதீங்க, நீங்க ஒண்ணும் worthless இல்ல. என்ன ஆச்சுன்னு சொல்லுங்க, நான் கேக்குறேன்."
+                fallback_reply = "Apdi laam pesadheenga, neenga worthless laam illa. Enna aachu nu sollunga, naan kooda irukken."
             elif any(w in t_lower for w in ["bayama", "payam", "anxiety", "tension"]):
-                fallback_reply = "நான் உங்க கூட இருக்கேன். பயப்படாதீங்க, என்ன செய்யலாம் என்று நாம சேர்ந்து யோசிப்போம்."
+                fallback_reply = "Naan unga kooda dhaan irukken. Bayapadadheenga, namma serndhu handle pannalam."
             else:
-                fallback_reply = "வணக்கம், என்ன ஆச்சுன்னு சொல்லுங்க, நான் உங்க கூட இருக்கேன்."
+                fallback_reply = "Vanakkam! Enna aachu nu sollunga, namma pesalam."
         elif user_polite_tamil:
             fallback_reply = "Tension aagadheenga, enna aachu nu sollunga, naan unga kooda irukken."
         elif any(w in t_lower for w in ["tanglish", "romba", "irukku", "panren", "aachu", "therila"]):

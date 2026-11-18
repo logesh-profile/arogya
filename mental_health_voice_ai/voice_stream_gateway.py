@@ -307,10 +307,8 @@ class StreamingVoiceSession:
                 if user_used_machan:
                     is_tanglish = True
 
-            if has_tamil_script:
-                lang_rule = "LANGUAGE DIRECTIVE: User spoke in Tamil script. Reply directly in spoken colloquial Tamil script."
-            elif is_tanglish or user_used_machan:
-                lang_rule = "LANGUAGE DIRECTIVE: User spoke in Tanglish / Tamil slang ('machan', 'macha', 'da', etc.). RECIPROCATE NATURALLY in authentic spoken Romanized Tanglish using Latin English alphabet only (e.g. 'Aiyo machan, chill pannu da', 'Dei, apdi laam pesadhe da', 'Konjam rest eduda')."
+            if has_tamil_script or is_tanglish or user_used_machan:
+                lang_rule = "LANGUAGE DIRECTIVE: User communicated in Tamil / Tanglish / casual Tamil slang ('macha', 'machan', 'da', etc.). RECIPROCATE NATURALLY in authentic spoken Romanized Tanglish using Latin English alphabet ONLY. STRICT BAN: NEVER output Tamil Unicode script (no தமிழ் characters). Example: 'Aiyo machan, romba tension aagadha da. Namma one by one ah paathukalaam.', 'Bro, inniku college la enna aachu nu sollu.' Do not force slang into every sentence."
             elif user_used_bro:
                 lang_rule = "SLANG DIRECTIVE: User spoke with casual slang ('bro', 'dude', 'man'). Reciprocate naturally ('Totally bro', 'Yeah man')."
             else:
