@@ -1449,9 +1449,12 @@ def get_historical_context(current_session_id: Optional[str] = None, user_id: st
     coping_text = ", ".join(coping_list) if coping_list else "None recorded yet"
     context_text = profile.get("key_context") or "Member seeking conversational companionship and emotional support"
 
+    has_real_name = bool(name and name.strip().lower() not in ["friend", "user", "guest", "guest_user", "primary_user"])
+    name_entry = f"• User's Name: {name} (Address the user warmly as {name})" if has_real_name else "• User's Name: Unspecified (Talk directly using 'you'. NEVER address them as 'Friend')"
+
     lines = [
         "--- LONG-TERM CLINICAL PROFILE & RECURRING STRESSOR MEMORY ---",
-        f"• User's Name: {name} (Address the user warmly as {name})",
+        name_entry,
         f"• User Profile & Context: {context_text}",
         f"• Recurring Known Stressors: {stressors_text}",
         f"• Effective Coping Strategies: {coping_text}",
@@ -1486,7 +1489,8 @@ def get_historical_context(current_session_id: Optional[str] = None, user_id: st
             """, (s_id,))
             all_u_msgs = [r["text"].strip() for r in cursor.fetchall() if r["text"]]
             substantive = [m for m in all_u_msgs if m.lower().strip(" .,!?-") not in trivial_set and len(m) > 6]
-            highlight_msgs = substantive[:2] if substantive else all_u_msgs[:2]
+            # Provide full conversational continuity: up to 6 recent substantive remarks so life context is thoroughly preserved
+            highlight_msgs = substantive[-6:] if substantive else all_u_msgs[-4:]
 
             s_dict = dict(s)
             s_summary = s_dict.get("summary") or "Conversation underway."

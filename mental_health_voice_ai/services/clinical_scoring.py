@@ -71,8 +71,14 @@ def compute_deterministic_wellness(
 
     for key, label in dim_labels.items():
         item = evidence_dict.get(key, {})
-        score = item.get("score", 0)
-        quote = (item.get("quote") or "").strip()
+        if not isinstance(item, dict):
+            item = {"score": item if isinstance(item, (int, float)) else 0, "quote": ""}
+        raw_score = item.get("score", 0)
+        try:
+            score = int(raw_score)
+        except (ValueError, TypeError):
+            score = 0
+        quote = str(item.get("quote") or "").strip()
 
         # Enforce rule: No quote means no points!
         if not quote and score > 0:
@@ -210,7 +216,11 @@ def score_phq9(answers: Dict[str, Any]) -> Dict[str, Any]:
     q9_val = 0
     clean_answers = {}
     for i in range(1, 10):
-        val = int(answers.get(str(i), answers.get(i, 0)))
+        raw_val = answers.get(str(i), answers.get(i, 0))
+        try:
+            val = int(raw_val)
+        except (ValueError, TypeError):
+            val = 0
         val = max(0, min(3, val))
         clean_answers[str(i)] = val
         total += val
@@ -256,7 +266,11 @@ def score_gad7(answers: Dict[str, Any]) -> Dict[str, Any]:
     total = 0
     clean_answers = {}
     for i in range(1, 8):
-        val = int(answers.get(str(i), answers.get(i, 0)))
+        raw_val = answers.get(str(i), answers.get(i, 0))
+        try:
+            val = int(raw_val)
+        except (ValueError, TypeError):
+            val = 0
         val = max(0, min(3, val))
         clean_answers[str(i)] = val
         total += val

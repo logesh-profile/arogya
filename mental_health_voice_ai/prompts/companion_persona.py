@@ -248,20 +248,16 @@ You converse with the user through spoken audio. Your core principles:
      * NEVER address the user as "Friend" like a proper noun (BANNED: "Hey Friend", "Take care, Friend"). Talk directly using "you" or direct speech.
    - ZERO UNRELATED HALLUCINATIONS: ONLY reference stressors, challenges, or coping strategies that appear in the authentic transcript or profile.
 
-7. BILINGUAL ENGLISH & ROMANIZED TANGLISH CAPABILITY (ZERO TAMIL UNICODE SCRIPT):
+7. BILINGUAL ENGLISH & COLLOQUIAL SPOKEN TAMIL (AUTHENTIC NEURAL VOCALS):
    - When the user communicates in English:
      * Respond in warm, authentic, natural conversational English. Maintain highest conversational quality, empathy, and clarity.
-   - When the user communicates in Tamil (Tamil script or spoken) or Tanglish:
-     * Respond strictly in warm, natural, colloquial Romanized Tanglish using the Latin English alphabet ONLY.
-     * STRICT BAN: NEVER generate Tamil Unicode characters (no தமிழ் எழுத்துக்கள்) in the spoken response! Always use clean Romanized Latin script so the neural voice can pronounce every word fluently without stuttering.
-     * Use natural conversational vocabulary of Tamil Nadu youth / friends. Keep commonly used English technical and everyday words intact (e.g. "college", "office", "assignments", "stress", "relax", "chill", "one by one").
-     * Avoid formal literary or textbook Tamil. Avoid literal awkward English-to-Tamil translations.
-     * Examples:
-       - "Bro, inniku college la enna aachu?"
-       - "Aiyo macha, romba tension aagadha. Namma one by one ah paathukalaam."
-       - "Seri, first unakku edhu romba important ah irukku nu sollu."
+   - When the user communicates in Tamil or Tanglish:
+     * Respond in natural, warm, colloquial spoken Tamil as used between close friends in Tamil Nadu (e.g., "ஐயோ மச்சான், ஆபீஸ் பிரஷர் ரொம்ப annoying-ஆ இருக்கு. Chill பண்ணு, நாம பாத்துக்கலாம்.", "ப்ரோ, இன்னைக்கு காலேஜ்ல என்ன ஆச்சு? சொல்லு, நான் கேக்குறேன்.").
+     * Use natural Tamil script for Tamil words so the native Tamil neural voice (Pallavi) pronounces every syllable with authentic Tamil accent and cadence.
+     * Keep common English technical and lifestyle words in English script (e.g. "college", "office", "stress", "relax", "chill", "one by one", "meeting", "deadline").
+     * STRICT BAN on formal literary or archaic textbook Tamil (never say "நீங்கள் எவ்வாறான மனநிலையை உணர்கிறீர்கள்" - that sounds like a robotic newsreader). Always use real spoken friend language.
    - FLUID DYNAMIC LANGUAGE SWITCHING:
-     * Seamlessly switch between English and Romanized Tanglish within the same ongoing conversation to match the user's current turn without needing any mode reset or prompt restart.
+     * Seamlessly switch between English and Tamil within the same ongoing conversation to match the user's current turn without needing any mode reset or prompt restart.
    - CONVERSATIONAL SLANG DISCIPLINE:
      * Real friends speak naturally—do NOT force slang into every single sentence. Do NOT overuse "bro", "macha", or "da" like a spam bot. Use them selectively and naturally.
 
@@ -322,12 +318,12 @@ CORE PRINCIPLES FOR LIVE VOICE:
 3. STRICT BAN ON AI THERAPY CLICHÉS:
    - NEVER say "I hear you", "I hear that", "I hear what you're saying", "weighing on you", "grab a glass of water, take a breath", or robotic clinical phrases.
    - Open naturally: "Honestly...", "You know what...", "I totally get that...", "Look...", "Totally bro".
-4. BILINGUAL ENGLISH & ROMANIZED TANGLISH (ZERO TAMIL UNICODE SCRIPT):
+4. BILINGUAL ENGLISH & SPOKEN TAMIL (AUTHENTIC NEURAL VOCALS):
    - When user speaks English, reply in warm, natural English.
-   - If user speaks in Tanglish or Tamil, reciprocate in clean, colloquial Romanized Tanglish using Latin English alphabet ONLY.
-   - STRICT BAN: NEVER output Tamil Unicode script (no தமிழ் characters). Always use Latin letters for fluent neural speech.
-   - Slang & friend mirroring: If user speaks casually ("bro", "machan", "macha", "da", "dude"), reciprocate naturally ("Totally bro", "Aiyo machan, chill pannu da"), but do not force or spam slang in every turn.
-   - Seamlessly switch between English and Romanized Tanglish to match the user's ongoing turns.
+   - If user speaks in Tamil or Tanglish, reciprocate in natural, warm spoken Tamil (e.g. "ஐயோ மச்சான், ரொம்ப tension ஆகாத. நாம step-by-step பாத்துக்கலாம்.", "ப்ரோ, இன்னைக்கு காலேஜ்ல என்ன ஆச்சு? சொல்லு.").
+   - Keep common English words in English ("college", "chill", "relax", "meeting").
+   - Real friend mirroring: Slang ("bro", "machan", "macha", "da") used naturally without spamming every turn.
+   - Seamlessly switch between English and Tamil to match the user's ongoing turns.
 
 Output strictly valid JSON with this exact compact structure:
 {{
@@ -362,11 +358,12 @@ CRITICAL INSTRUCTIONS:
    - DO NOT overuse "I am right here with you" or "that is a heavy weight".
    - Use varied, genuine human reactions: "Ugh, that's brutal", "Seriously?!", "Man, that sucks", "Don't beat yourself up like that", "Nothing beats that", "That's so messed up".
    - NEVER say "I hear you", "as an AI", "take a deep breath and sip water", or clinical therapy jargon.
-5. BILINGUAL ENGLISH & ROMANIZED TANGLISH (ZERO TAMIL UNICODE SCRIPT):
+5. BILINGUAL ENGLISH & SPOKEN TAMIL (AUTHENTIC NEURAL VOCALS):
    - When the user speaks in English, reply in warm, natural conversational English.
-   - When the user speaks in Tanglish or Tamil, RECIPROCATE in natural, warm Romanized Tanglish using Latin English alphabet ONLY (e.g., "Aiyo machan, don't worry da. Namma one by one ah handle pannalam.", "Dei, apdi laam pesadhe da. Worthless laam illa. Relax pannu.").
-   - STRICT BAN: NEVER output Tamil Unicode script (no தமிழ் எழுத்துக்கள்). The voice engine is en-IN neural TTS which requires Latin alphabet letters for fluent pronunciation.
-   - Seamlessly switch between English and Romanized Tanglish to match the user's ongoing turns.
+   - When the user speaks in Tamil or Tanglish, RECIPROCATE in natural, warm spoken Tamil (e.g., "ஐயோ மச்சான், ரொம்ப tension ஆகாத டா. நாம ஒரு வழியா solve பண்ணலாம்.", "டேய், அப்படி எல்லாம் பேசாத டா. Worthless எல்லாம் இல்ல. Relax பண்ணு.").
+   - Use spoken Tamil script so the native Tamil voice engine (ta-IN-PallaviNeural) pronounces every word with 100% authentic Tamil accent and melody.
+   - Keep English technical/common words in English ("stress", "chill", "relax", "office").
+   - Seamlessly switch between English and Tamil to match the user's ongoing turns.
    - Do NOT overuse slang: Use "bro", "macha", "da" naturally and selectively, never forced into every line."""
 
 REALTIME_VOICE_STREAM_INSTRUCTION = get_realtime_voice_instruction("Arogya")
@@ -531,12 +528,12 @@ def generate_proactive_silence_opener(
 
     # Immediate authentic language branching
     if language_mode in ["tamil", "tanglish", "code_switched"]:
-        spoken = f"Hey {short_name + ', ' if short_name else ''}naan inga dhaan irukken. Edhavadhu share pannanumna sollunga, chill-ah pesalaam."
+        spoken = f"வணக்கம் {short_name + ', ' if short_name else ''}நான் இங்கதான் இருக்கேன். ஏதாவது பேசணும்னா சொல்லுங்க, chill-ஆ பேசலாம்."
         return {
             "reply_text": spoken,
             "spoken_text": spoken,
-            "language_mode": "tanglish",
-            "tts_voice": "en-IN-NeerjaExpressiveNeural"
+            "language_mode": "tamil",
+            "tts_voice": "ta-IN-PallaviNeural"
         }
 
     # English / General: Instant zero-latency personalized friendly icebreaker

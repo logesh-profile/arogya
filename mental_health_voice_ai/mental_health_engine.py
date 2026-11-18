@@ -187,7 +187,13 @@ def analyze_and_respond(
             is_tanglish_marker = True
 
     if has_tamil_script or is_tanglish_marker or user_used_machan:
-        lang_directive = "LANGUAGE DIRECTIVE: The user communicated in Tamil / Tanglish / casual Tamil slang ('macha', 'machan', 'da', etc.). Respond strictly in authentic spoken Romanized Tanglish using Latin English alphabet ONLY. STRICT BAN: NEVER output Tamil Unicode characters (no தமிழ் characters). Example: 'Aiyo machan, romba tension aagadha da. Namma one by one ah paathukalaam.', 'Bro, inniku college la enna aachu nu sollu.' Do not force slang into every sentence."
+        lang_directive = (
+            "LANGUAGE DIRECTIVE: The user communicated in Tamil / Tanglish / casual Tamil slang ('macha', 'machan', 'da', etc.). "
+            "Respond in natural, warm, colloquial spoken Tamil as used between close friends in Tamil Nadu. "
+            "Use natural Tamil script for spoken Tamil phrases (e.g. 'ஐயோ மச்சான், ரொம்ப tension ஆகாத டா. நாம step-by-step பாத்துக்கலாம்.', 'ப்ரோ, இன்னைக்கு காலேஜ்ல என்ன ஆச்சு? சொல்லு.'). "
+            "Keep technical and lifestyle English loanwords in English script (e.g. 'college', 'stress', 'chill', 'relax', 'office', 'meeting', 'deadline'). "
+            "STRICT BAN on textbook, archaic, or formal literary Tamil. Do not force slang into every line."
+        )
     elif user_used_bro:
         lang_directive = "LANGUAGE DIRECTIVE: The user communicated casually using slang ('bro', 'dude'). Respond warmly and casually, mirroring their friendly vibe naturally ('Totally bro', 'Yeah man')."
     else:
@@ -287,18 +293,18 @@ Produce the requested JSON:
 
         if has_tam:
             if any(w in t_lower for w in ["worthless", "kashtam", "valikidhu", "kavala"]):
-                fallback_reply = "Apdi laam pesadheenga, neenga worthless laam illa. Enna aachu nu sollunga, naan kooda irukken."
+                fallback_reply = "அப்படி எல்லாம் பேசாதீங்க, நீங்க worthless எல்லாம் இல்ல. என்ன ஆச்சுன்னு சொல்லுங்க, நான் கூட இருக்கேன்."
             elif any(w in t_lower for w in ["bayama", "payam", "anxiety", "tension"]):
-                fallback_reply = "Naan unga kooda dhaan irukken. Bayapadadheenga, namma serndhu handle pannalam."
+                fallback_reply = "நான் உங்க கூட தான் இருக்கேன். பயப்படாதீங்க, நாம சேர்ந்து handle பண்ணலாம்."
             else:
-                fallback_reply = "Vanakkam! Enna aachu nu sollunga, namma pesalam."
+                fallback_reply = "வணக்கம்! என்ன ஆச்சுன்னு சொல்லுங்க, நாம பேசலாம்."
         elif user_polite_tamil:
-            fallback_reply = "Tension aagadheenga, enna aachu nu sollunga, naan unga kooda irukken."
+            fallback_reply = "Tension ஆகாதீங்க, என்ன ஆச்சுன்னு சொல்லுங்க, நான் உங்க கூட இருக்கேன்."
         elif any(w in t_lower for w in ["tanglish", "romba", "irukku", "panren", "aachu", "therila"]):
             if user_used_bro:
-                fallback_reply = "Worry pannadheenga bro. Enna aachu nu sollunga, namma paathukalam."
+                fallback_reply = "Worry பண்ணாதீங்க bro. என்ன ஆச்சுன்னு சொல்லுங்க, நாம பாத்துக்கலாம்."
             else:
-                fallback_reply = "Tension aagadheenga, enna aachu nu sollunga, naan unga kooda irukken."
+                fallback_reply = "Tension ஆகாதீங்க, என்ன ஆச்சுன்னு சொல்லுங்க, நான் உங்க கூட இருக்கேன்."
         elif any(w in t_lower for w in ["build", "chatbot", "project", "learn", "roadmap", "prepare for", "internship"]):
             fallback_reply = "Start with a simple prototype or check a beginner walkthrough on YouTube to get moving. You've got this!"
         elif any(w in t_lower for w in ["hi", "hello", "hey"]):
@@ -450,9 +456,15 @@ Produce the requested JSON:
         elif det_lang in ["tanglish", "code_switched"]:
             target_reg = lang_info.get("recommended_register", "warm_conversational")
             naturalized_reply = naturalize_tanglish_response(raw_reply, user_input=current_transcript, language_mode=det_lang, register=target_reg)
-            staged = stage_prosody_and_phonetics(naturalized_reply, language_mode=det_lang, tts_engine="en-IN-NeerjaExpressiveNeural")
+            from tanglish_engine import transliterate_tanglish_to_spoken_tamil
+            spoken_script = transliterate_tanglish_to_spoken_tamil(naturalized_reply)
+            if bool(re.search(r'[\u0B80-\u0BFF]', spoken_script)):
+                staged = stage_prosody_and_phonetics(naturalized_reply, spoken_script=spoken_script, language_mode="tamil", tts_engine="ta-IN-PallaviNeural")
+                tts_route = "ta-IN-PallaviNeural"
+            else:
+                staged = stage_prosody_and_phonetics(naturalized_reply, language_mode=det_lang, tts_engine="en-IN-NeerjaExpressiveNeural")
+                tts_route = "en-IN-NeerjaExpressiveNeural"
             spoken_clean = staged.get("spoken_text", naturalized_reply) if isinstance(staged, dict) else str(staged)
-            tts_route = "en-IN-NeerjaExpressiveNeural"
             language_mode = det_lang
             speech_register = target_reg
             prosody_stage = {

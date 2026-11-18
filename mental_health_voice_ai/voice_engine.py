@@ -91,7 +91,7 @@ def transcribe_with_groq_whisper(audio_input: Union[str, bytes, io.BytesIO]) -> 
                     file=bio,
                     model=model_id,
                     response_format="json",
-                    # Auto-detects English, Tamil, and Tanglish natively
+                    prompt="Conversational English, Tamil, and Tanglish dialogue. Machan, da, bro, college, work, mood, stress, feelings, thoughts.",
                     temperature=0.0
                 )
                 if transcription and transcription.text:
@@ -149,8 +149,7 @@ def transcribe_audio(audio_input: Union[str, bytes, io.BytesIO]) -> str:
         segments, _ = model.transcribe(
             audio_input,
             beam_size=1,
-            language="en",
-            initial_prompt="Natural Indian English conversation, emotional reflection, mental health, thoughts, and feelings.",
+            initial_prompt="Conversational English, Tamil, and Tanglish dialogue. Machan, da, bro, college, work, mood, stress, feelings, thoughts.",
             vad_filter=True,
             condition_on_previous_text=False
         )

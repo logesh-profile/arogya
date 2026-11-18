@@ -124,9 +124,9 @@ class SileroVADDetector:
                 self.consecutive_speech_frames = max(0, self.consecutive_speech_frames - 1)
                 if self.is_speech_active:
                     self.consecutive_silence_frames += 1
-                    # Conversational pause threshold: 0.95s of silence after speaking
+                    # Conversational pause threshold: 0.60s of silence after speaking (tuned for sub-450ms turnaround)
                     silence_duration = self.audio_time - self.last_speech_time
-                    if silence_duration >= 0.95 and self.consecutive_silence_frames >= 5:
+                    if silence_duration >= 0.60 and self.consecutive_silence_frames >= 3:
                         speech_ended = True
                         self.is_speech_active = False
 
@@ -148,6 +148,32 @@ def pcm_to_wav_bytes(pcm_data: bytes, sample_rate: int = 16000) -> bytes:
         wf.writeframes(pcm_data)
     bio.seek(0)
     return bio.getvalue()
+
+
+def resolve_tts_voice_and_text(text: str, default_voice: str) -> tuple[str, str]:
+    """
+    Language-aware voice router:
+    - Pure/Spoken Tamil script -> ta-IN-PallaviNeural directly.
+    - Tanglish / mixed phrases -> transliterate to spoken Tamil script for ta-IN-PallaviNeural.
+    - English phrases -> default_voice (en-IN-NeerjaExpressiveNeural).
+    """
+    has_tamil = bool(re.search(r'[\u0B80-\u0BFF]', text))
+    if has_tamil:
+        return ("ta-IN-PallaviNeural", text)
+
+    try:
+        from tanglish_engine import transliterate_tanglish_to_spoken_tamil, detect_language_and_register
+        lang_det = detect_language_and_register(text)
+        mode = lang_det.get("language_mode", "")
+        det = lang_det.get("detected_language", "")
+        if mode in ["tamil", "tanglish", "code_switched"] or det in ["tamil", "tanglish", "code_switched"]:
+            converted = transliterate_tanglish_to_spoken_tamil(text)
+            if bool(re.search(r'[\u0B80-\u0BFF]', converted)):
+                return ("ta-IN-PallaviNeural", converted)
+    except Exception:
+        pass
+
+    return (default_voice, text)
 
 
 class StreamingVoiceSession:
@@ -308,7 +334,13 @@ class StreamingVoiceSession:
                     is_tanglish = True
 
             if has_tamil_script or is_tanglish or user_used_machan:
-                lang_rule = "LANGUAGE DIRECTIVE: User communicated in Tamil / Tanglish / casual Tamil slang ('macha', 'machan', 'da', etc.). RECIPROCATE NATURALLY in authentic spoken Romanized Tanglish using Latin English alphabet ONLY. STRICT BAN: NEVER output Tamil Unicode script (no தமிழ் characters). Example: 'Aiyo machan, romba tension aagadha da. Namma one by one ah paathukalaam.', 'Bro, inniku college la enna aachu nu sollu.' Do not force slang into every sentence."
+                lang_rule = (
+                    "LANGUAGE DIRECTIVE: User communicated in Tamil / Tanglish / casual Tamil slang ('macha', 'machan', 'da', etc.). "
+                    "RECIPROCATE NATURALLY in warm, colloquial spoken Tamil as used between close friends in Tamil Nadu. "
+                    "Use spoken Tamil script for Tamil words (e.g. 'ஐயோ மச்சான், ரொம்ப tension ஆகாத டா. நாம step-by-step பாத்துக்கலாம்.', 'ப்ரோ, இன்னைக்கு காலேஜ்ல என்ன ஆச்சு? சொல்லு.'). "
+                    "Keep common English technical and lifestyle words in English script (e.g. 'college', 'stress', 'chill', 'relax', 'office', 'meeting', 'deadline'). "
+                    "STRICT BAN on textbook or archaic literary Tamil. Do not force slang into every sentence."
+                )
             elif user_used_bro:
                 lang_rule = "SLANG DIRECTIVE: User spoke with casual slang ('bro', 'dude', 'man'). Reciprocate naturally ('Totally bro', 'Yeah man')."
             else:
@@ -374,10 +406,11 @@ class StreamingVoiceSession:
                     "text": fallback_reply
                 })
                 try:
+                    f_voice, f_text = resolve_tts_voice_and_text(fallback_reply, self.voice_id)
                     audio_chunks = []
                     async for raw_chunk in stream_edge_tts_chunks(
-                        fallback_reply,
-                        voice=self.voice_id,
+                        f_text,
+                        voice=f_voice,
                         dominant_state=dominant_user_state
                     ):
                         if self.is_interrupted or turn_id != self.turn_id:
@@ -398,8 +431,9 @@ class StreamingVoiceSession:
             chunk_idx = 0
             dominant_user_state = tone_emotion.get("emotion", "Calm")
 
-            # Sentence boundary delimiters
+            # Boundary delimiters: terminal punctuation and clause splitters for sub-350ms first-chunk audio
             sentence_splitters = {".", "?", "!", "\n"}
+            clause_splitters = {",", ";", "-", "—"}
 
             for chunk in stream:
                 if self.is_interrupted or turn_id != self.turn_id:
@@ -413,11 +447,26 @@ class StreamingVoiceSession:
                 sentence_buffer += token
                 full_reply_text += token
 
-                # Check if buffer has reached a natural sentence boundary
+                # Natural sentence boundary and ultra-fast early slicing for first chunk
                 has_terminal_punct = any(p in sentence_buffer for p in sentence_splitters)
+                has_clause_break = any(p in sentence_buffer for p in clause_splitters)
                 word_count = len(sentence_buffer.strip().split())
 
-                if (has_terminal_punct and word_count >= 3) or word_count >= 10:
+                # For chunk 0: slice at clause break after 5 words, or terminal punct after 3 words, or at 8 words.
+                # For subsequent chunks: split at terminal punct after 3 words, or at 10 words.
+                should_slice = (
+                    (chunk_idx == 0 and (
+                        (has_clause_break and word_count >= 5) or
+                        (has_terminal_punct and word_count >= 3) or
+                        word_count >= 8
+                    )) or
+                    (chunk_idx > 0 and (
+                        (has_terminal_punct and word_count >= 3) or
+                        word_count >= 10
+                    ))
+                )
+
+                if should_slice:
                     clean_sentence = sentence_buffer.strip()
                     sentence_buffer = ""
 
@@ -430,12 +479,17 @@ class StreamingVoiceSession:
                             "text": clean_sentence
                         })
 
+                        # Dynamic language-aware voice routing:
+                        # Tamil script & Tanglish -> ta-IN-PallaviNeural with authentic spoken Tamil script
+                        # English phrases -> en-IN-NeerjaExpressiveNeural
+                        chunk_voice, chunk_tts_text = resolve_tts_voice_and_text(clean_sentence, self.voice_id)
+
                         # Synthesize this sentence immediately with adaptive prosody
                         try:
                             audio_chunks = []
                             async for raw_chunk in stream_edge_tts_chunks(
-                                clean_sentence,
-                                voice=self.voice_id,
+                                chunk_tts_text,
+                                voice=chunk_voice,
                                 dominant_state=dominant_user_state
                             ):
                                 if self.is_interrupted or turn_id != self.turn_id:
@@ -459,10 +513,11 @@ class StreamingVoiceSession:
                     "text": remaining_text
                 })
                 try:
+                    tail_voice, tail_tts_text = resolve_tts_voice_and_text(remaining_text, self.voice_id)
                     audio_chunks = []
                     async for raw_chunk in stream_edge_tts_chunks(
-                        remaining_text,
-                        voice=self.voice_id,
+                        tail_tts_text,
+                        voice=tail_voice,
                         dominant_state=dominant_user_state
                     ):
                         if self.is_interrupted or turn_id != self.turn_id:
@@ -535,6 +590,29 @@ class StreamingVoiceSession:
 async def handle_voice_websocket(websocket: WebSocket):
     """FastAPI WebSocket endpoint handler for /api/ws/voice."""
     session = StreamingVoiceSession(websocket)
+
+    # Pre-authenticate from handshake query parameters (zero race condition)
+    try:
+        q_token = websocket.query_params.get("token")
+        q_session_id = websocket.query_params.get("session_id")
+        q_voice = websocket.query_params.get("voice")
+        q_uid = websocket.query_params.get("user_id")
+
+        if q_token:
+            verified_user = get_user_by_session_token(q_token)
+            if verified_user and verified_user.get("id"):
+                session.user_id = verified_user["id"]
+                print(f"[*] Voice WebSocket pre-authenticated via query token: {session.user_id} ({verified_user.get('name', 'User')})")
+        if not session.user_id or session.user_id == "guest_user":
+            if q_uid and q_uid not in ["guest_user", "null", "undefined"]:
+                session.user_id = q_uid
+        if q_session_id and q_session_id not in ["null", "undefined"]:
+            session.session_id = q_session_id
+        if q_voice in VALID_VOICE_IDS:
+            session.voice_id = q_voice
+    except Exception as q_err:
+        print(f"[!] Handshake query param parse notice: {q_err}")
+
     await session.handle_connect()
 
     try:

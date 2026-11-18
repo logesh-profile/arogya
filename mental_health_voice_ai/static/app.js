@@ -1328,7 +1328,17 @@ function initVoiceWebSocket() {
     }
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/api/ws/voice`;
+    const token = localStorage.getItem("arogya_session_token") || "";
+    const uid = (currentUser && (currentUser.id || currentUser.user_id)) || localStorage.getItem("arogya_active_user_id") || "guest_user";
+    const sessId = currentSessionId || "";
+    const vId = selectedVoice || "en-IN-NeerjaExpressiveNeural";
+    const queryParams = new URLSearchParams({
+        token: token,
+        session_id: sessId,
+        user_id: uid,
+        voice: vId
+    });
+    const wsUrl = `${protocol}//${window.location.host}/api/ws/voice?${queryParams.toString()}`;
     console.log("[*] Opening Real-Time Voice WebSocket:", wsUrl);
 
     try {
@@ -2132,6 +2142,15 @@ function startVisualizer(stream) {
             return;
         }
 
+        // Hardware-Capped 60 FPS Limiter: Schedule via RAF and lock precisely to 16.6ms intervals
+        // Prevents high refresh rate GPU/CPU overload and visual stutter on 120Hz/144Hz monitors
+        animFrameId = requestAnimationFrame(render);
+        const elapsed = now - lastFrameTimestamp;
+        if (elapsed < 16.0) {
+            return;
+        }
+        lastFrameTimestamp = now - (elapsed % 16.667);
+
         analyser.getByteFrequencyData(freqData);
         analyser.getByteTimeDomainData(timeData);
 
@@ -2362,17 +2381,6 @@ function startVisualizer(stream) {
             }
             inlineCtx.globalAlpha = 1.0;
         }
-
-        // 9. Hardware-Capped 30 FPS Limiter: Schedule next frame via setTimeout (33ms) + RAF
-        if (animTimeoutId) {
-            clearTimeout(animTimeoutId);
-            animTimeoutId = null;
-        }
-        animTimeoutId = setTimeout(() => {
-            if (visualizerRunning) {
-                animFrameId = requestAnimationFrame(render);
-            }
-        }, 33);
     }
 
     // Launch first frame of loop
