@@ -163,7 +163,9 @@ def analyze_and_respond(
     if not user_name or user_name.strip().lower() in ["user", "friend", "primary_user", "guest_user"]:
         if user_id and user_id not in ["guest_user", "usr_guest", "primary_user"] and not user_id.startswith("sess_"):
             clean_uid = user_id.replace("usr_", "").replace("user_", "").split("@")[0].split(".")[0].split("_")[0]
-            if clean_uid and not clean_uid.isdigit() and clean_uid.lower() not in ["guest", "user"]:
+            # Avoid using hex hashes or UUID fragments as names
+            is_hex_or_hash = bool(re.match(r'^[a-fA-F0-9]{6,}$', clean_uid))
+            if clean_uid and not clean_uid.isdigit() and not is_hex_or_hash and clean_uid.lower() not in ["guest", "user"]:
                 user_name = clean_uid.capitalize()
         else:
             user_name = "Friend"
@@ -189,9 +191,10 @@ def analyze_and_respond(
     if has_tamil_script or is_tanglish_marker or user_used_machan:
         lang_directive = (
             "LANGUAGE DIRECTIVE: The user communicated in Tamil / Tanglish / casual Tamil slang ('macha', 'machan', 'da', etc.). "
-            "Respond in natural, warm, colloquial spoken Tamil as used between close friends in Tamil Nadu. "
-            "Use natural Tamil script for spoken Tamil phrases (e.g. 'ஐயோ மச்சான், ரொம்ப tension ஆகாத டா. நாம step-by-step பாத்துக்கலாம்.', 'ப்ரோ, இன்னைக்கு காலேஜ்ல என்ன ஆச்சு? சொல்லு.'). "
-            "Keep technical and lifestyle English loanwords in English script (e.g. 'college', 'stress', 'chill', 'relax', 'office', 'meeting', 'deadline'). "
+            "Respond strictly in authentic spoken Romanized Tanglish using Latin English alphabet ONLY. "
+            "STRICT BAN: NEVER output Tamil Unicode characters (no தமிழ் script). Spoken voice synthesis uses English Latin script only. "
+            "Example: 'Aiyo machan, romba tension aagadha da. Namma step-by-step ah paathukalaam.', 'Bro, inniku college la enna aachu nu sollu.' "
+            "Keep technical and lifestyle English words in English script ('college', 'stress', 'chill', 'relax', 'office', 'meeting', 'deadline'). "
             "STRICT BAN on textbook, archaic, or formal literary Tamil. Do not force slang into every line."
         )
     elif user_used_bro:
@@ -293,18 +296,18 @@ Produce the requested JSON:
 
         if has_tam:
             if any(w in t_lower for w in ["worthless", "kashtam", "valikidhu", "kavala"]):
-                fallback_reply = "அப்படி எல்லாம் பேசாதீங்க, நீங்க worthless எல்லாம் இல்ல. என்ன ஆச்சுன்னு சொல்லுங்க, நான் கூட இருக்கேன்."
+                fallback_reply = "Apdi laam pesadheenga, neenga worthless laam illa. Enna aachu nu sollunga, naan kooda irukken."
             elif any(w in t_lower for w in ["bayama", "payam", "anxiety", "tension"]):
-                fallback_reply = "நான் உங்க கூட தான் இருக்கேன். பயப்படாதீங்க, நாம சேர்ந்து handle பண்ணலாம்."
+                fallback_reply = "Naan unga kooda dhaan irukken. Bayapadadheenga, namma serndhu handle pannalam."
             else:
-                fallback_reply = "வணக்கம்! என்ன ஆச்சுன்னு சொல்லுங்க, நாம பேசலாம்."
+                fallback_reply = "Enna aachu nu sollunga, namma pesalaam. Take your time."
         elif user_polite_tamil:
-            fallback_reply = "Tension ஆகாதீங்க, என்ன ஆச்சுன்னு சொல்லுங்க, நான் உங்க கூட இருக்கேன்."
+            fallback_reply = "Tension aagadheenga, enna aachu nu sollunga, naan unga kooda irukken."
         elif any(w in t_lower for w in ["tanglish", "romba", "irukku", "panren", "aachu", "therila"]):
             if user_used_bro:
-                fallback_reply = "Worry பண்ணாதீங்க bro. என்ன ஆச்சுன்னு சொல்லுங்க, நாம பாத்துக்கலாம்."
+                fallback_reply = "Worry pannadheenga bro. Enna aachu nu sollunga, namma paathukalaam."
             else:
-                fallback_reply = "Tension ஆகாதீங்க, என்ன ஆச்சுன்னு சொல்லுங்க, நான் உங்க கூட இருக்கேன்."
+                fallback_reply = "Tension aagadheenga, enna aachu nu sollunga, naan unga kooda irukken."
         elif any(w in t_lower for w in ["build", "chatbot", "project", "learn", "roadmap", "prepare for", "internship"]):
             fallback_reply = "Start with a simple prototype or check a beginner walkthrough on YouTube to get moving. You've got this!"
         elif any(w in t_lower for w in ["hi", "hello", "hey"]):

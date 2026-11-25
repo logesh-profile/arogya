@@ -1330,7 +1330,10 @@ function initVoiceWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const token = localStorage.getItem("arogya_session_token") || "";
     const uid = (currentUser && (currentUser.id || currentUser.user_id)) || localStorage.getItem("arogya_active_user_id") || "guest_user";
-    const sessId = currentSessionId || "";
+    if (!currentSessionId) {
+        currentSessionId = "sess_" + Math.random().toString(36).substring(2, 12);
+    }
+    const sessId = currentSessionId;
     const vId = selectedVoice || "en-IN-NeerjaExpressiveNeural";
     const queryParams = new URLSearchParams({
         token: token,
@@ -1807,7 +1810,7 @@ async function enterVoiceMode() {
     try {
         const stream = await getOrCreateMicStream();
         startPcmStreaming(stream);
-        startVisualizerLoop();
+        startVisualizer(stream);
     } catch(err) {
         console.warn("[*] Mic stream init notice:", err);
         if (modalState) modalState.textContent = "Please allow microphone access";
@@ -2142,14 +2145,14 @@ function startVisualizer(stream) {
             return;
         }
 
-        // Hardware-Capped 60 FPS Limiter: Schedule via RAF and lock precisely to 16.6ms intervals
-        // Prevents high refresh rate GPU/CPU overload and visual stutter on 120Hz/144Hz monitors
+        // Hardware-Capped 30 FPS Limiter: Schedule via RAF and clamp to ~33.3ms interval
+        // Dramatically reduces GPU/CPU utilization, eliminates thermal throttling, keeps streaming fast
         animFrameId = requestAnimationFrame(render);
         const elapsed = now - lastFrameTimestamp;
-        if (elapsed < 16.0) {
+        if (elapsed < 33.0) {
             return;
         }
-        lastFrameTimestamp = now - (elapsed % 16.667);
+        lastFrameTimestamp = now - (elapsed % 33.333);
 
         analyser.getByteFrequencyData(freqData);
         analyser.getByteTimeDomainData(timeData);

@@ -45,6 +45,13 @@ def get_groq_client():
     global _groq_client
     if _groq_client is None:
         api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            try:
+                from dotenv import load_dotenv
+                load_dotenv(os.path.join(AI_DIR, ".env"))
+                api_key = os.getenv("GROQ_API_KEY")
+            except Exception:
+                pass
         if api_key:
             try:
                 from groq import Groq

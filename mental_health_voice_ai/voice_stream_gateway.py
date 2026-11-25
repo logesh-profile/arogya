@@ -32,6 +32,7 @@ from voice_engine import (
 from services.llm_router import get_groq_client, query_gemini_backup
 from prompts.companion_persona import REALTIME_VOICE_STREAM_INSTRUCTION, get_realtime_voice_instruction
 from database import (
+    create_session,
     save_message,
     save_mental_health_record,
     get_session_messages,
@@ -152,28 +153,12 @@ def pcm_to_wav_bytes(pcm_data: bytes, sample_rate: int = 16000) -> bytes:
 
 def resolve_tts_voice_and_text(text: str, default_voice: str) -> tuple[str, str]:
     """
-    Language-aware voice router:
-    - Pure/Spoken Tamil script -> ta-IN-PallaviNeural directly.
-    - Tanglish / mixed phrases -> transliterate to spoken Tamil script for ta-IN-PallaviNeural.
-    - English phrases -> default_voice (en-IN-NeerjaExpressiveNeural).
+    Romanized Tanglish & Indian English vocal pipeline:
+    Both English and Romanized Tanglish are synthesized via en-IN-NeerjaExpressiveNeural.
+    Strictly avoids unnatural voice switching or forced Tamil script transliteration.
     """
-    has_tamil = bool(re.search(r'[\u0B80-\u0BFF]', text))
-    if has_tamil:
-        return ("ta-IN-PallaviNeural", text)
-
-    try:
-        from tanglish_engine import transliterate_tanglish_to_spoken_tamil, detect_language_and_register
-        lang_det = detect_language_and_register(text)
-        mode = lang_det.get("language_mode", "")
-        det = lang_det.get("detected_language", "")
-        if mode in ["tamil", "tanglish", "code_switched"] or det in ["tamil", "tanglish", "code_switched"]:
-            converted = transliterate_tanglish_to_spoken_tamil(text)
-            if bool(re.search(r'[\u0B80-\u0BFF]', converted)):
-                return ("ta-IN-PallaviNeural", converted)
-    except Exception:
-        pass
-
-    return (default_voice, text)
+    clean_text = text.strip() if text else ""
+    return (default_voice or DEFAULT_VOICE, clean_text)
 
 
 class StreamingVoiceSession:
@@ -336,9 +321,10 @@ class StreamingVoiceSession:
             if has_tamil_script or is_tanglish or user_used_machan:
                 lang_rule = (
                     "LANGUAGE DIRECTIVE: User communicated in Tamil / Tanglish / casual Tamil slang ('macha', 'machan', 'da', etc.). "
-                    "RECIPROCATE NATURALLY in warm, colloquial spoken Tamil as used between close friends in Tamil Nadu. "
-                    "Use spoken Tamil script for Tamil words (e.g. 'ஐயோ மச்சான், ரொம்ப tension ஆகாத டா. நாம step-by-step பாத்துக்கலாம்.', 'ப்ரோ, இன்னைக்கு காலேஜ்ல என்ன ஆச்சு? சொல்லு.'). "
-                    "Keep common English technical and lifestyle words in English script (e.g. 'college', 'stress', 'chill', 'relax', 'office', 'meeting', 'deadline'). "
+                    "RECIPROCATE NATURALLY in authentic spoken Romanized Tanglish using Latin English alphabet ONLY. "
+                    "STRICT BAN: NEVER output Tamil Unicode characters (no தமிழ் script). Spoken voice synthesis uses English Latin alphabet only. "
+                    "Example: 'Aiyo machan, romba tension aagadha da. Namma step-by-step ah paathukalaam.', 'Bro, inniku college la enna aachu nu sollu.' "
+                    "Keep common English technical and lifestyle words in English ('college', 'stress', 'chill', 'relax', 'office', 'meeting', 'deadline'). "
                     "STRICT BAN on textbook or archaic literary Tamil. Do not force slang into every sentence."
                 )
             elif user_used_bro:
@@ -542,19 +528,23 @@ class StreamingVoiceSession:
                 await loop.run_in_executor(None, save_message, self.session_id, "user", clean_user, None, None, self.user_id)
                 await loop.run_in_executor(None, save_message, self.session_id, "assistant", clean_ai, None, None, self.user_id)
                 try:
-                    await loop.run_in_executor(
-                        None,
-                        save_mental_health_record,
-                        self.session_id,
-                        75,
-                        dominant_user_state,
-                        tone_emotion.get("emotion", "calm"),
-                        0,
-                        clean_user,
-                        clean_ai,
-                        acoustic_features,
-                        self.user_id
-                    )
+                    record_payload = {
+                        "session_id": self.session_id,
+                        "overall_wellness": 75,
+                        "confidence": 0.8,
+                        "stress_level": 1 if dominant_user_state in ["Stressed", "Overwhelmed"] else 0,
+                        "anxiety_index": 1 if tone_emotion.get("emotion") in ["anxious", "concerned"] else 0,
+                        "mood_balance": 1,
+                        "vocal_vitality": acoustic_features.get("rms_energy", 0.05),
+                        "voice_semitone_std": acoustic_features.get("pitch_semitone_std"),
+                        "dominant_state": dominant_user_state,
+                        "reasons_json": json.dumps({"tone": tone_emotion.get("emotion", "calm")}),
+                        "sentiment": tone_emotion.get("emotion", "calm"),
+                        "key_concerns": clean_user,
+                        "strengths": "Conversational engagement",
+                        "clinical_insights": clean_ai
+                    }
+                    await loop.run_in_executor(None, save_mental_health_record, record_payload)
                 except Exception as save_err:
                     print(f"[!] Background mental health record save notice: {save_err}")
 
@@ -606,12 +596,24 @@ async def handle_voice_websocket(websocket: WebSocket):
         if not session.user_id or session.user_id == "guest_user":
             if q_uid and q_uid not in ["guest_user", "null", "undefined"]:
                 session.user_id = q_uid
-        if q_session_id and q_session_id not in ["null", "undefined"]:
+        if q_session_id and q_session_id not in ["null", "undefined", ""]:
             session.session_id = q_session_id
+        else:
+            session.session_id = f"sess_{uuid.uuid4().hex[:10]}"
+        try:
+            create_session(session.session_id, "Voice Conversation", user_id=session.user_id)
+        except Exception:
+            pass
         if q_voice in VALID_VOICE_IDS:
             session.voice_id = q_voice
     except Exception as q_err:
         print(f"[!] Handshake query param parse notice: {q_err}")
+
+    # Ensure session exists in DB
+    try:
+        create_session(session.session_id, "Voice Conversation", user_id=session.user_id)
+    except Exception:
+        pass
 
     await session.handle_connect()
 

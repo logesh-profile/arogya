@@ -1134,9 +1134,15 @@ def update_user_clinical_profile(
     coping = curr.get("effective_coping", [])
     context = curr.get("key_context", "")
 
+    blacklist_stressor_titles = {
+        "daily reflection", "check-in", "personal check-in", "communication level up",
+        "promise implement your", "there", "relaxed check-in", "busy day check-in",
+        "quick reflection", "conversation underway", "initial conversation started.",
+        "save york", "hear", "wait wait", "done speak", "excellent"
+    }
     if new_stressor and isinstance(new_stressor, str) and len(new_stressor.strip()) > 3:
         clean_s = new_stressor.strip()
-        if not any(clean_s.lower() in s.lower() or s.lower() in clean_s.lower() for s in stressors):
+        if clean_s.lower() not in blacklist_stressor_titles and not any(clean_s.lower() in s.lower() or s.lower() in clean_s.lower() for s in stressors):
             stressors.append(clean_s)
 
     if new_coping and isinstance(new_coping, str) and len(new_coping.strip()) > 3:
@@ -1442,15 +1448,36 @@ def get_historical_context(current_session_id: Optional[str] = None, user_id: st
     Strictly isolates data to the requested user_id.
     """
     profile = get_user_clinical_profile(user_id)
-    name = profile.get("user_name", "Friend")
-    stressors_list = profile.get("recurring_stressors", [])
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Look up authentic registered user record
+    real_user_name = None
+    if user_id and user_id not in ["guest_user", "usr_guest"]:
+        cursor.execute("SELECT name, given_name, preferred_name FROM users WHERE id = ?", (user_id,))
+        u_row = cursor.fetchone()
+        if u_row:
+            real_user_name = u_row["preferred_name"] or u_row["given_name"] or u_row["name"]
+
+    if not real_user_name or real_user_name.strip().lower() in ["friend", "user", "guest", "primary_user"]:
+        real_user_name = profile.get("user_name")
+
+    # Filter out corrupted or generic session titles stored in recurring stressors
+    blacklist_stressor_titles = {
+        "daily reflection", "check-in", "personal check-in", "communication level up",
+        "promise implement your", "there", "relaxed check-in", "busy day check-in",
+        "quick reflection", "conversation underway", "initial conversation started.",
+        "save york", "hear", "wait wait", "done speak", "excellent"
+    }
+    raw_stressors = profile.get("recurring_stressors", [])
+    stressors_list = [s for s in raw_stressors if s and s.strip().lower() not in blacklist_stressor_titles]
     stressors_text = ", ".join(stressors_list) if stressors_list else "None recorded yet (First-time user or baseline)"
     coping_list = profile.get("effective_coping", [])
     coping_text = ", ".join(coping_list) if coping_list else "None recorded yet"
     context_text = profile.get("key_context") or "Member seeking conversational companionship and emotional support"
 
-    has_real_name = bool(name and name.strip().lower() not in ["friend", "user", "guest", "guest_user", "primary_user"])
-    name_entry = f"• User's Name: {name} (Address the user warmly as {name})" if has_real_name else "• User's Name: Unspecified (Talk directly using 'you'. NEVER address them as 'Friend')"
+    has_real_name = bool(real_user_name and real_user_name.strip().lower() not in ["friend", "user", "guest", "guest_user", "primary_user"])
+    name_entry = f"• User's Name: {real_user_name} (Address the user warmly as {real_user_name})" if has_real_name else "• User's Name: Unspecified (Talk directly using 'you'. NEVER address them as 'Friend')"
 
     lines = [
         "--- LONG-TERM CLINICAL PROFILE & RECURRING STRESSOR MEMORY ---",
